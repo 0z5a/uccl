@@ -19,7 +19,7 @@ COMMON_SRC := ../src/common.cpp
 COMMON_OBJ := ../src/common.o
 
 # Binaries
-CUDA_BIN := pcie_bench gpu_to_cpu_bench batched_gpu_to_cpu_bench
+CUDA_BIN := pcie_bench gpu_to_cpu_bench batched_gpu_to_cpu_bench barrier_concurrent
 HOST_TEST_BIN := rdma_addressing_test
 
 all: $(CUDA_BIN)
@@ -37,6 +37,13 @@ gpu_to_cpu_bench: gpu_to_cpu_bench.cu $(COMMON_OBJ)
 
 batched_gpu_to_cpu_bench: batched_gpu_to_cpu_bench.cu $(COMMON_OBJ)
 	$(NVCC) $(CUDAFLAGS) $(CXXFLAGS) batched_gpu_to_cpu_bench.cu $(COMMON_OBJ) -o $@ $(LDFLAGS)
+
+# Regression test for concurrent barrier usage (uccl-project/uccl#986).
+# Header-only: it exercises ep/include/ep_utils.cuh barrier_block directly.
+# Build for the local GPU, e.g.
+#   make barrier_concurrent CUDAFLAGS=-arch=sm_89
+barrier_concurrent: barrier_concurrent.cu ../include/ep_utils.cuh
+	$(NVCC) $(CUDAFLAGS) -I../include -std=c++17 -O2 $< -o $@
 
 $(HOST_TEST_BIN): rdma_addressing_test.cpp ../include/rdma_addressing.hpp
 	$(CXX) $(HOST_TEST_CXXFLAGS) $< -o $@
