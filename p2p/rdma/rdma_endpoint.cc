@@ -511,7 +511,10 @@ uint64_t RDMAEndpoint::handle_send_meta_response(
 
 ConnID RDMAEndpoint::uccl_accept(std::string& remote_ip, int* remote_gpuidx) {
   AcceptedMeta accepted;
-  uint64_t peer_id = 0;
+  // Sentinel: callers reject a ConnID carrying UINT64_MAX, so an accept
+  // aborted by stop_accept() is reported as invalid instead of looking like a
+  // real connection to peer 0 (which then waits forever for channel metadata).
+  uint64_t peer_id = UINT64_MAX;
 
   // Block until there's an accepted connection
   while (!stop_accept_.load(std::memory_order_acquire)) {
@@ -551,6 +554,13 @@ ConnID RDMAEndpoint::uccl_accept(std::string& remote_ip, int* remote_gpuidx) {
 
   // Create and return ConnID
   ConnID conn_id;
+  if (peer_id == UINT64_MAX) {
+    conn_id.context = nullptr;
+    conn_id.peer_id = UINT64_MAX;
+    conn_id.sock_fd = -1;
+    conn_id.dev = 0;
+    return conn_id;
+  }
   conn_id.context = reinterpret_cast<void*>(static_cast<intptr_t>(peer_id));
   conn_id.peer_id = peer_id;
   conn_id.sock_fd = 0;
