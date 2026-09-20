@@ -19,7 +19,7 @@ Run with:
 """
 
 import struct
-import subprocess
+import ctypes
 import sys
 import torch
 import torch.distributed as dist
@@ -320,7 +320,9 @@ def test_readv_ipc(ep, conn_id, rank, use_cpu: bool):
     size_per = BUF_ELEMS * 4
     if rank == 0:  # server — GPU sources
         srcs = [
-            torch.full((BUF_ELEMS,), float(i + 1), dtype=torch.float32, device=_device())
+            torch.full(
+                (BUF_ELEMS,), float(i + 1), dtype=torch.float32, device=_device()
+            )
             for i in range(NUM_IOVS)
         ]
         ptrs = [t.data_ptr() for t in srcs]
@@ -356,7 +358,9 @@ def test_readv_ipc_async(ep, conn_id, rank, use_cpu: bool):
     size_per = BUF_ELEMS * 4
     if rank == 0:
         srcs = [
-            torch.full((BUF_ELEMS,), float(i + 1), dtype=torch.float32, device=_device())
+            torch.full(
+                (BUF_ELEMS,), float(i + 1), dtype=torch.float32, device=_device()
+            )
             for i in range(NUM_IOVS)
         ]
         ptrs = [t.data_ptr() for t in srcs]
@@ -391,25 +395,26 @@ def test_readv_ipc_async(ep, conn_id, rank, use_cpu: bool):
 
 
 def _normalize_bdf(bdf: str) -> str:
-    """Drop the PCI domain so UCCL metadata and nvidia-smi are comparable."""
-    return bdf.split(":", 1)[1] if bdf.count(":") >= 2 else bdf
+    """Canonicalize case and domain padding without merging distinct devices."""
+    domain, bus, device = bdf.strip().rsplit(":", 2)
+    slot, function = device.split(".")
+    return f"{int(domain, 16):04x}:{int(bus, 16):02x}:{int(slot, 16):02x}.{int(function, 16):x}"
 
 
-def _visible_bdf_by_uuid() -> dict:
-    """Map every visible GPU UUID to its PCI bus id (domain stripped)."""
-    out = subprocess.run(
-        ["nvidia-smi", "--query-gpu=uuid,pci.bus_id", "--format=csv,noheader"],
-        capture_output=True,
-        text=True,
+def _runtime_bdf(local_gpu_idx: int) -> str:
+    """Query the active CUDA/HIP runtime with the process-local ordinal."""
+    runtime = ctypes.CDLL(torch._C.__file__)
+    query = (
+        runtime.hipDeviceGetPCIBusId
+        if torch.version.hip
+        else runtime.cudaDeviceGetPCIBusId
     )
-    assert out.returncode == 0, f"nvidia-smi failed: {out.stderr}"
-    mapping = {}
-    for line in out.stdout.strip().splitlines():
-        if not line.strip():
-            continue
-        uuid, bdf = (part.strip() for part in line.split(",", 1))
-        mapping[uuid.removeprefix("GPU-")] = _normalize_bdf(bdf)
-    return mapping
+    query.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]
+    query.restype = ctypes.c_int
+    buffer = ctypes.create_string_buffer(32)
+    status = query(buffer, len(buffer), local_gpu_idx)
+    assert status == 0, f"GPU runtime PCI query failed: status={status}"
+    return _normalize_bdf(buffer.value.decode())
 
 
 def _assert_device_binding(ep, local_gpu_idx: int) -> str:
@@ -422,10 +427,7 @@ def _assert_device_binding(ep, local_gpu_idx: int) -> str:
     _, _, endpoint_bdf = p2p.Endpoint.parse_metadata(bytes(ep.get_metadata()))
     endpoint_bdf = _normalize_bdf(endpoint_bdf)
 
-    # torch exposes the UUID as a _CUuuid object, not a str.
-    uuid = str(torch.cuda.get_device_properties(local_gpu_idx).uuid)
-    payload_bdf = _visible_bdf_by_uuid().get(uuid)
-    assert payload_bdf is not None, f"no nvidia-smi BDF for GPU uuid {uuid}"
+    payload_bdf = _runtime_bdf(local_gpu_idx)
 
     assert payload_bdf == endpoint_bdf, (
         f"device binding mismatch: endpoint is on {endpoint_bdf} but payload "
