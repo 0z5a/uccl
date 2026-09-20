@@ -563,7 +563,11 @@ bool Endpoint::accept(std::string& ip_addr, int& remote_gpu_idx,
   // registers memory would otherwise spin here forever while ~Endpoint()
   // blocks in join().
   while (!engine_initialized_) {
-    if (uccl_accept_stopped(ep_)) return false;
+    if (stop_.load(std::memory_order_acquire) ||
+        passive_accept_stop_.load(std::memory_order_acquire) ||
+        uccl_accept_stopped(ep_)) {
+      return false;
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
   std::future<ConnID> uccl_conn_id_future =

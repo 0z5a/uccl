@@ -524,11 +524,10 @@ ConnID RDMAEndpoint::uccl_accept(std::string& remote_ip, int* remote_gpuidx) {
         if (!accepted_meta_.empty()) {
           // Get the first accepted connection
           auto it = accepted_meta_.begin();
-          peer_id = it->first;
-          accepted = it->second;
-          // Remove it from the map
-          if (get_or_create_recv_group(peer_id)->channel_count() ==
+          if (get_or_create_recv_group(it->first)->channel_count() ==
               kQpNumPerChannel + 1) {
+            peer_id = it->first;
+            accepted = it->second;
             accepted_meta_.erase(it);
             UCCL_LOG(INFO, UCCL_RDMA)
                 << "Accepted connection: peer_id=" << peer_id
