@@ -267,9 +267,7 @@ def _run_server_write_ipc(args, ep):
             _send_bytes_dist(bytes(info_blob), dst=0)
         else:
             bufs_ptrs = [
-                _make_buffer(
-                    size_per_block, args.advertised_device, args.local_gpu_idx
-                )
+                _make_buffer(size_per_block, args.advertised_device, args.local_gpu_idx)
                 for _ in range(num_iovs)
             ]
             ptrs = [p for _, p in bufs_ptrs]
@@ -413,9 +411,7 @@ def _run_server_read_ipc(args, ep):
             _send_bytes_dist(bytes(info_blob), dst=0)
         else:
             bufs_ptrs = [
-                _make_buffer(
-                    size_per_block, args.advertised_device, args.local_gpu_idx
-                )
+                _make_buffer(size_per_block, args.advertised_device, args.local_gpu_idx)
                 for _ in range(num_iovs)
             ]
             ptrs = [p for _, p in bufs_ptrs]
