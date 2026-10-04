@@ -666,6 +666,10 @@ int main(int argc, char** argv) {
   // -------- correctness + ordering pass (must pass before any BW number) -----
   {
     bool all_ok = true;
+    bool const run_coop_flush =
+        args.run_uccl &&
+        (args.only == "coop-flush" ||
+         (UCCL_GIN_WITH_NCCL_GIN && args.only == "all"));
     // red_add counter-only test (no payload, size-independent)
     {
       int a_ok = 1;
@@ -706,7 +710,7 @@ int main(int argc, char** argv) {
         t_ok = verify_uccl_tailadd(*uctx, bytes, peer, rank, stream, max_bytes) ? 1 : 0;
       if (args.run_uccl && selected(args, "quiet"))
         q_ok = verify_uccl_put_quiet(*uctx, bytes, peer, rank, stream, max_bytes) ? 1 : 0;
-      if (args.run_uccl && selected(args, "coop-flush")) {
+      if (run_coop_flush) {
 #if UCCL_GIN_WITH_NCCL_GIN
         c_ok = verify_uccl_coop_flush(*uctx, bytes, peer, rank, stream) ? 1 : 0;
 #else
@@ -741,7 +745,7 @@ int main(int argc, char** argv) {
         if (args.run_uccl && selected(args, "quiet"))
           printf("UCCL-put+q source-reuse bytes=%zu: %s\n", bytes,
                  gq ? "PASS" : "FAIL");
-        if (args.run_uccl && selected(args, "coop-flush"))
+        if (run_coop_flush)
           printf("UCCL-coop-flush source-reuse bytes=%zu: %s\n", bytes,
                  gc ? "PASS" : "FAIL");
       }

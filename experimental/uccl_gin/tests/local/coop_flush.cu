@@ -82,6 +82,9 @@ int main(int argc, char** argv) {
       "via must be adapter or standalone");
   bool const warp = std::strcmp(group, "warp") == 0;
   bool const adapter = std::strcmp(via, "adapter") == 0;
+  require(groups > 0 && groups <= 128 && queues > 0 && queues <= 32 &&
+              iterations > 0 && rounds > 0,
+          "invalid workload size");
   int const width = warp ? 32 : 1;
   int const producers = groups * width;
   size_t const group_bytes = static_cast<size_t>(batch) * hidden * 2;
@@ -92,9 +95,6 @@ int main(int argc, char** argv) {
       integer(argc, argv, "--bytes", batch > 0 ? group_bytes / width : 64);
   require(batch == 0 || static_cast<size_t>(bytes) == group_bytes / width,
           "payload bytes disagree with batch shape");
-  require(groups > 0 && groups <= 128 && queues > 0 && queues <= 32 &&
-              iterations > 0 && rounds > 0,
-          "invalid workload size");
   require(bytes % 4 == 0 && bytes <= static_cast<int>(kTransferCmdMaxBytes),
           "payload must be word aligned and fit one WRITE");
   require((shared ? producers : width) <= capacity,
