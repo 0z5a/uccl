@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
       "via must be adapter or standalone");
   bool const warp = std::strcmp(group, "warp") == 0;
   bool const adapter = std::strcmp(via, "adapter") == 0;
-  require(groups > 0 && groups <= 128 && queues > 0 && queues <= 32 &&
+  require(groups > 0 && groups <= 128 && queues > 0 && queues <= 64 &&
               iterations > 0 && rounds > 0,
           "invalid workload size");
   int const width = warp ? 32 : 1;

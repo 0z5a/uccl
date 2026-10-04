@@ -60,6 +60,13 @@ words verify that no participant returns before the final QUIET acknowledgement.
 `--delay-us 50` holds that acknowledgement. Both layouts require exactly
 `warps * iterations * queues` QUIETs for the fixed warp path.
 
+After the entry rendezvous, member `r` drains queue indices `r + k * coop.size()`.
+This covers every resource queue once, including counts larger than one warp;
+the exit rendezvous waits for all members' assigned queues. With 32 queues,
+a full warp drains one queue per member in parallel. Thread groups retain the
+sequential all-queue behavior. Use Q=3/33/64 to test uneven and repeated assignments.
+All group members must pass the same resource array and queue count.
+
 Thread groups are supported; CTA groups must fail compilation. The adapter
 accepts acquire ordering only: `--invalid-order 1 --bytes 0 --check-source-reuse 0`
 expects a device trap in a separate process. Scalar flush is covered by PR1.

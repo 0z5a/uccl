@@ -224,8 +224,8 @@ struct UCCLGin {
       quiet_on_queue(res.d2h_queues[i], static_cast<int>(i));
     }
   }
-  // All members publish their prior puts before the elected member drains
-  // every queue, then observe completion before reusing source buffers.
+  // Publish every member's prior puts, divide all queues among the members,
+  // then observe every queue's completion before reusing source buffers.
   template <typename coop_t>
   __device__ __forceinline__ void flush(coop_t coop) const {
 #if UCCL_GIN_HAVE_NCCL_DEVICE
@@ -234,7 +234,10 @@ struct UCCLGin {
                   "UCCL-GIN: cooperative flush supports ncclCoopThread and "
                   "ncclCoopWarp only");
     coop.sync();
-    if (coop.thread_rank() == 0) flush();
+    for (uint32_t i = coop.thread_rank(); i < res.num_queues;
+         i += coop.size()) {
+      quiet_on_queue(res.d2h_queues[i], static_cast<int>(i));
+    }
     coop.sync();
 #else
     static_assert(sizeof(coop_t) == 0,

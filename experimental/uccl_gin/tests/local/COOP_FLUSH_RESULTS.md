@@ -1,11 +1,44 @@
 # Cooperative flush validation and speed comparison
 
+**Version:** all measured tables below describe the elected-thread implementation
+at `f77da5123a8e75fb4e9ad5525370c66c140c8056`. The queue-partition candidate in
+the current branch has not yet been compiled or run; those earlier results are
+not validation of the new implementation.
+
 Validated on 2026-10-04 against the original adapter at
 `29e7e7ca868590fb3a70bc96ebf42271983ab9b6`, stacked on the local SM120 validation
 change. Hardware: two RTX 5090s, physical GPUs 0 and 3; CUDA 13.0.88,
 driver 580.76.05, NCCL device headers 2.30.4. Neither P2P nor a NCCL communicator
 is used by the local fixture. The container denies NUMA policy; the production
 FIFO's existing fallback continues.
+
+## Queue-partition iteration
+
+The elected thread waits for each queue in sequence. The new candidate keeps
+both group rendezvous but assigns queue indices `r + k * coop.size()` to member
+`r`. Thus every queue receives one QUIET, all assigned queues finish before the
+exit rendezvous, and thread groups retain sequential all-queue completion.
+This preserves the group source-lifetime requirement in the
+[NCCL GIN flush contract](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device_gin.html#ncclGin::flush).
+Scalar `flush()` and the adapter's acquire-order guard are unchanged.
+
+Q=3/33/64 extend validation beyond even, single-warp assignments. A new
+dual-GPU comparison will use the original adapter, the first cooperative
+implementation, and the queue-partition candidate with identical fixture
+source and settings. Forward/reverse execution order and seven rounds per
+process leave ten warm samples per arm/device after discarding the first two.
+The real HBM source-copy and pattern checks remain enabled.
+
+| New candidate gate | Current result |
+| --- | --- |
+| SM120/SM90 and full microbench compilation | Pending coordinated compile window |
+| Actual adapter/standalone, thread/warp, Q=1/3/4/32/33/64 | Not run |
+| Private/shared groups and delayed completion | Not run |
+| Two-GPU G64/BS2048 comparison against original and first implementation | Not run |
+| Large-payload CUDA timeline on GPU 3 | Not run |
+
+The existing RLT and VIME resource windows precede this new iteration. No new
+speedup is claimed until the candidate completes its own runs.
 
 ## Command counts and correctness
 
