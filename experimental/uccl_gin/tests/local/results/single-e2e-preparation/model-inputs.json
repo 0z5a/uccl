@@ -1,0 +1,43 @@
+{
+  "scope": "completed local weight download, not inference evidence",
+  "model": "ibm-granite/granite-3.1-1b-a400m-base",
+  "revision": "408b6e90baab8cf24f4aa9f8e19703ffa0a53b29",
+  "total_bytes": 2671359655,
+  "lfs_verified": true,
+  "files": {
+    "config.json": {
+      "sha256": "25af0a4e4e85b781fa22c7cab240cda31714254a9d3d0f2f67e079693e1dd614",
+      "bytes": 891
+    },
+    "generation_config.json": {
+      "sha256": "9908b9afa37288491e32f2d9e818222d70ad66fee0f5be2bf9317a8dc73b7ae2",
+      "bytes": 132
+    },
+    "model-00001-of-00002.safetensors": {
+      "sha256": "6933b6375074dc6cc4c0b98c9e126cd5fc899ef0cd80db0a932a232c6393c9cd",
+      "bytes": 1993497352
+    },
+    "model-00002-of-00002.safetensors": {
+      "sha256": "271870f88e36f28ca87e86e11fa971b0b3e268fb9ac4495d42c66fdd1bc9d060",
+      "bytes": 675779512
+    },
+    "model.safetensors.index.json": {
+      "sha256": "e6fcaa59c4b5c12de1a6c0a2382a6aeea42ce98d0b1de681e649f85b739e07c8",
+      "bytes": 19171
+    },
+    "special_tokens_map.json": {
+      "sha256": "2f2bba45146f073a7b8a097cb6133a6b4b66d5751e73f2a2aca81083288813e9",
+      "bytes": 1020
+    },
+    "tokenizer.json": {
+      "sha256": "d3b4df07a0ce3940b15c77e2ea17ab5627ca0c4bf982d2eb37966aea0a81c918",
+      "bytes": 2057451
+    },
+    "tokenizer_config.json": {
+      "sha256": "0764d3ae3830187f63cfe568c754d99900fed85fc9d071e6cfe2add9f555b6bb",
+      "bytes": 4126
+    }
+  },
+  "public_model_no_auth_token": true,
+  "pass": true
+}

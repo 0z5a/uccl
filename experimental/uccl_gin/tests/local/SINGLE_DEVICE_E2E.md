@@ -4,6 +4,8 @@
 
 状态：本地实现准备中；**两机 CUDA、模型正确性、速度测量均未执行**。两机仍由前驱任务保留 whole-job 窗口，暂时空锁和空闲 GPU 不构成交接。
 
+已完成的准备证据：[42 个分片形状](results/single-e2e-preparation/host-preparation.json)、[实际异步调度器的 4 个 CPU 组合](results/single-e2e-preparation/host-request-wave.json)、[固定权重的本机下载和 LFS 校验](results/single-e2e-preparation/model-inputs.json)。权重在开发过程中并行下载，2,671,359,655 bytes；这些准备结果不代表 GPU/model 测试通过。
+
 ## 模型与数据流
 
 使用公开的 [Granite 3.1 1B-A400M Base](https://huggingface.co/ibm-granite/granite-3.1-1b-a400m-base/tree/408b6e90baab8cf24f4aa9f8e19703ffa0a53b29)，固定 revision `408b6e90baab8cf24f4aa9f8e19703ffa0a53b29`。其[配置](https://huggingface.co/ibm-granite/granite-3.1-1b-a400m-base/blob/408b6e90baab8cf24f4aa9f8e19703ffa0a53b29/config.json)是 24 层、32 专家、top-8、hidden1024、BF16。使用任务私有 Transformers 4.57.1 环境与实际权重。

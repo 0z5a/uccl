@@ -1,0 +1,9 @@
+{
+  "scope": "host partition check and Python syntax only; no CUDA/model run",
+  "partition_shapes": 42,
+  "pass": true,
+  "files": {
+    "model_transport.cu": "5ff964484aeba3cf1ae35aaa35c923eedcc9edfe9834914ebc43efaa64f02f3f",
+    "model_e2e.py": "8e22fa0a2d196da91007d8e712acd252dd3d68d3cd63d4cc4d44f9eaa02921d1"
+  }
+}

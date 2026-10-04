@@ -1,0 +1,52 @@
+{
+  "scope": "actual asyncio scheduler with CPU substitute generator; no model/CUDA/performance result",
+  "cases": [
+    {
+      "batch_size": 8,
+      "concurrency": 32,
+      "pending": 32,
+      "batches": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "pass": true
+    },
+    {
+      "batch_size": 16,
+      "concurrency": 64,
+      "pending": 64,
+      "batches": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "pass": true
+    },
+    {
+      "batch_size": 32,
+      "concurrency": 128,
+      "pending": 128,
+      "batches": [
+        32,
+        32,
+        32,
+        32
+      ],
+      "pass": true
+    },
+    {
+      "batch_size": 64,
+      "concurrency": 128,
+      "pending": 128,
+      "batches": [
+        64,
+        64
+      ],
+      "pass": true
+    }
+  ],
+  "pass": true
+}
