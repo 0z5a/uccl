@@ -1,0 +1,13 @@
+{
+  "scope": "host macro expansion and constructor selection; no full hybrid CUDA build",
+  "checks": [
+    {
+      "backend": "nccl",
+      "pass": true
+    },
+    {
+      "backend": "uccl",
+      "pass": true
+    }
+  ]
+}

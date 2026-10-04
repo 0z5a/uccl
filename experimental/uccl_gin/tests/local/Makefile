@@ -15,10 +15,19 @@ DEVFLAGS := -O3 -std=c++17 -arch=sm_$(SM) -ccbin=$(CXX) --expt-relaxed-constexpr
 DEVFLAGS += $(EXTRA_DEVFLAGS)
 LIBS := -L$(CUDA_HOME)/lib64 -Xlinker=-rpath -Xlinker=$(CUDA_HOME)/lib64 $(if $(NUMA_LIBRARY_DIR),-L$(NUMA_LIBRARY_DIR)) -lnuma -lcuda
 
-.PHONY: all clean coop-tests compile-fail
+.PHONY: all clean coop-tests adapter-tests adapter-compile-fail compile-fail
 all: $(BUILD_DIR)/capabilities $(BUILD_DIR)/queue_smoke
 
 coop-tests: $(BUILD_DIR)/coop_flush $(BUILD_DIR)/network_gate.o
+
+adapter-tests: $(BUILD_DIR)/adapter_signal
+
+$(BUILD_DIR)/adapter_signal: adapter_signal.cu queue_fixture.hpp $(ROOT)/thirdparty/nccl-ep/adapter/uccl_gin_net.cuh $(BUILD_DIR)/fifo.o
+	$(NVCC) $(DEVFLAGS) -I$(ROOT) -I$(NCCL_INCLUDE_DIR) -DNCCL_CHECK_CUDACC=1 -DUCCL_GIN_WITH_NCCL_GIN=1 -MMD -MP $< $(BUILD_DIR)/fifo.o $(LIBS) -o $@
+
+adapter-compile-fail: | $(BUILD_DIR)
+	@if $(NVCC) $(DEVFLAGS) -I$(ROOT) -I$(NCCL_INCLUDE_DIR) -DNCCL_CHECK_CUDACC=1 -DUCCL_GIN_WITH_NCCL_GIN=1 -c unsupported_signal_coop.cu -o $(BUILD_DIR)/unsupported_signal_coop.o > $(BUILD_DIR)/unsupported_signal_coop.log 2>&1; then echo "FAIL: CTA signal compiled"; exit 1; fi
+	@grep -q 'signal cooperation supports Thread/Warp only' $(BUILD_DIR)/unsupported_signal_coop.log || (cat $(BUILD_DIR)/unsupported_signal_coop.log; exit 1)
 
 $(BUILD_DIR)/network_gate.o: network_gate_compile.cu ../coop_flush_gate.cuh | $(BUILD_DIR)
 	$(NVCC) $(DEVFLAGS) -I$(ROOT) -I$(NCCL_INCLUDE_DIR) -DNCCL_CHECK_CUDACC=1 -DUCCL_GIN_WITH_NCCL_GIN=1 -MMD -MP -c $< -o $@

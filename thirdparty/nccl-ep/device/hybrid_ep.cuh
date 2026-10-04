@@ -30,15 +30,17 @@
 #define NCCL_EP_NET_CREATE(comm_idx, ctx_idx, chan) \
     nccl_ep_adapter::UcclGinNet net(*uccl_resources, (chan)); \
     ncclTeam world{}  /* dummy for UcclGinNet */
-#define NCCL_EP_NET_CREATE_SIMPLE(comm_idx, ctx_idx) \
-    nccl_ep_adapter::UcclGinNet net(*uccl_resources, 0)
+#define NCCL_EP_NET_CREATE_SIMPLE(comm_idx, ctx_idx, chan) \
+    nccl_ep_adapter::UcclGinNet net(*uccl_resources, (chan)); \
+    ncclTeam world{}
 #else
 #define NCCL_EP_UCCL_PARAM
 #define NCCL_EP_NET_CREATE(comm_idx, ctx_idx, chan) \
     ncclGin net(dcomms[comm_idx], ctx_idx, NCCL_GIN_RESOURCE_SHARING_CTA); \
     ncclTeam world = ncclTeamWorld(dcomms[comm_idx])
-#define NCCL_EP_NET_CREATE_SIMPLE(comm_idx, ctx_idx) \
-    ncclGin net(dcomms[comm_idx], ctx_idx)
+#define NCCL_EP_NET_CREATE_SIMPLE(comm_idx, ctx_idx, chan) \
+    ncclGin net(dcomms[comm_idx], ctx_idx); \
+    ncclTeam world = ncclTeamWorld(dcomms[comm_idx])
 #endif
 
 namespace hybrid_ep{
@@ -973,7 +975,6 @@ __forceinline__ __device__ void N2N_warp_group_device_function(const int local_r
   get_comm_ctx(global_channel, num_ctx_per_comm, comm_idx, ctx_idx);
 
   NCCL_EP_NET_CREATE(comm_idx, ctx_idx, global_channel);
-  ncclTeam world = ncclTeamWorld(dcomms[comm_idx]);
 
   for (int chunk_idx = blockIdx.x * N2N_WARPS + n2n_warp_id;
        chunk_idx < NUM_OF_CHUNKS_PER_RANK;
@@ -1138,7 +1139,7 @@ __forceinline__ __device__ void G2S_warp_group_device_function(const int local_r
 
           int comm_idx, ctx_idx;
           get_comm_ctx(signal_channel, num_ctx_per_comm, comm_idx, ctx_idx);
-          NCCL_EP_NET_CREATE(comm_idx, ctx_idx, global_channel);
+          NCCL_EP_NET_CREATE(comm_idx, ctx_idx, signal_channel);
           net.waitSignal(ncclCoopThread(), tail_signal_id, expected_flag_value);
         }
         const rdma_to_attn_map_load_t* rdma_to_attn_map_load_base_addr = reinterpret_cast<const rdma_to_attn_map_load_t*>(rdma_to_attn_map +
@@ -2274,7 +2275,7 @@ __forceinline__ __device__ void inter_node_N2N_warp_group_device_function(const 
     int global_channel = chunk_id % total_channels;
     int comm_idx, ctx_idx;
     get_comm_ctx(global_channel, num_ctx_per_comm, comm_idx, ctx_idx);
-    NCCL_EP_NET_CREATE_SIMPLE(comm_idx, ctx_idx);
+    NCCL_EP_NET_CREATE_SIMPLE(comm_idx, ctx_idx, global_channel);
     int rdma_remote_node_id = node_id > node_rank ? node_id - 1 : node_id;
     int chunk_base_token_idx = node_id * rdma_to_attn_map_size_per_node + chunk_id * NUM_OF_TOKENS_PER_CHUNK;
     int token_range = NUM_OF_TOKENS_PER_CHUNK;
@@ -2677,7 +2678,7 @@ __forceinline__ __device__ void inter_node_G2S_warp_group_device_function(const 
           int global_channel = i % total_channels;
           int comm_idx, ctx_idx;
           get_comm_ctx(global_channel, num_ctx_per_comm, comm_idx, ctx_idx);
-          ncclGin net(dcomms[comm_idx], ctx_idx);
+          NCCL_EP_NET_CREATE_SIMPLE(comm_idx, ctx_idx, global_channel);
           for (int n = 1; n < NUM_LSA_TEAMS; n++) {
             int node_id_for_signal = node_rank >= n
                 ? node_rank - n : node_rank + NUM_LSA_TEAMS - n;

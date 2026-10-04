@@ -1,0 +1,26 @@
+{
+  "scope": "host stubs execute actual adapter; no CUDA or network execution",
+  "baseline_real_call_shape_rejected": true,
+  "candidate_strict_compile_pass": true,
+  "positive": {
+    "host_signal_cases": 36,
+    "host_wait_cases": 3,
+    "pass": true
+  },
+  "negative_host_traps": {
+    "wide-delta": -6,
+    "sentinel-delta": -6,
+    "slot-overflow": -6,
+    "wide-put": -6,
+    "bits32": -6,
+    "relaxed-read": -6
+  },
+  "adapter_sha256": "4dda99ca38d053ed026536ae8893fd0bbb5c4d11cdee65c0260e01d16769e965",
+  "nvidia_tag": "v2.30.4-1",
+  "native_source_hashes": {
+    "core.h": "7e9707e08faf1ce52d39d3b4dc2cb1c00418869c669463c81955ce13b61add18",
+    "gin_device_common.h": "7c95321d51acdb2514c5009283aae90493f3e984a8c78fce0f3d4498a2c2e0ba",
+    "gin.h": "7d1aa8ced8a3ce464587cc6259eaff63cef74170674310a6d6a9b0aa5ec69cb5",
+    "utility.h": "b96c348436cd71608b79a38f07c812cc0eeffee772a8b73b96a0565557496ff6"
+  }
+}

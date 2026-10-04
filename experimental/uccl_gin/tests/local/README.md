@@ -136,6 +136,12 @@ completion. A passing local oracle does not validate that production bookkeeping
 
 ## EFA gate
 
+The separate [HT adapter contract design](HT_ADAPTER_DESIGN.md) documents the
+native SignalAdd call shape, rail peer mapping and indexed signal limits.
+`make adapter-tests adapter-compile-fail` builds a native CUDA signal FIFO gate
+and rejects CTA signal cooperation. These new gates await their own coordinated
+validation window; the V2 speed tables measure the earlier frozen adapter.
+
 The existing network microbench now accepts `--only coop-flush`. Eight complete
 warps publish disjoint payloads with separate receiver completion slots, call
 the actual adapter flush, and overwrite sources immediately. Receiver completion
