@@ -48,20 +48,104 @@ not run on SM120.
 
 ## Paired wall-clock comparison
 
-Formal timing is pending the shared host's exclusive heavy-I/O window. The
-comparison uses the same fixture source for both builds, alternating baseline
-and candidate as ABBA. Each process runs seven rounds; the first two are warmup,
-leaving ten samples per variant/device/case. The measured interval covers kernel
-launch through production FIFO completion and consumer join. Initialization and
-buffer allocation are outside it. Median and p95 are reported in milliseconds;
-speedup is baseline median / candidate median.
+The coordinated heavy-I/O window was held for all 48 unprofiled A/B processes.
+GPU 0 and GPU 3 were reserved; GPU 1 and GPU 2 remained busy with other tenants
+in the before/after snapshots. The lock controls cooperating tasks and does not
+make the entire shared host idle.
 
-For payload cases, each group uses a synthetic `BS * 2048 * 2` byte BF16
-activation split among 32 producers. BS2048/64 groups exercises 2,048 producers,
-256 KiB each, with a 1 GiB source/destination allocation. The width follows
+Both builds use the identical fixture source (SHA256
+`68dadfd71567daaff012c7897c4363b273fcb5936e4f4cf2c10649b25333426f`),
+compiler settings and queue capacity 4,096. The original adapter has only the
+identical signal-load compilation prerequisite; its scalar flush body remains
+unchanged. `LOCAL_EXPECT_SCALAR_ADAPTER=1` selects original-count expectations
+and omits unsupported standalone instantiations in the baseline. Both arms time
+the actual adapter. Each case alternates baseline/candidate as ABBA. Each process
+runs seven rounds; the first two are warmup, leaving ten samples per
+variant/device/case.
+The measured interval covers kernel launch through FIFO completion and consumer
+join. Initialization and buffer allocation are outside it.
+
+Cells contain **median / p95 [min–max] in milliseconds**. P95 uses inclusive
+linear interpolation. Speedup is baseline median / cooperative median; values
+below 1 mean the cooperative version is slower in this fixture.
+
+### Control-only flush
+
+One full warp, 100 iterations, zero-byte payload, source-copy oracle disabled:
+
+| Physical GPU | Queues | Baseline, ms | Cooperative, ms | Speedup |
+| --- | ---: | ---: | ---: | ---: |
+| 0 | 1 | 0.722 / 0.830 [0.441–0.838] | 0.492 / 0.514 [0.449–0.520] | 1.47× |
+| 0 | 4 | 2.558 / 2.919 [2.374–3.076] | 1.288 / 1.351 [1.280–1.354] | 1.99× |
+| 0 | 32 | 22.114 / 24.282 [21.260–24.521] | 8.723 / 9.232 [8.677–9.591] | 2.54× |
+| 3 | 1 | 0.780 / 0.901 [0.747–0.922] | 0.514 / 0.528 [0.483–0.533] | 1.52× |
+| 3 | 4 | 3.047 / 3.445 [2.969–3.706] | 1.426 / 1.467 [1.395–1.468] | 2.14× |
+| 3 | 32 | 24.377 / 25.086 [23.241–25.236] | 9.792 / 10.279 [9.741–10.307] | 2.49× |
+
+### Synthetic BF16 payloads
+
+Five iterations with the real HBM source-reuse oracle. Each group uses a
+synthetic `BS * 2048 * 2` byte BF16 activation split among 32 producers.
+BS2048/64 groups exercises 2,048 producers, 256 KiB each, with a 1 GiB
+source/destination allocation per GPU. The width follows
 [Qwen3-30B-A3B's configuration](https://huggingface.co/Qwen/Qwen3-30B-A3B/raw/main/config.json).
-These fixtures load no model weights and do not measure serving concurrency or
+These fixtures load no model weights and do not measure serving requests or
 model inference. Payload timings include HBM-to-host oracle copies and checks.
+
+| Physical GPU | Warp groups | BS | Baseline, ms | Cooperative, ms | Speedup |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0 | 8 | 128 | 19.953 / 23.043 [19.427–24.121] | 21.219 / 23.534 [19.698–23.571] | 0.94× |
+| 0 | 32 | 512 | 224.347 / 261.223 [209.126–267.875] | 297.462 / 306.651 [281.344–307.863] | 0.75× |
+| 0 | 64 | 2048 | 3315.384 / 3472.658 [3059.501–3477.019] | 4146.157 / 4324.599 [3920.196–4327.141] | 0.80× |
+| 3 | 8 | 128 | 22.562 / 25.107 [20.795–26.505] | 21.024 / 22.851 [20.757–22.957] | 1.07× |
+| 3 | 32 | 512 | 269.774 / 312.056 [241.925–316.715] | 378.773 / 432.682 [333.526–434.959] | 0.71× |
+| 3 | 64 | 2048 | 4394.541 / 4757.287 [3853.849–4820.229] | 4363.989 / 4408.055 [4313.156–4425.066] | 1.01× |
+
+Control-only flush improves 1.47–2.54×. Payload results are mixed: BS512 regresses
+on both GPUs; BS2048 regresses on GPU 0 and is approximately unchanged on GPU 3.
+The local payload fixture therefore does not establish a general throughput
+improvement. The command-count and group-completion guarantees still pass.
+
+### Two-GPU high-concurrency payloads
+
+Both GPU instances run simultaneously: **64 warp groups and 2,048 producers per
+GPU, 4,096 producers total, BS2048, Q=32**, with 2 GiB of combined source/destination
+allocation. The same source-reuse oracle is enabled. Baseline/candidate ABBA
+completes eight processes and 24 positive rounds, with both exit statuses 0 for
+every simultaneous pair. Each process runs two iterations and three rounds;
+discarding its first round leaves four samples per variant/device. Compare
+within these rows; the preceding payload table uses five iterations.
+
+| Physical GPU | Baseline, ms | Cooperative, ms | Speedup |
+| --- | ---: | ---: | ---: |
+| 0 | 1643.863 / 1811.548 [1538.166–1830.749] | 1543.112 / 1624.250 [1406.099–1627.160] | 1.07× |
+| 3 | 1851.091 / 2009.429 [1624.645–2037.230] | 2024.331 / 2061.415 [1972.746–2063.462] | 0.91× |
+
+The concurrent fixture has no consistent speedup across the two GPUs. This is
+GPU communication concurrency, not HTTP request concurrency or model serving.
+All GPU jobs naturally exited, and GPU/I/O locks were released before handoff
+to the next task.
+
+## Separate CUDA timeline diagnostics
+
+Following NVIDIA's
+[Nsight Systems skill](https://github.com/NVIDIA/TensorRT-LLM/blob/fc0876cfd6c5d661f186707857a4e5bfeb12bc6f/.claude/skills/perf-nsight-systems/SKILL.md),
+Nsight Systems 2025.3.1 captured one small run per build after the unprofiled
+comparison. GPU 0, G=8, BS128, Q=32, two iterations, one round. Collection used
+`--trace=cuda --sample=none --cpuctxsw=none --kill=none`. Both targets naturally
+exit 0; `cuda_gpu_kern_sum`, `cuda_api_sum` and `cuda_gpu_mem_time_sum` all process
+successfully. The following values come directly from their CSV reports:
+
+| Diagnostic metric | Count per build | Baseline, ms | Cooperative, ms |
+| --- | ---: | ---: | ---: |
+| Producer kernel | 1 | 13.234 | 13.427 |
+| Device-to-host source copies | 512 | 1.942 | 1.894 |
+| `cudaEventSynchronize` host API time | 513, including warmup | 6.576 | 7.170 |
+
+The trace confirms the real source-copy workload remains present in both builds.
+API times and device times overlap and must not be added. These are single
+diagnostic captures, excluded from the speed tables, and do not isolate the
+cause of the larger-BS regressions.
 
 ## Network acceptance
 

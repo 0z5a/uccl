@@ -71,6 +71,13 @@ These are communication fixtures, not model inference or HTTP concurrency tests.
 `--warps 64 --batch-size 2048 --capacity 4096` exercises 2,048 producers with
 256 KiB per producer. Participation must fit FIFO capacity in shared mode.
 
+For the two-GPU high-concurrency case, launch two instances simultaneously with
+relative `--device 0` and `--device 1` under `CUDA_VISIBLE_DEVICES=0,3` on the
+validated host. Use `--warps 64 --queues 32 --batch-size 2048 --capacity 4096
+--iterations 2 --rounds 3 --check-source-reuse 1` for each. Record both exit
+statuses and logs; together they exercise 4,096 producers and 2 GiB of
+source/destination allocation. This remains communication concurrency.
+
 For a measured original-adapter comparison, compile this same fixture against
 the pinned base headers with `EXTRA_DEVFLAGS=-DLOCAL_EXPECT_SCALAR_ADAPTER=1`.
 Apply the identical signal acquire-load compilation prerequisite to both
