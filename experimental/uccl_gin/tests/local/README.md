@@ -1,5 +1,9 @@
 # Local device validation
 
+The current Thor/RTX 5080 single-device model E2E campaign is described in
+[SINGLE_DEVICE_E2E.md](SINGLE_DEVICE_E2E.md). Its high batch/request-concurrency
+gates are pending actual machine admission and execution.
+
 Build native SM120 device code and exercise the production MSCCLPP FIFO without
 an RDMA NIC, EFA, MPI, PyTorch, or NCCL. CUDA, a C++17 compiler, pthread, and
 libnuma development files are the only dependencies.

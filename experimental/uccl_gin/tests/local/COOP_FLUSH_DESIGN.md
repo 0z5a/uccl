@@ -2,6 +2,8 @@
 
 日期：2026-10-04。状态：V2 已完成真实 CUDA 编译、双卡正确性、大 BS 三臂测速与独立 GPU3 诊断。新共同 fixture 下，Original/V2 为 GPU0 1.38×、GPU3 1.47×，两个执行顺序均有收益。历史 V1 的 0.91× 保留；EFA 和模型 E2E 尚未完成。
 
+2026-10-05 用户要求 Thor/RTX 5080 分别单侧、高 B/高 C 验收。真实模型连接与文档 gate 对照见 [SINGLE_DEVICE_E2E.md](SINGLE_DEVICE_E2E.md)；两机新结果尚未运行，不混入上面的 5090 数据。
+
 本设计让一个合作组共同完成 flush：入口汇合所有成员的 prior puts，成员各自负责一组 FIFO 的 QUIET，出口汇合所有队列的完成，再允许复用 source。V2 尝试缩短 V1 的跨队列等待链，不增加 host worker，也不改变生产 proxy 的完成协议。
 
 用户提供的 `UCCL_GIN_V2_Review_And_Next_Run_2026-10-04.md` 是 review 输入。其引用的 patch 和 host-validation JSON 未随附件提供；这里实现并核验的是当前 checkout 的新 fixture，不复用该文档的测试记录或文件指纹。

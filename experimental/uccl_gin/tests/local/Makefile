@@ -15,12 +15,22 @@ DEVFLAGS := -O3 -std=c++17 -arch=sm_$(SM) -ccbin=$(CXX) --expt-relaxed-constexpr
 DEVFLAGS += $(EXTRA_DEVFLAGS)
 LIBS := -L$(CUDA_HOME)/lib64 -Xlinker=-rpath -Xlinker=$(CUDA_HOME)/lib64 $(if $(NUMA_LIBRARY_DIR),-L$(NUMA_LIBRARY_DIR)) -lnuma -lcuda
 
-.PHONY: all clean coop-tests adapter-tests adapter-compile-fail compile-fail
+.PHONY: all clean coop-tests adapter-tests adapter-compile-fail compile-fail model-tests
 all: $(BUILD_DIR)/capabilities $(BUILD_DIR)/queue_smoke
 
 coop-tests: $(BUILD_DIR)/coop_flush $(BUILD_DIR)/network_gate.o
 
 adapter-tests: $(BUILD_DIR)/adapter_signal
+
+model-tests: $(BUILD_DIR)/libmodel_transport.so
+
+# The model fixture exchanges raw tensor pointers through a C ABI, so it needs
+# no PyTorch headers, libtorch ABI, EFA/MPI or NCCL runtime.
+$(BUILD_DIR)/fifo.pic.o: $(GIN)/transport/fifo.cpp | $(BUILD_DIR)
+	$(CXX) $(HOSTFLAGS) -fPIC -MMD -MP -c $< -o $@
+
+$(BUILD_DIR)/libmodel_transport.so: model_transport.cu queue_fixture.hpp $(ROOT)/thirdparty/nccl-ep/adapter/uccl_gin_net.cuh $(BUILD_DIR)/fifo.pic.o
+	$(NVCC) $(DEVFLAGS) -Xcompiler=-fPIC -shared -I$(ROOT) -I$(NCCL_INCLUDE_DIR) -DNCCL_CHECK_CUDACC=1 -DUCCL_GIN_WITH_NCCL_GIN=1 -MMD -MP $< $(BUILD_DIR)/fifo.pic.o $(LIBS) -o $@
 
 $(BUILD_DIR)/adapter_signal: adapter_signal.cu queue_fixture.hpp $(ROOT)/thirdparty/nccl-ep/adapter/uccl_gin_net.cuh $(BUILD_DIR)/fifo.o
 	$(NVCC) $(DEVFLAGS) -I$(ROOT) -I$(NCCL_INCLUDE_DIR) -DNCCL_CHECK_CUDACC=1 -DUCCL_GIN_WITH_NCCL_GIN=1 -MMD -MP $< $(BUILD_DIR)/fifo.o $(LIBS) -o $@

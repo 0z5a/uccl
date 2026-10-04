@@ -2,6 +2,8 @@
 
 状态：本分支接通实际 HT 调用形状，CPU 合同检查通过；本分支 CUDA 编译、原生 signal gate 和完整 Hybrid 尚未验证。父分支的 V2 速度数据固定在 `2abdfdce17ab5747e136701b4fdfd2d0bd5bff43`，不作为这个 adapter 改动的性能数据。
 
+2026-10-05 单侧模型验收见 [Thor/RTX 5080 E2E](SINGLE_DEVICE_E2E.md)：全部 24 层真实 MoE 输入/输出连接实际 adapter 与 production FIFO，覆盖 B8–64/C32–128。本地源码已提供，两机尚未编译或运行；完整 vendored Hybrid 的 host bridge 缺口仍如下记录。
+
 HT 的 dispatch 实际传入 `ncclGin_SignalAdd`、Warp、None、两个 release scope 和 flags；combine 用 Thread。原 adapter 的私有替代类型不能接收这些参数。可变参数 put 也无法推导真实调用中的空初始化参数。这里按 [NVIDIA NCCL 2.30.4 gin.h](https://github.com/NVIDIA/nccl/blob/v2.30.4-1/src/include/nccl_device/gin.h) 明确实现当前 HT 使用的子集。
 
 | 入口 | 支持的合同 |
