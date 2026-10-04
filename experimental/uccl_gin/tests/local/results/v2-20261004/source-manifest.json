@@ -1,0 +1,16 @@
+{
+  "original_adapter_base": "29e7e7ca868590fb3a70bc96ebf42271983ab9b6",
+  "first_cooperative": "f77da5123a8e75fb4e9ad5525370c66c140c8056",
+  "queue_partition_candidate": "2abdfdce17ab5747e136701b4fdfd2d0bd5bff43",
+  "fixture_sha256": "7df01273853b6e8fdb49e8be47303e09eefcfdf9c5a2aa8b5d810531f7e501d6",
+  "headers": {
+    "base": "5d4483c663edfff4e4cedbfee21f04fef14884e623f733daec6396e72561da65",
+    "v1": "6caaaa76dcf8ce7d06b7357efe85dff836de9aed6858312ded57b22da33658fb",
+    "v2": "5c45a1115a2a2f7e96afe917f2e6c82d6995f8b09289240c371c105f1eff3d32"
+  },
+  "adapters": {
+    "base": "6e799aeb5bc29cc39c4f5f1557ecccade6b428e77d558a94d3a7bcf07cc18a35",
+    "v1": "1ca1ba4d63dfb7dd431b765958a859655f3b2441acc35e7073cfc63cb8b41e08",
+    "v2": "1ca1ba4d63dfb7dd431b765958a859655f3b2441acc35e7073cfc63cb8b41e08"
+  }
+}

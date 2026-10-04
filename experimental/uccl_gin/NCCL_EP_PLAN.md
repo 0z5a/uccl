@@ -61,7 +61,7 @@
 | 0-byte put + `SignalAdd{id, delta}`（LL） | delta ≤ 255 且有 payload 时可用 `put_tail_add`；纯 signal 或大 delta 用 `red_add_rel` | LL 后置 |
 | `net.waitSignal(coop, id, expected)` | 新增 device helper：`ld_acquire_sys` 自旋读 `atomic_tail_base + slot_off(id)` 直到 ≥ expected | atomic buffer 是 host-mapped、GPU 可读（外层 ep 的 hybrid 集成已用同一模式） |
 | `net.readSignal(id)` | `ld_acquire_sys(slot_ptr(id))` | |
-| `net.flush(ncclCoopWarp, acquire)` | 新增 warp-coop flush：`__activemask` 选举 lane0 → 对该 warp 用过的 lane 逐个 quiet → `__syncwarp` | 当前 `flush(coop_t)` 是 static_assert loud gap，本计划把 warp 特化补上 |
+| `net.flush(ncclCoopWarp, acquire)` | 组入口同步 → 成员按组内编号分担全部资源队列的排空 → 组出口同步 | 支持 `ncclCoopThread` 和完整 `ncclCoopWarp`；其它组类型保留静态诊断。EFA 验收入口为 `--only coop-flush` |
 | signal 的 reset/单调性 | UCCL slot 是 int64 host 内存，由我们控制 reset 时机 | Phase 0 摸清 nccl_ep 的 signal 生命周期（每 iter reset 还是单调累加） |
 | LSA（`ncclGetLsaPointer`、NVLink ld/st）、ncclComm、barrier | **完全不动**，仍走真 NCCL | UCCL 只接管网络面 |
 

@@ -1,0 +1,6 @@
+{"case": "compile", "variant": "base", "sm": 120, "exit": 0}
+{"case": "compile", "variant": "v1", "sm": 120, "exit": 0}
+{"case": "compile", "variant": "v2", "sm": 120, "exit": 0}
+{"case": "compile", "variant": "v2", "sm": 90, "exit": 0}
+{"case": "microbench-compile", "sm": 120, "exit": 0}
+{"case": "microbench-compile", "sm": 90, "exit": 0}

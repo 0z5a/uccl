@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="1600" height="1080" preserveAspectRatio="xMinYMin meet" viewBox="0 0 1600 1080" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="1600" height="1080"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-1080)" style="clip-path: url(#clip)">
+		<g transform="">
+			<text x="50" y="1012" style="font-family: Helvetica-Bold; font-size: 38px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,2024) scale(1,-1)">V1 -&gt; V2: who owns each QUIET?</text>
+			<text x="50" y="968" style="font-family: Helvetica; font-size: 24px;fill: rgb(32%,40%,48%); stroke:none;" transform="translate(0,1936) scale(1,-1)">Ownership rule: member r handles i = r + k*S &lt; Q. Every queue belongs to exactly one member.</text>
+			<rect x="50" y="755" width="480" height="180" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,96%,97%); fill-rule: evenodd;"/>
+			<text x="68" y="891" style="font-family: Helvetica-Bold; font-size: 27px;fill: rgb(32%,40%,48%); stroke:none;" transform="translate(0,1782) scale(1,-1)">Original</text>
+			<text x="68" y="846" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1692) scale(1,-1)">Each lane: sequential all-Q flush</text>
+			<text x="68" y="818" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1636) scale(1,-1)">32*Q markers per full warp</text>
+			<text x="68" y="790" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1580) scale(1,-1)">No cooperative entry / exit contract</text>
+			<rect x="560" y="755" width="480" height="180" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(94%,96%,99%); fill-rule: evenodd;"/>
+			<text x="578" y="891" style="font-family: Helvetica-Bold; font-size: 27px;fill: rgb(13%,38%,72%); stroke:none;" transform="translate(0,1782) scale(1,-1)">V1: elected member</text>
+			<text x="578" y="846" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1692) scale(1,-1)">Entry sync -&gt; rank 0 handles all Q</text>
+			<text x="578" y="818" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1636) scale(1,-1)">Q markers per full warp</text>
+			<text x="578" y="790" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1580) scale(1,-1)">Each marker ACK precedes next enqueue</text>
+			<rect x="1070" y="755" width="480" height="180" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(92%,97%,95%); fill-rule: evenodd;"/>
+			<text x="1088" y="891" style="font-family: Helvetica-Bold; font-size: 27px;fill: rgb(9%,49%,40%); stroke:none;" transform="translate(0,1782) scale(1,-1)">V2: queue partition</text>
+			<text x="1088" y="846" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1692) scale(1,-1)">Entry sync -&gt; all members split Q</text>
+			<text x="1088" y="818" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1636) scale(1,-1)">Q markers per full warp</text>
+			<text x="1088" y="790" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1580) scale(1,-1)">Exit sync waits for every assigned queue</text>
+			<text x="50" y="703" style="font-family: Helvetica-Bold; font-size: 22px;fill: rgb(9%,49%,40%); stroke:none;" transform="translate(0,1406) scale(1,-1)">V2 examples  /  arrows inside cells mean wait for ACK, then enqueue the next assigned queue</text>
+			<rect x="50" y="610" width="230" height="62" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(90%,93%,97%); fill-rule: evenodd;"/>
+			<text x="65" y="633" style="font-family: Helvetica-Bold; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1266) scale(1,-1)">Group / Q</text>
+			<rect x="280" y="610" width="235" height="62" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(90%,93%,97%); fill-rule: evenodd;"/>
+			<text x="295" y="633" style="font-family: Helvetica-Bold; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1266) scale(1,-1)">Member 0</text>
+			<rect x="515" y="610" width="235" height="62" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(90%,93%,97%); fill-rule: evenodd;"/>
+			<text x="530" y="633" style="font-family: Helvetica-Bold; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1266) scale(1,-1)">Member 1</text>
+			<rect x="750" y="610" width="235" height="62" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(90%,93%,97%); fill-rule: evenodd;"/>
+			<text x="765" y="633" style="font-family: Helvetica-Bold; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1266) scale(1,-1)">Member 2</text>
+			<rect x="985" y="610" width="280" height="62" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(90%,93%,97%); fill-rule: evenodd;"/>
+			<text x="1000" y="633" style="font-family: Helvetica-Bold; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1266) scale(1,-1)">Members 3 ... 30</text>
+			<rect x="1265" y="610" width="285" height="62" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(90%,93%,97%); fill-rule: evenodd;"/>
+			<text x="1280" y="633" style="font-family: Helvetica-Bold; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1266) scale(1,-1)">Member 31</text>
+			<rect x="50" y="540" width="230" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,98%,96%); fill-rule: evenodd;"/>
+			<text x="65" y="565" style="font-family: Helvetica; font-size: 21px;fill: rgb(9%,49%,40%); stroke:none;" transform="translate(0,1130) scale(1,-1)">Warp / 3</text>
+			<rect x="280" y="540" width="235" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,98%,96%); fill-rule: evenodd;"/>
+			<text x="295" y="565" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1130) scale(1,-1)">0</text>
+			<rect x="515" y="540" width="235" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,98%,96%); fill-rule: evenodd;"/>
+			<text x="530" y="565" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1130) scale(1,-1)">1</text>
+			<rect x="750" y="540" width="235" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,98%,96%); fill-rule: evenodd;"/>
+			<text x="765" y="565" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1130) scale(1,-1)">2</text>
+			<rect x="985" y="540" width="280" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,98%,96%); fill-rule: evenodd;"/>
+			<text x="1000" y="565" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1130) scale(1,-1)">no queue; exit sync</text>
+			<rect x="1265" y="540" width="285" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,98%,96%); fill-rule: evenodd;"/>
+			<text x="1280" y="565" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1130) scale(1,-1)">no queue; exit sync</text>
+			<rect x="50" y="470" width="230" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="65" y="495" style="font-family: Helvetica; font-size: 21px;fill: rgb(9%,49%,40%); stroke:none;" transform="translate(0,990) scale(1,-1)">Warp / 33</text>
+			<rect x="280" y="470" width="235" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="295" y="495" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,990) scale(1,-1)">0 -&gt; ACK -&gt; 32</text>
+			<rect x="515" y="470" width="235" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="530" y="495" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,990) scale(1,-1)">1</text>
+			<rect x="750" y="470" width="235" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="765" y="495" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,990) scale(1,-1)">2</text>
+			<rect x="985" y="470" width="280" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="1000" y="495" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,990) scale(1,-1)">member r: r</text>
+			<rect x="1265" y="470" width="285" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="1280" y="495" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,990) scale(1,-1)">31</text>
+			<rect x="50" y="400" width="230" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,98%,96%); fill-rule: evenodd;"/>
+			<text x="65" y="425" style="font-family: Helvetica; font-size: 21px;fill: rgb(9%,49%,40%); stroke:none;" transform="translate(0,850) scale(1,-1)">Warp / 64</text>
+			<rect x="280" y="400" width="235" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,98%,96%); fill-rule: evenodd;"/>
+			<text x="295" y="425" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,850) scale(1,-1)">0 -&gt; ACK -&gt; 32</text>
+			<rect x="515" y="400" width="235" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,98%,96%); fill-rule: evenodd;"/>
+			<text x="530" y="425" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,850) scale(1,-1)">1 -&gt; ACK -&gt; 33</text>
+			<rect x="750" y="400" width="235" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,98%,96%); fill-rule: evenodd;"/>
+			<text x="765" y="425" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,850) scale(1,-1)">2 -&gt; ACK -&gt; 34</text>
+			<rect x="985" y="400" width="280" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,98%,96%); fill-rule: evenodd;"/>
+			<text x="1000" y="425" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,850) scale(1,-1)">r -&gt; ACK -&gt; r+32</text>
+			<rect x="1265" y="400" width="285" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,98%,96%); fill-rule: evenodd;"/>
+			<text x="1280" y="425" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,850) scale(1,-1)">31 -&gt; ACK -&gt; 63</text>
+			<rect x="50" y="330" width="230" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="65" y="355" style="font-family: Helvetica; font-size: 21px;fill: rgb(9%,49%,40%); stroke:none;" transform="translate(0,710) scale(1,-1)">Thread / 64</text>
+			<rect x="280" y="330" width="235" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="295" y="355" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,710) scale(1,-1)">0, 1, ... 63 serial</text>
+			<rect x="515" y="330" width="235" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="530" y="355" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,710) scale(1,-1)">not present</text>
+			<rect x="750" y="330" width="235" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="765" y="355" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,710) scale(1,-1)">not present</text>
+			<rect x="985" y="330" width="280" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="1000" y="355" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,710) scale(1,-1)">not present</text>
+			<rect x="1265" y="330" width="285" height="67" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="1280" y="355" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,710) scale(1,-1)">not present</text>
+			<text x="50" y="292" style="font-family: Helvetica; font-size: 23px;fill: rgb(32%,40%,48%); stroke:none;" transform="translate(0,584) scale(1,-1)">Q33/Q64 do not enqueue all markers at once. Host worker count is unchanged.</text>
+			<rect x="50" y="80" width="735" height="175" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(94%,96%,99%); fill-rule: evenodd;"/>
+			<text x="70" y="212" style="font-family: Helvetica-Bold; font-size: 25px;fill: rgb(13%,38%,72%); stroke:none;" transform="translate(0,424) scale(1,-1)">Affinity control: G64 / Q32 / full warp</text>
+			<text x="70" y="168" style="font-family: Helvetica; font-size: 22px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,336) scale(1,-1)">Lane hint: one lane from each of 64 warps / queue</text>
+			<text x="70" y="139" style="font-family: Helvetica; font-size: 22px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,278) scale(1,-1)">Warp hint: all 32 lanes from each of 2 warps / queue</text>
+			<text x="70" y="110" style="font-family: Helvetica; font-size: 22px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,220) scale(1,-1)">Both: 64 WRITE producers per queue per generation</text>
+			<rect x="815" y="80" width="735" height="175" rx="12" ry="12" style="stroke: rgb(82%,68%,53%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,97%,94%); fill-rule: evenodd;"/>
+			<text x="835" y="212" style="font-family: Helvetica-Bold; font-size: 25px;fill: rgb(69%,39%,12%); stroke:none;" transform="translate(0,424) scale(1,-1)">What the next measurement separates</text>
+			<text x="835" y="168" style="font-family: Helvetica; font-size: 22px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,336) scale(1,-1)">Changed: active pollers, head contention, burst / service order</text>
+			<text x="835" y="139" style="font-family: Helvetica; font-size: 22px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,278) scale(1,-1)">Fixed: bytes, producer count, oracle, shared Q, marker count</text>
+			<text x="835" y="110" style="font-family: Helvetica; font-size: 22px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,220) scale(1,-1)">V2 is a scheduling hypothesis; speedup is not established</text>
+			<text x="50" y="34" style="font-family: Helvetica; font-size: 21px;fill: rgb(32%,40%,48%); stroke:none;" transform="translate(0,68) scale(1,-1)">Thread/Warp types: real NCCL 2.30.4. All members use the same queue array and count.</text>
+		</g>
+	</g>
+</svg>

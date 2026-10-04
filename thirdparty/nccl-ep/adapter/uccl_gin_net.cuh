@@ -1,9 +1,9 @@
 #pragma once
 //
 // UcclGinNet — drop-in replacement for ncclGin at NCCL-EP HT call sites.
-// Accepts the same extra parameters (ncclTeam world, ncclWindow_t win,
-// remote/local action templates, coop, scopes, optFlags) but ignores
-// everything except dst, offsets, bytes, signal id, and delta.
+// Put accepts the same extra parameters (team, windows, actions, coop, scopes,
+// optFlags) but uses only dst, offsets, bytes, signal id, and delta.
+// Flush preserves thread/full-warp cooperation and acquire completion ordering.
 //
 // The ONLY code change needed in hybrid_ep.cuh:
 //   #ifdef NCCL_EP_USE_UCCL_GIN
@@ -95,10 +95,11 @@ struct UcclGinNet {
   template <typename Coop>
   __device__ __forceinline__
   void waitSignal(Coop /*coop*/, int signal_id, uint64_t expected) const {
-    volatile int64_t* slot = reinterpret_cast<volatile int64_t*>(
+    int64_t* slot = reinterpret_cast<int64_t*>(
         gin.res.atomic_tail_base +
         static_cast<uint64_t>(signal_id) * sizeof(int64_t));
-    while (__ldg(reinterpret_cast<const int64_t*>(slot)) <
+    while (mscclpp::atomicLoad<int64_t, mscclpp::scopeSystem>(
+               slot, mscclpp::memoryOrderAcquire) <
            static_cast<int64_t>(expected)) {
       __nanosleep(64);
     }
@@ -107,18 +108,20 @@ struct UcclGinNet {
   // -- readSignal
   __device__ __forceinline__
   uint64_t readSignal(int signal_id) const {
-    volatile int64_t* slot = reinterpret_cast<volatile int64_t*>(
+    int64_t* slot = reinterpret_cast<int64_t*>(
         gin.res.atomic_tail_base +
         static_cast<uint64_t>(signal_id) * sizeof(int64_t));
-    return static_cast<uint64_t>(__ldg(reinterpret_cast<const int64_t*>(slot)));
+    return static_cast<uint64_t>(
+        mscclpp::atomicLoad<int64_t, mscclpp::scopeSystem>(
+            slot, mscclpp::memoryOrderAcquire));
   }
 
   // -- flush: NCCL-EP passes (ncclCoopWarp(), cuda::memory_order_acquire)
   template <typename Coop>
-  __device__ __forceinline__
-  void flush(Coop /*coop*/, cuda::memory_order /*ord*/ =
-             cuda::memory_order_acquire) const {
-    gin.flush();
+  __device__ __forceinline__ void flush(
+      Coop coop, cuda::memory_order ord = cuda::memory_order_acquire) const {
+    if (ord != cuda::memory_order_acquire) UCCL_GIN_TRAP();
+    gin.flush(coop);
   }
 };
 

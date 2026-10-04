@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="1600" height="1050" preserveAspectRatio="xMinYMin meet" viewBox="0 0 1600 1050" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="1600" height="1050"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-1050)" style="clip-path: url(#clip)">
+		<g transform="">
+			<text x="50" y="982" style="font-family: Helvetica-Bold; font-size: 38px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1964) scale(1,-1)">UCCL-GIN V2: cooperative source completion</text>
+			<text x="50" y="938" style="font-family: Helvetica; font-size: 24px;fill: rgb(32%,40%,48%); stroke:none;" transform="translate(0,1876) scale(1,-1)">Device queue ownership changes; the completion protocol stays in charge.</text>
+			<rect x="40" y="750" width="1520" height="165" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(94%,96%,99%); fill-rule: evenodd;"/>
+			<text x="58" y="887" style="font-family: Helvetica-Bold; font-size: 18px;fill: rgb(13%,38%,72%); stroke:none;" transform="translate(0,1774) scale(1,-1)">GPU / actual ncclCoopWarp or ncclCoopThread</text>
+			<rect x="60" y="775" width="215" height="85" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="74" y="821" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1642) scale(1,-1)">Publish prior puts</text>
+			<text x="74" y="793" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1586) scale(1,-1)">released source</text>
+			<rect x="310" y="775" width="190" height="85" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="324" y="821" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1642) scale(1,-1)">Adapter</text>
+			<text x="324" y="793" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1586) scale(1,-1)">acquire guard</text>
+			<rect x="540" y="775" width="175" height="85" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="554" y="821" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1642) scale(1,-1)">Entry sync</text>
+			<text x="554" y="793" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1586) scale(1,-1)">all members</text>
+			<rect x="755" y="775" width="245" height="85" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="769" y="821" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1642) scale(1,-1)">Partition all queues</text>
+			<text x="769" y="793" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1586) scale(1,-1)">r, r+S, r+2S, ...</text>
+			<rect x="1040" y="775" width="185" height="85" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="1054" y="821" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1642) scale(1,-1)">Exit sync</text>
+			<text x="1054" y="793" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1586) scale(1,-1)">all members</text>
+			<rect x="1265" y="775" width="275" height="85" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="1279" y="821" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1642) scale(1,-1)">Reuse source</text>
+			<text x="1279" y="793" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,1586) scale(1,-1)">after all queue ACKs</text>
+			<path d="M 275,818 L 310,818 Z" style="stroke: rgb(13%,38%,72%); stroke-linecap: butt; stroke-width: 3;"/>
+			<polygon points="310 818, 298 812, 298 824" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(13%,38%,72%); fill-rule: evenodd;"/>
+			<path d="M 500,818 L 540,818 Z" style="stroke: rgb(13%,38%,72%); stroke-linecap: butt; stroke-width: 3;"/>
+			<polygon points="540 818, 528 812, 528 824" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(13%,38%,72%); fill-rule: evenodd;"/>
+			<path d="M 715,818 L 755,818 Z" style="stroke: rgb(13%,38%,72%); stroke-linecap: butt; stroke-width: 3;"/>
+			<polygon points="755 818, 743 812, 743 824" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(13%,38%,72%); fill-rule: evenodd;"/>
+			<path d="M 1000,818 L 1040,818 Z" style="stroke: rgb(13%,38%,72%); stroke-linecap: butt; stroke-width: 3;"/>
+			<polygon points="1040 818, 1028 812, 1028 824" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(13%,38%,72%); fill-rule: evenodd;"/>
+			<path d="M 1225,818 L 1265,818 Z" style="stroke: rgb(13%,38%,72%); stroke-linecap: butt; stroke-width: 3;"/>
+			<polygon points="1265 818, 1253 812, 1253 824" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(13%,38%,72%); fill-rule: evenodd;"/>
+			<rect x="585" y="595" width="455" height="115" rx="12" ry="12" style="stroke: rgb(63%,80%,74%); stroke-linecap: butt; stroke-width: 2; fill: rgb(92%,97%,95%); fill-rule: evenodd;"/>
+			<text x="605" y="670" style="font-family: Helvetica; font-size: 22px;fill: rgb(9%,49%,40%); stroke:none;" transform="translate(0,1340) scale(1,-1)">Production FIFO array</text>
+			<text x="605" y="641" style="font-family: Helvetica; font-size: 22px;fill: rgb(9%,49%,40%); stroke:none;" transform="translate(0,1282) scale(1,-1)">WRITE refs + ordered QUIET markers</text>
+			<text x="605" y="612" style="font-family: Helvetica; font-size: 22px;fill: rgb(9%,49%,40%); stroke:none;" transform="translate(0,1224) scale(1,-1)">Member waits for its marker retirement</text>
+			<path d="M 810,775 L 810,710 Z" style="stroke: rgb(9%,49%,40%); stroke-linecap: butt; stroke-width: 3;"/>
+			<polygon points="810 710, 804 722, 816 722" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(9%,49%,40%); fill-rule: evenodd;"/>
+			<path d="M 975,710 L 975,775 Z" style="stroke: rgb(9%,49%,40%); stroke-linecap: butt; stroke-width: 3;"/>
+			<polygon points="975 775, 981 763, 969 763" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(9%,49%,40%); fill-rule: evenodd;"/>
+			<text x="725" y="729" style="font-family: Helvetica; font-size: 18px;fill: rgb(9%,49%,40%); stroke:none;" transform="translate(0,1458) scale(1,-1)">publish</text>
+			<text x="1000" y="725" style="font-family: Helvetica; font-size: 18px;fill: rgb(9%,49%,40%); stroke:none;" transform="translate(0,1450) scale(1,-1)">ACK acquire</text>
+			<rect x="40" y="160" width="720" height="370" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,97%,99%); fill-rule: evenodd;"/>
+			<text x="62" y="488" style="font-family: Helvetica-Bold; font-size: 22px;fill: rgb(13%,38%,72%); stroke:none;" transform="translate(0,976) scale(1,-1)">LOCAL ORACLE  /  V1 + V2 validated on two RTX 5090s</text>
+			<rect x="65" y="350" width="240" height="105" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="81" y="417" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,834) scale(1,-1)">One worker per GPU</text>
+			<text x="81" y="389" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,778) scale(1,-1)">FIFO index scan</text>
+			<text x="81" y="361" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,722) scale(1,-1)">one item / FIFO / pass</text>
+			<rect x="345" y="350" width="385" height="105" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="360" y="417" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,834) scale(1,-1)">WRITE: HBM -&gt; pinned host</text>
+			<text x="360" y="389" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,778) scale(1,-1)">copy + event wait + full pattern</text>
+			<text x="360" y="361" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,722) scale(1,-1)">preserve every producer / generation</text>
+			<path d="M 305,404 L 345,404 Z" style="stroke: rgb(13%,38%,72%); stroke-linecap: butt; stroke-width: 3;"/>
+			<polygon points="345 404, 333 398, 333 410" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(13%,38%,72%); fill-rule: evenodd;"/>
+			<rect x="345" y="207" width="385" height="95" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="360" y="263" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,526) scale(1,-1)">WRITE pop after copy / check</text>
+			<text x="360" y="235" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,470) scale(1,-1)">QUIET pop after optional ACK delay</text>
+			<path d="M 537,350 L 537,302 Z" style="stroke: rgb(13%,38%,72%); stroke-linecap: butt; stroke-width: 3;"/>
+			<polygon points="537 302, 531 314, 543 314" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(13%,38%,72%); fill-rule: evenodd;"/>
+			<text x="64" y="242" style="font-family: Helvetica; font-size: 20px;fill: rgb(32%,40%,48%); stroke:none;" transform="translate(0,484) scale(1,-1)">No communicator</text>
+			<text x="64" y="215" style="font-family: Helvetica; font-size: 20px;fill: rgb(32%,40%,48%); stroke:none;" transform="translate(0,430) scale(1,-1)">No network transfer</text>
+			<path d="M 670,595 L 670,564 Z" style="stroke: rgb(13%,38%,72%); stroke-linecap: butt; stroke-width: 3;"/>
+			<path d="M 670,564 L 185,564 Z" style="stroke: rgb(13%,38%,72%); stroke-linecap: butt; stroke-width: 3;"/>
+			<path d="M 185,564 L 185,530 Z" style="stroke: rgb(13%,38%,72%); stroke-linecap: butt; stroke-width: 3;"/>
+			<polygon points="185 530, 179 542, 191 542" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(13%,38%,72%); fill-rule: evenodd;"/>
+			<rect x="800" y="160" width="760" height="370" rx="12" ry="12" style="stroke: rgb(82%,68%,53%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,97%,94%); fill-rule: evenodd; stroke-dasharray: 7, 5;"/>
+			<text x="822" y="488" style="font-family: Helvetica-Bold; font-size: 22px;fill: rgb(69%,39%,12%); stroke:none;" transform="translate(0,976) scale(1,-1)">PRODUCTION EFA PROXY  /  inspected; network not run</text>
+			<rect x="825" y="350" width="305" height="105" rx="12" ry="12" style="stroke: rgb(82%,68%,53%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="841" y="418" style="font-family: Helvetica; font-size: 20px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,836) scale(1,-1)">WRITE: collect + slot pop</text>
+			<text x="841" y="391" style="font-family: Helvetica; font-size: 20px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,782) scale(1,-1)">post network operation</text>
+			<text x="841" y="364" style="font-family: Helvetica; font-size: 20px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,728) scale(1,-1)">pop does not finish source use</text>
+			<rect x="1170" y="350" width="365" height="105" rx="12" ry="12" style="stroke: rgb(82%,68%,53%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="1186" y="417" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,834) scale(1,-1)">CQ completion</text>
+			<text x="1186" y="389" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,778) scale(1,-1)">pending ordered retirement</text>
+			<text x="1186" y="361" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,722) scale(1,-1)">QUIET limited by proxy context</text>
+			<path d="M 1130,404 L 1170,404 Z" style="stroke: rgb(69%,39%,12%); stroke-linecap: butt; stroke-width: 3; stroke-dasharray: 7, 5;"/>
+			<polygon points="1170 404, 1158 398, 1158 410" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(69%,39%,12%); fill-rule: evenodd;"/>
+			<rect x="1010" y="207" width="450" height="95" rx="12" ry="12" style="stroke: rgb(82%,68%,53%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="1026" y="263" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,526) scale(1,-1)">QUIET slot retained until completion</text>
+			<text x="1026" y="235" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,470) scale(1,-1)">then pop / publish local completion</text>
+			<path d="M 1350,350 L 1350,302 Z" style="stroke: rgb(69%,39%,12%); stroke-linecap: butt; stroke-width: 3; stroke-dasharray: 7, 5;"/>
+			<polygon points="1350 302, 1344 314, 1356 314" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(69%,39%,12%); fill-rule: evenodd;"/>
+			<path d="M 965,595 L 965,564 Z" style="stroke: rgb(69%,39%,12%); stroke-linecap: butt; stroke-width: 3; stroke-dasharray: 7, 5;"/>
+			<path d="M 965,564 L 975,564 Z" style="stroke: rgb(69%,39%,12%); stroke-linecap: butt; stroke-width: 3; stroke-dasharray: 7, 5;"/>
+			<path d="M 975,564 L 975,530 Z" style="stroke: rgb(69%,39%,12%); stroke-linecap: butt; stroke-width: 3; stroke-dasharray: 7, 5;"/>
+			<polygon points="975 530, 969 542, 981 542" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(69%,39%,12%); fill-rule: evenodd;"/>
+			<text x="822" y="178" style="font-family: Helvetica; font-size: 19px;fill: rgb(69%,39%,12%); stroke:none;" transform="translate(0,356) scale(1,-1)">Receiver payload + signal visibility: separate acceptance</text>
+			<rect x="40" y="35" width="1520" height="90" rx="12" ry="12" style="stroke: rgb(84%,88%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(96%,97%,98%); fill-rule: evenodd;"/>
+			<text x="62" y="84" style="font-family: Helvetica; font-size: 22px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,168) scale(1,-1)">Source-lifetime chain: prior puts -&gt; entry sync -&gt; ordered QUIET -&gt; ACK acquire -&gt; exit sync -&gt; reuse.</text>
+			<text x="62" y="55" style="font-family: Helvetica; font-size: 22px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,110) scale(1,-1)">A warp barrier alone is not host/network completion. The local oracle does not validate EFA CQ bookkeeping.</text>
+		</g>
+	</g>
+</svg>
