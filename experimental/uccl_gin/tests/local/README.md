@@ -77,6 +77,18 @@ Apply the identical signal acquire-load compilation prerequisite to both
 adapters. The baseline keeps the original scalar flush body and must observe
 `warps * 32 * iterations * queues` QUIETs. Keep separate baseline build outputs.
 
+Optional CUDA timeline diagnostics follow NVIDIA's
+[Nsight Systems skill](https://github.com/NVIDIA/TensorRT-LLM/blob/fc0876cfd6c5d661f186707857a4e5bfeb12bc6f/.claude/skills/perf-nsight-systems/SKILL.md).
+Collect these separately from the unprofiled speed comparison:
+
+```sh
+nsys profile --trace=cuda --sample=none --cpuctxsw=none --kill=none \
+  -o coop_flush_diagnostic "$LOCAL_BIN/coop_flush" \
+  --warps 8 --queues 32 --batch-size 128 --iterations 2 --rounds 1
+nsys stats -r cuda_gpu_kern_sum,cuda_api_sum,cuda_gpu_mem_time_sum \
+  coop_flush_diagnostic.nsys-rep
+```
+
 ## EFA gate
 
 The existing network microbench now accepts `--only coop-flush`. Eight complete

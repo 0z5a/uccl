@@ -667,9 +667,8 @@ int main(int argc, char** argv) {
   {
     bool all_ok = true;
     bool const run_coop_flush =
-        args.run_uccl &&
-        (args.only == "coop-flush" ||
-         (UCCL_GIN_WITH_NCCL_GIN && args.only == "all"));
+        args.run_uccl && (args.only == "coop-flush" ||
+                          (UCCL_GIN_WITH_NCCL_GIN && args.only == "all"));
     // red_add counter-only test (no payload, size-independent)
     {
       int a_ok = 1;
