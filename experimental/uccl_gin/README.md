@@ -173,3 +173,9 @@ ctx.close()
 - [UCCL EFA Programming Guide](https://uccl-project.github.io/posts/efa-programming/)
 - [NCCL Device API](https://github.com/NVIDIA/nccl)
 - [DeepEP V2](https://github.com/deepseek-ai/DeepEP)
+
+# SM120 local validation
+
+Native SM120 device compilation and the production GPU-to-host FIFO can be
+validated without a network context. See [local device tests](tests/local/README.md)
+for the independent CUDA/libnuma target, two-GPU runs, and the separate EFA gate.
