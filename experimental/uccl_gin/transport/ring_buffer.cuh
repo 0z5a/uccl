@@ -3,13 +3,15 @@
 
 #include "common.hpp"
 #include "util/gpu_rt.h"
-#include <infiniband/verbs.h>
 #include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <stdexcept>
 #include <vector>
+
+struct ibv_qp;
+struct ibv_mr;
 
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
