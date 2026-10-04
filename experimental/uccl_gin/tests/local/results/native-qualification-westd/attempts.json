@@ -1,6 +1,6 @@
 {
   "machine": "supplemental RTX5090 westd",
-  "scope": "actual native compilation attempts only; no GPU correctness/model/speed measurement",
+  "scope": "r1-r4 actual failed builds; all had zero GPU test processes; later successful r5 is recorded separately",
   "attempts": [
     {
       "attempt": 1,
@@ -51,5 +51,14 @@
     "archive_sha256": "fd4c018d401f4c5f5690481dc9764b40cde39e7b07640344f05ac9b6ce68d040",
     "boot_id": "18dbe202-804d-4276-8357-baf55f7d79f7"
   },
-  "pending_fix": "add ROOT and nccl-ep/include to local HTFLAGS; next repair build NOT_RUN"
+  "subsequent_success": {
+    "source_commit": "3e9ea407bae317abec1c2e36f0ac6281ec23b344",
+    "evidence": "r5/validation-summary.json",
+    "controller_ssh_natural_exit": 0,
+    "make_natural_exit": 0,
+    "GPU_test_processes": 14,
+    "native_ht_rounds": 70,
+    "full_model_tested": false,
+    "formal_timing": false
+  }
 }
