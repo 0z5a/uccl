@@ -1,0 +1,39 @@
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+{"test":"coop_flush","device":0,"via":"adapter","group":"warp","groups":64,"queues":32,"shared":true,"iterations":2,"bytes":262144,"batch_size":2048,"hidden_size":2048,"capacity":4096,"round":0,"writes":4096,"quiet":4096,"source_reuse_checked":true,"elapsed_ms":1456.346,"channel_hint":"lane","num_lanes":1,"delay_us":0,"delay_queue":31,"consumer_diagnostics":false,"callback_ns":0,"copy_event_submit_ns":0,"event_sync_ns":0,"pattern_check_ns":0,"between_callbacks_ns":0,"pass":true}
+{"test":"coop_flush","device":0,"via":"adapter","group":"warp","groups":64,"queues":32,"shared":true,"iterations":2,"bytes":262144,"batch_size":2048,"hidden_size":2048,"capacity":4096,"round":1,"writes":4096,"quiet":4096,"source_reuse_checked":true,"elapsed_ms":1516.277,"channel_hint":"lane","num_lanes":1,"delay_us":0,"delay_queue":31,"consumer_diagnostics":false,"callback_ns":0,"copy_event_submit_ns":0,"event_sync_ns":0,"pattern_check_ns":0,"between_callbacks_ns":0,"pass":true}
+{"test":"coop_flush","device":0,"via":"adapter","group":"warp","groups":64,"queues":32,"shared":true,"iterations":2,"bytes":262144,"batch_size":2048,"hidden_size":2048,"capacity":4096,"round":2,"writes":4096,"quiet":4096,"source_reuse_checked":true,"elapsed_ms":1678.612,"channel_hint":"lane","num_lanes":1,"delay_us":0,"delay_queue":31,"consumer_diagnostics":false,"callback_ns":0,"copy_event_submit_ns":0,"event_sync_ns":0,"pattern_check_ns":0,"between_callbacks_ns":0,"pass":true}
+{"test":"coop_flush","device":0,"via":"adapter","group":"warp","groups":64,"queues":32,"shared":true,"iterations":2,"bytes":262144,"batch_size":2048,"hidden_size":2048,"capacity":4096,"round":3,"writes":4096,"quiet":4096,"source_reuse_checked":true,"elapsed_ms":1435.736,"channel_hint":"lane","num_lanes":1,"delay_us":0,"delay_queue":31,"consumer_diagnostics":false,"callback_ns":0,"copy_event_submit_ns":0,"event_sync_ns":0,"pattern_check_ns":0,"between_callbacks_ns":0,"pass":true}
+{"test":"coop_flush","device":0,"via":"adapter","group":"warp","groups":64,"queues":32,"shared":true,"iterations":2,"bytes":262144,"batch_size":2048,"hidden_size":2048,"capacity":4096,"round":4,"writes":4096,"quiet":4096,"source_reuse_checked":true,"elapsed_ms":1437.939,"channel_hint":"lane","num_lanes":1,"delay_us":0,"delay_queue":31,"consumer_diagnostics":false,"callback_ns":0,"copy_event_submit_ns":0,"event_sync_ns":0,"pattern_check_ns":0,"between_callbacks_ns":0,"pass":true}
+{"test":"coop_flush","device":0,"via":"adapter","group":"warp","groups":64,"queues":32,"shared":true,"iterations":2,"bytes":262144,"batch_size":2048,"hidden_size":2048,"capacity":4096,"round":5,"writes":4096,"quiet":4096,"source_reuse_checked":true,"elapsed_ms":1459.197,"channel_hint":"lane","num_lanes":1,"delay_us":0,"delay_queue":31,"consumer_diagnostics":false,"callback_ns":0,"copy_event_submit_ns":0,"event_sync_ns":0,"pattern_check_ns":0,"between_callbacks_ns":0,"pass":true}
+{"test":"coop_flush","device":0,"via":"adapter","group":"warp","groups":64,"queues":32,"shared":true,"iterations":2,"bytes":262144,"batch_size":2048,"hidden_size":2048,"capacity":4096,"round":6,"writes":4096,"quiet":4096,"source_reuse_checked":true,"elapsed_ms":1747.158,"channel_hint":"lane","num_lanes":1,"delay_us":0,"delay_queue":31,"consumer_diagnostics":false,"callback_ns":0,"copy_event_submit_ns":0,"event_sync_ns":0,"pattern_check_ns":0,"between_callbacks_ns":0,"pass":true}

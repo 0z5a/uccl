@@ -1,0 +1,14 @@
+{
+  "base": {
+    "fixture": "7df01273853b6e8fdb49e8be47303e09eefcfdf9c5a2aa8b5d810531f7e501d6",
+    "binary": "031bc210dda254996a886985b5e74a6b0255fbc1a2521a379599d9495fec6a5e"
+  },
+  "v1": {
+    "fixture": "7df01273853b6e8fdb49e8be47303e09eefcfdf9c5a2aa8b5d810531f7e501d6",
+    "binary": "aa6375eee7a0ad1cf31b204b10e5e05da9a9bca9d9acb57fa73bbee2768908c6"
+  },
+  "v2": {
+    "fixture": "7df01273853b6e8fdb49e8be47303e09eefcfdf9c5a2aa8b5d810531f7e501d6",
+    "binary": "7706541456907da06ee616485b781ad0e7fce5ad58c4f503cb2d55ec3b51d7ac"
+  }
+}

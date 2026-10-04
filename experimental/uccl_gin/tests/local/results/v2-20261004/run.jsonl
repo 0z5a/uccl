@@ -1,0 +1,58 @@
+{"case": "correct-0-adapter-q1", "exit": 0}
+{"case": "correct-0-adapter-q3", "exit": 0}
+{"case": "correct-0-adapter-q4", "exit": 0}
+{"case": "correct-0-adapter-q32", "exit": 0}
+{"case": "correct-0-adapter-q33", "exit": 0}
+{"case": "correct-0-adapter-q64", "exit": 0}
+{"case": "correct-0-adapter-g4-shared0", "exit": 0}
+{"case": "correct-0-adapter-g4-shared1", "exit": 0}
+{"case": "correct-0-adapter-g8-shared0", "exit": 0}
+{"case": "correct-0-adapter-g8-shared1", "exit": 0}
+{"case": "correct-0-adapter-thread", "exit": 0}
+{"case": "correct-0-standalone-q1", "exit": 0}
+{"case": "correct-0-standalone-q3", "exit": 0}
+{"case": "correct-0-standalone-q4", "exit": 0}
+{"case": "correct-0-standalone-q32", "exit": 0}
+{"case": "correct-0-standalone-q33", "exit": 0}
+{"case": "correct-0-standalone-q64", "exit": 0}
+{"case": "correct-0-standalone-g4-shared0", "exit": 0}
+{"case": "correct-0-standalone-g4-shared1", "exit": 0}
+{"case": "correct-0-standalone-g8-shared0", "exit": 0}
+{"case": "correct-0-standalone-g8-shared1", "exit": 0}
+{"case": "correct-0-standalone-thread", "exit": 0}
+{"case": "correct-0-order", "exit": 0}
+{"case": "correct-1-adapter-q1", "exit": 0}
+{"case": "correct-1-adapter-q3", "exit": 0}
+{"case": "correct-1-adapter-q4", "exit": 0}
+{"case": "correct-1-adapter-q32", "exit": 0}
+{"case": "correct-1-adapter-q33", "exit": 0}
+{"case": "correct-1-adapter-q64", "exit": 0}
+{"case": "correct-1-adapter-g4-shared0", "exit": 0}
+{"case": "correct-1-adapter-g4-shared1", "exit": 0}
+{"case": "correct-1-adapter-g8-shared0", "exit": 0}
+{"case": "correct-1-adapter-g8-shared1", "exit": 0}
+{"case": "correct-1-adapter-thread", "exit": 0}
+{"case": "correct-1-standalone-q1", "exit": 0}
+{"case": "correct-1-standalone-q3", "exit": 0}
+{"case": "correct-1-standalone-q4", "exit": 0}
+{"case": "correct-1-standalone-q32", "exit": 0}
+{"case": "correct-1-standalone-q33", "exit": 0}
+{"case": "correct-1-standalone-q64", "exit": 0}
+{"case": "correct-1-standalone-g4-shared0", "exit": 0}
+{"case": "correct-1-standalone-g4-shared1", "exit": 0}
+{"case": "correct-1-standalone-g8-shared0", "exit": 0}
+{"case": "correct-1-standalone-g8-shared1", "exit": 0}
+{"case": "correct-1-standalone-thread", "exit": 0}
+{"case": "correct-1-order", "exit": 0}
+{"case": "bench-0-base", "exits": [0, 0]}
+{"case": "bench-0-v1", "exits": [0, 0]}
+{"case": "bench-0-v2", "exits": [0, 0]}
+{"case": "bench-1-v2", "exits": [0, 0]}
+{"case": "bench-1-v1", "exits": [0, 0]}
+{"case": "bench-1-base", "exits": [0, 0]}
+{"case": "diagnose-v1", "exit": 0}
+{"case": "diagnose-v2", "exit": 0}
+{"case": "profile-v1", "exit": 0}
+{"case": "profile-v1-stats", "exit": 0}
+{"case": "profile-v2", "exit": 0}
+{"case": "profile-v2-stats", "exit": 0}

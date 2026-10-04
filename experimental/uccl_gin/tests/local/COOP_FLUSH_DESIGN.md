@@ -1,6 +1,6 @@
 # UCCL-GIN V2：合作组 flush 的队列分工与验证设计
 
-日期：2026-10-04。状态：生产候选已实现；本轮诊断 fixture 与 host 检查已完成，新的 CUDA 编译和 GPU 测量尚未执行。历史 0.91× 仍然保留，不能写成已修复。
+日期：2026-10-04。状态：V2 已完成真实 CUDA 编译、双卡正确性、大 BS 三臂测速与独立 GPU3 诊断。新共同 fixture 下，Original/V2 为 GPU0 1.38×、GPU3 1.47×，两个执行顺序均有收益。历史 V1 的 0.91× 保留；EFA 和模型 E2E 尚未完成。
 
 本设计让一个合作组共同完成 flush：入口汇合所有成员的 prior puts，成员各自负责一组 FIFO 的 QUIET，出口汇合所有队列的完成，再允许复用 source。V2 尝试缩短 V1 的跨队列等待链，不增加 host worker，也不改变生产 proxy 的完成协议。
 
@@ -25,7 +25,7 @@ Original→V1 同时改变命令数、同步、活跃轮询者和提交时序；
 | 0 | 1643.863 / 1811.548 | 1543.112 / 1624.250 | 1.07× | 4 |
 | 3 | 1851.091 / 2009.429 | 2024.331 / 2061.415 | 0.91× | 4 |
 
-GPU3 两个独立配对 block 的中位速度比分别是 0.8448×、0.9792×，两者都回退。尚无证据把它归为方向反转或单纯噪声。原始版本、样本和其他大 BS 回退见 [速度结果](COOP_FLUSH_RESULTS.md)。历史已测 V1 固定为 `f77da5123a8e75fb4e9ad5525370c66c140c8056`；Original 固定为 `29e7e7ca868590fb3a70bc96ebf42271983ab9b6`。
+GPU3 两个历史配对 block 的中位速度比分别是 0.8448×、0.9792×，两者都回退。原始版本、样本和其他大 BS 回退见 [速度结果](COOP_FLUSH_RESULTS.md)。历史已测 V1 固定为 `f77da5123a8e75fb4e9ad5525370c66c140c8056`；Original 固定为 `29e7e7ca868590fb3a70bc96ebf42271983ab9b6`。新 V2 campaign 的共同 fixture 与采样方案不同，下面用它自己的 Original/V1/V2 对照计算速度比。
 
 ## 2. 架构关系与完成链
 
@@ -76,7 +76,7 @@ for (uint32_t i = coop.thread_rank(); i < res.num_queues;
 coop.sync();
 ```
 
-沿用真实 NCCL `ncclCoopThread` / `ncclCoopWarp` 和类型限制；scalar `flush()`、FIFO/proxy、adapter acquire guard 均保留原实现。本轮只继续改测试与设计说明。
+沿用真实 NCCL `ncclCoopThread` / `ncclCoopWarp` 和类型限制；scalar `flush()`、FIFO/proxy、adapter acquire guard 均保留原实现。实测代码固定为 `2abdfdce17ab5747e136701b4fdfd2d0bd5bff43`；本次结果提交没有再改生产代码或 fixture。
 
 ![Figure 2：版本差异、队列分工与路由对照](figures/coop_flush_queue_partition.svg)
 
@@ -84,7 +84,7 @@ coop.sync();
 
 完成链成立需要以下前提：所有成员到达同一次 collective；组内 queue 数组、顺序和数量一致；数组覆盖成员 prior puts 使用的全部队列；资源/source 生命周期有效且 payload 已满足必要 release；QUIET retirement 真正表示其覆盖传输的本地消费完成。
 
-V2 可以让不同成员的首条 marker 更早可见，是否缩短关键路径取决于 FIFO 排队、host 扫描、copy/event/check 和生产 `quiet_inflight`。它不是“32 倍并行网络服务”。若后续实测表明 Q>S 的第二步仍明显串行化，再研究分离 enqueue/wait，并先证明 slot ownership 与任意 Q 的生命周期。
+V2 可以让不同成员的首条 marker 更早可见。本次本地大 BS 对照确实缩短了 kernel 时间，但网络关键路径还取决于生产 `quiet_inflight` 等限制。QUIET 命令减少 32 倍不表示网络服务并行 32 倍。Q>S 的第二步仍串行等待前一条 ACK；只有后续 trace 显示它成为瓶颈，才继续研究分离 enqueue/wait，并先证明 slot ownership 与任意 Q 的生命周期。
 
 ## 4. 本轮 fixture 迭代
 
@@ -119,17 +119,17 @@ private 模式下，每条队列在人工延迟**之后、ACK 之前**检查组�
 | --- | --- | --- |
 | 实际路由函数与新 host oracle 的 C++ 对照 | Pass | Q1–64、全部合法 N、7 种 group 数、shared/private、Thread 与两种 Warp hint；11,760 配置、8,699,600 producer 路由 |
 | 实际 JSON printf 片段 | Pass | `clang++ -Wformat=2 -Werror=format` 与 JSON 解析；输入为显式合成值，未产生 GPU 测量 |
-| 更新后的私有执行脚本语法 | Pass | Python compile；尚未在远端执行 |
+| 更新后的私有执行脚本语法 | Pass | Python compile；本轮远端执行也已自然完成 |
 | 执行矩阵预演 | Pass | subprocess stub；62 workload 调用、2 stats 调用；无重复 CLI flag，4 个 warp-affinity 槽位覆盖 N1/N4；未执行 binary |
-| 三臂 SM120、V2 SM90 / microbench / CTA rejection | Pending | 需要正式协调窗口；SM90 计划只编译 |
-| 新延迟 ACK / 路由 GPU 正确性 | Not run | 44 个 positive 进程×2 round，2 个独立 order trap |
-| 三臂双卡 G64/BS2048 速度 | Not run | ABC/CBA，12 进程、84 round，完整 oracle |
-| GPU3 host-stage 与 Nsight 目标诊断 | Not run | V1/V2 各一个独立 host-stage run，再各一个独立 profile |
+| 三臂 SM120、V2 SM90 / microbench / CTA rejection | Pass | 6 个编译记录全 0；SM90 只编译，未运行；网络 TU 未 link/run |
+| 新延迟 ACK / 路由 GPU 正确性 | Pass | 44 个 positive 进程×2 round，2 个独立预期 order trap；两卡均通过 |
+| 三臂双卡 G64/BS2048 速度 | Pass | ABC/CBA，12 进程、84 round，完整 oracle；60 个暖观测 |
+| GPU3 host-stage 与 Nsight 目标诊断 | Pass | V1/V2 各一个独立 host-stage run、一个独立 profile；两次 stats 均成功 |
 | EFA、完整 dispatch/combine、真实模型并发 | Not run | 本地 fixture 无网络，也未加载模型 |
 
 主速度场景固定：每 GPU G64/Q32、BS2048、hidden2048、每 WRITE 256 KiB、两次迭代；shared=1、capacity4096、lane hint、N=1、delay=0、diagnostics=0、oracle=1。两个 GPU 实例同时启动，分别记录自然退出和日志。
 
-每 GPU/round 的推导验收值如下；表中不是新实测：
+每 GPU/round 的源码推导验收值如下；本轮 oracle 已核验总量及逐 FIFO 计数：
 
 | 指标 | Original | V1 | V2 |
 | --- | ---: | ---: | ---: |
@@ -139,14 +139,22 @@ private 模式下，每条队列在人工延迟**之后、ACK 之前**检查组�
 
 每臂每卡运行 2 个独立进程，每进程 7 round 丢弃前 2，得到 10 个暖观测，而不是 10 个独立实验。分别报告 ABC、CBA 与 pooled median/p95/min/max，以及 Original/V2 和 V1/V2。p95 是 n=10 的描述值，不作显著性结论；两卡速度比不平均成总体吞吐。
 
-| Campaign / hint | GPU | 独立启动 / 暖观测 | Original median/p95 | V1 median/p95 | V2 median/p95 | Original/V2 | V1/V2 |
+| GPU | 执行顺序 | 独立启动 / 暖观测 | Original median/p95 | V1 median/p95 | V2 median/p95 | Original/V2 | V1/V2 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 新 fixture，lane / N1 | 0 | 计划 2 / 10 | 待测 | 待测 | 待测 | 待测 | 待测 |
-| 新 fixture，lane / N1 | 3 | 计划 2 / 10 | 待测 | 待测 | 待测 | 待测 | 待测 |
+| 0 | pooled ABC/CBA | 2 / 10 | 1602.505 / 1877.001 | 1560.322 / 1716.312 | 1164.814 / 1195.990 | 1.38× | 1.34× |
+| 0 | ABC | 1 / 5 | 1623.211 / 1941.367 | 1459.197 / 1733.449 | 1158.544 / 1190.299 | 1.40× | 1.26× |
+| 0 | CBA | 1 / 5 | 1581.800 / 1711.961 | 1564.652 / 1567.730 | 1179.587 / 1193.745 | 1.34× | 1.33× |
+| 3 | pooled ABC/CBA | 2 / 10 | 1784.976 / 1962.228 | 1700.753 / 2138.367 | 1214.552 / 1525.603 | 1.47× | 1.40× |
+| 3 | ABC | 1 / 5 | 1651.180 / 1736.557 | 2134.326 / 2139.975 | 1341.056 / 1564.400 | 1.23× | 1.59× |
+| 3 | CBA | 1 / 5 | 1866.218 / 1969.741 | 1532.273 / 1545.942 | 1116.261 / 1284.801 | 1.67× | 1.37× |
 
-拿到窗口后，先通过 compile/correctness，再跑主对照与独立 GPU3 诊断。如果 V2 无收益，先看 callback/trace 是否占主要成本；随后只切换 hint，或固定 G64/Q32 仅切换 64/256 KiB。历史 G32/BS512 的回退另行复查。任何方向的真实回退都保留。
+单位 ms。V2 在两个顺序均优于 Original 和 V1，但 GPU3 V1 自身的 Original/V1 从 ABC 的 0.77× 变成 CBA 的 1.22×，说明需要保留分波信息。min/max 和全部暖样本见 [实测结果](COOP_FLUSH_RESULTS.md)；没有平均两卡速度比，也没有把 10 个 round 当作 10 次独立启动。
 
-GPU0/3 的新窗口在 RLT→VIME 后排队；仅凭 GPU 空闲不能使用，nvcc 编译也占协调 I/O/CPU 窗口。执行前核验当前 boot、PID1 start ticks、owner/grant 和完整 GPU UUID，持有 I/O/GPU 锁；等待进程自然退出后收集证据并交接。未下载本任务模型权重，无清理对象；不访问 lcpu NFS。
+独立 GPU3 host-stage run 中，V1/V2 的 event wait 为 1884.380/1390.556 ms，pattern check 为 88.540/89.785 ms。另一次 CUDA profile 的 kernel 为 2144.190/1320.006 ms，4096 次 D2H 总时长为 1550.555/1077.048 ms。它们指向 copy/event 等待和调度的后续诊断方向，但各只有一次观测，且不同阶段重叠，不能相加或直接当作主速度样本。原始三个报告按 NVIDIA Nsight skill 的方法单独采集。
+
+V2 的收益已覆盖目标 G64/BS2048 本地场景。下一步可在新窗口只切换 hint，或固定 G64/Q32 只切换 64/256 KiB，检查收益边界；历史 G32/BS512 的回退仍待单独复查。完整 Hybrid 与 EFA gate 的接入优先于无目的扩展测速矩阵。
+
+本次窗口按 RLT→VIME→UCCL phase4 顺序获得；boot、PID1、前任自然退出 receipt、GPU UUID 和锁均核验。编译结束于 10:21:09 UTC，全部测量/诊断结束于 10:23:32 UTC；证据在交接前完整收回，phase4 已标记自然完成并释放 I/O/GPU0/3。新工作需要新的资源准入。未下载本任务模型权重，无清理对象；不访问 lcpu NFS。
 
 ## 6. 完整 E2E 的依赖关系
 

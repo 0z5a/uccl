@@ -1,55 +1,129 @@
 # Cooperative flush validation and speed comparison
 
-**Version:** all measured tables below describe the elected-thread implementation
-at `f77da5123a8e75fb4e9ad5525370c66c140c8056`. The queue-partition candidate in
-the current branch has not yet been compiled or run; those earlier results are
-not validation of the new implementation.
+**Current measured candidate:** queue partition V2 at
+`2abdfdce17ab5747e136701b4fdfd2d0bd5bff43` (production loop from `a3dcc2d`).
+The new campaign compares Original, elected-thread V1 and V2 with the same
+fixture and settings. The later historical sections retain the earlier V1
+results, including GPU3's 0.91×; absolute times from different campaigns are
+not mixed into one speed ratio.
 
-Validated on 2026-10-04 against the original adapter at
-`29e7e7ca868590fb3a70bc96ebf42271983ab9b6`, stacked on the local SM120 validation
-change. Hardware: two RTX 5090s, physical GPUs 0 and 3; CUDA 13.0.88,
-driver 580.76.05, NCCL device headers 2.30.4. Neither P2P nor a NCCL communicator
-is used by the local fixture. The container denies NUMA policy; the production
-FIFO's existing fallback continues.
+Hardware: two RTX 5090s, physical GPUs 0 and 3; CUDA 13.0.88,
+driver 580.76.05, NCCL device headers 2.30.4. No P2P, NCCL communicator,
+RDMA transport or model is initialized by the local fixture. The production
+FIFO's existing NUMA fallback is used because container mempolicy is denied.
 
-## Queue-partition iteration
+## V2: queue partition, actual GPU validation
 
-The elected thread waits for each queue in sequence. The new candidate keeps
-both group rendezvous but assigns queue indices `r + k * coop.size()` to member
-`r`. Thus every queue receives one QUIET, all assigned queues finish before the
-exit rendezvous, and thread groups retain sequential all-queue completion.
-This preserves the group source-lifetime requirement in the
-[NCCL GIN flush contract](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device_gin.html).
-Scalar `flush()` and the adapter's acquire-order guard are unchanged.
+V1 waits for all queues sequentially on rank 0. V2 retains both collective
+barriers and assigns queue indices `r + k * coop.size()` to member `r`.
+Every queue receives one QUIET and every assigned queue finishes before the
+exit rendezvous. Thread groups retain sequential all-queue completion.
+Scalar flush, FIFO/proxy completion and the adapter's acquire guard are unchanged.
+The [design and relationship figures](COOP_FLUSH_DESIGN.md) explain the
+source-lifetime chain and the distinction between local and network completion.
 
-The [design document and relationship figures](COOP_FLUSH_DESIGN.md) explain
-the completion chain, queue ownership and current validation boundaries. The
-new common fixture adds proxy-major routing checks, delayed ACK checks on every
-private queue, exact per-FIFO counts and separate optional host-stage diagnostics.
-Host checks pass for 11,760 configurations and 8,699,600 producer routes; these
-are not CUDA compilation or GPU results. New GPU timing remains pending.
+All three arms use fixture SHA256
+`7df01273853b6e8fdb49e8be47303e09eefcfdf9c5a2aa8b5d810531f7e501d6`.
+Original is `29e7e7ca868590fb3a70bc96ebf42271983ab9b6` with the same signal-load
+compilation prerequisite; V1 is `f77da5123a8e75fb4e9ad5525370c66c140c8056`.
+Header, adapter and binary fingerprints are in the
+[campaign manifest](results/v2-20261004/source-manifest.json) and
+[build fingerprints](results/v2-20261004/build-hashes.json).
 
-Q=3/33/64 extend validation beyond even, single-warp assignments. A new
-dual-GPU comparison will use the original adapter, the first cooperative
-implementation, and the queue-partition candidate with identical fixture
-source and settings. Forward/reverse execution order and seven rounds per
-process leave ten warm observations per arm/device after discarding the first two:
-two independent process starts with five repeated observations each. Both waves
-and their pooled medians will be reported; p95 is descriptive at this sample size.
-The real HBM source-copy and pattern checks remain enabled.
-
-| New candidate gate | Current result |
+| V2 gate | Actual result |
 | --- | --- |
-| SM120/SM90 and full microbench compilation | Pending coordinated compile window |
-| Actual adapter/standalone, thread/warp, Q=1/3/4/32/33/64 | Not run |
-| Private/shared groups and delayed completion | Not run |
-| Two-GPU G64/BS2048 comparison against original and first implementation | Not run |
-| Large-payload CUDA timeline on GPU 3 | Not run |
+| Three arms SM120; V2 SM90; full network microbench SM120/90 | Compile pass; SM90 not run; no network link/run |
+| Unsupported CTA cooperation | Expected compilation rejection |
+| Thread/warp, adapter/standalone, Q1/3/4/32/33/64 | Pass on both GPUs |
+| Private/shared G4/G8, early/late delayed ACK, proxy-major N1/N3/N4 | Pass; complete source and per-FIFO route/count checks |
+| Correctness processes | 44 positive processes ×2 rounds; 2 separate expected order traps |
+| Two simultaneous GPUs, G64/BS2048, ABC/CBA | 12 processes /84 rounds, all natural exit 0 |
+| GPU3 host-stage / Nsight diagnostic | 2 host-stage +2 profile runs and 2 stats commands, all natural exit 0 |
 
-The existing RLT and VIME resource windows precede this new iteration. No new
-speedup is claimed until the candidate completes its own runs.
+Raw [correctness rows](results/v2-20261004/correctness.jsonl),
+[process statuses](results/v2-20261004/run.jsonl) and
+[build statuses](results/v2-20261004/build.jsonl) are committed. The evidence
+archive was collected and validated before releasing the coordinated GPU/I/O
+window; no process was externally signaled.
 
-## Command counts and correctness
+## V2: high concurrency and large batch speed table
+
+Each GPU runs 64 full warps /2,048 producers, Q32, BS2048, hidden2048,
+256 KiB per WRITE, capacity4096, shared queues, lane hint, N1, two iterations.
+Both GPU processes start together. The complete HBM-copy and source-overwrite
+oracle remains enabled; delays and consumer timing instrumentation are disabled.
+Each round checks 4,096 WRITEs /1 GiB D2H per GPU. Original emits 131,072 QUIETs;
+V1 and V2 each emit 4,096. Two GPUs total 4,096 producers, not HTTP requests.
+
+Order is Original→V1→V2 (ABC), then V2→V1→Original (CBA). Each process runs seven
+rounds and discards its first two: two independent starts and ten repeated warm
+observations per arm/GPU. Times below are median /p95 in ms. p95 is descriptive
+at this sample size; GPU ratios are not averaged into aggregate throughput.
+
+| GPU | Order | Starts / warm rounds per arm | Original median/p95 | V1 median/p95 | V2 median/p95 | Original/V2 | V1/V2 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | pooled ABC/CBA | 2 / 10 | 1602.505 / 1877.001 | 1560.322 / 1716.312 | 1164.814 / 1195.990 | 1.38× | 1.34× |
+| 0 | ABC | 1 / 5 | 1623.211 / 1941.367 | 1459.197 / 1733.449 | 1158.544 / 1190.299 | 1.40× | 1.26× |
+| 0 | CBA | 1 / 5 | 1581.800 / 1711.961 | 1564.652 / 1567.730 | 1179.587 / 1193.745 | 1.34× | 1.33× |
+| 3 | pooled ABC/CBA | 2 / 10 | 1784.976 / 1962.228 | 1700.753 / 2138.367 | 1214.552 / 1525.603 | 1.47× | 1.40× |
+| 3 | ABC | 1 / 5 | 1651.180 / 1736.557 | 2134.326 / 2139.975 | 1341.056 / 1564.400 | 1.23× | 1.59× |
+| 3 | CBA | 1 / 5 | 1866.218 / 1969.741 | 1532.273 / 1545.942 | 1116.261 / 1284.801 | 1.67× | 1.37× |
+
+| GPU | Original min–max (ms) | V1 min–max (ms) | V2 min–max (ms) |
+| --- | --- | --- | --- |
+| 0 | 1529.596–1996.841 | 1435.736–1747.158 | 1091.722–1195.998 |
+| 3 | 1577.442–1975.751 | 1523.544–2141.261 | 967.928–1595.437 |
+
+V2 improves both execution orders on both GPUs. GPU3 Original/V2 is 1.23× in
+ABC and 1.67× in CBA, pooled 1.47×; V1/V2 is 1.59× /1.37×, pooled 1.40×.
+V1 itself changes from 0.77× versus Original in ABC to 1.22× in CBA, so its
+earlier regression is retained and the variation is not dismissed. This establishes
+a local V2 benefit under the tested common fixture, not the cause of every
+historical regression or network/model performance.
+
+The [raw seven-round logs](results/v2-20261004/evidence/),
+[60 warm rows](results/v2-20261004/samples.jsonl), and
+[summary](results/v2-20261004/summary.json) are available. Recompute the tables
+with `python3 results/v2-20261004/summarize.py` from this directory.
+
+## V2: separate large-payload diagnosis
+
+The following are single GPU3 runs, one round each. They are separate from the
+unprofiled dual-GPU speed campaign and from each other. All use G64/Q32/BS2048,
+two iterations, 4,096 D2H copies and the full oracle.
+
+| GPU3 host-stage run (ms) | V1 | V2 |
+| --- | ---: | ---: |
+| Elapsed | 2000.591 | 1501.581 |
+| Callback total | 1984.495 | 1491.761 |
+| Copy + event submit | 11.224 | 11.056 |
+| Event synchronize | 1884.380 | 1390.556 |
+| Full pattern check | 88.540 | 89.785 |
+| Between callbacks | 5.934 | 0.777 |
+
+The three WRITE sub-stages are nested within callback total; do not add them to
+the total. Between-callback time combines pop/scan/poll/scheduling and omits
+the first/last boundary; it is not GPU idle. The [diagnostic JSON](results/v2-20261004/diagnostics.json)
+records every field.
+
+| GPU3 separate CUDA profile | V1 | V2 |
+| --- | ---: | ---: |
+| Kernel, count / total ms | 1 / 2144.190 | 1 / 1320.006 |
+| D2H, count / total ms | 4096 / 1550.555 | 4096 / 1077.048 |
+| Event synchronize, count / total ms | 4097 / 2018.086 | 4097 / 1198.861 |
+
+The three targeted reports are committed as `profile-*-stats_cuda_*.csv` in
+[the evidence directory](results/v2-20261004/). Kernel time, D2H time and API
+waiting overlap; their totals must not be added. Event synchronization includes
+one initialization call. Each profile is one observation, not a speed benchmark.
+
+The host-stage run's reduced event wait and the separate trace's reduced D2H
+duration point toward GPU/copy/FIFO scheduling as the next diagnostic focus.
+This is an inference; these aggregate reports do not isolate a causal mechanism
+or establish EFA receiver ordering. Host pattern-check work remains about89 ms
+in both runs. No oracle was weakened to obtain the benefit.
+
+## Historical V1: command counts and correctness
 
 For a full warp, the actual original adapter emits `32 * Q` QUIET commands;
 the cooperative adapter emits `Q`. The identical signal acquire-load compilation

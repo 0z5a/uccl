@@ -53,7 +53,7 @@
 			<text x="725" y="729" style="font-family: Helvetica; font-size: 18px;fill: rgb(9%,49%,40%); stroke:none;" transform="translate(0,1458) scale(1,-1)">publish</text>
 			<text x="1000" y="725" style="font-family: Helvetica; font-size: 18px;fill: rgb(9%,49%,40%); stroke:none;" transform="translate(0,1450) scale(1,-1)">ACK acquire</text>
 			<rect x="40" y="160" width="720" height="370" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(95%,97%,99%); fill-rule: evenodd;"/>
-			<text x="62" y="488" style="font-family: Helvetica-Bold; font-size: 22px;fill: rgb(13%,38%,72%); stroke:none;" transform="translate(0,976) scale(1,-1)">LOCAL ORACLE  /  V1 measured; V2 GPU run pending</text>
+			<text x="62" y="488" style="font-family: Helvetica-Bold; font-size: 22px;fill: rgb(13%,38%,72%); stroke:none;" transform="translate(0,976) scale(1,-1)">LOCAL ORACLE  /  V1 + V2 validated on two RTX 5090s</text>
 			<rect x="65" y="350" width="240" height="105" rx="12" ry="12" style="stroke: rgb(74%,83%,92%); stroke-linecap: butt; stroke-width: 2; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
 			<text x="81" y="417" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,834) scale(1,-1)">One worker per GPU</text>
 			<text x="81" y="389" style="font-family: Helvetica; font-size: 21px;fill: rgb(7%,16%,26%); stroke:none;" transform="translate(0,778) scale(1,-1)">FIFO index scan</text>
