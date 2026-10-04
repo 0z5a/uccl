@@ -1,0 +1,41 @@
+{
+  "model_fixture_commit": "3e9ea407bae317abec1c2e36f0ac6281ec23b344",
+  "production_commits": {
+    "scalar": "29e7e7ca868590fb3a70bc96ebf42271983ab9b6",
+    "v1": "f77da5123a8e75fb4e9ad5525370c66c140c8056",
+    "v2": "3e9ea407bae317abec1c2e36f0ac6281ec23b344"
+  },
+  "model_arms": {
+    "scalar": {
+      "files": {
+        "experimental/uccl_gin/uccl_gin/uccl_gin.cuh": "5d4483c663edfff4e4cedbfee21f04fef14884e623f733daec6396e72561da65",
+        "thirdparty/nccl-ep/adapter/uccl_gin_net.cuh": "4dda99ca38d053ed026536ae8893fd0bbb5c4d11cdee65c0260e01d16769e965",
+        "experimental/uccl_gin/tests/local/model_transport.cu": "5ff964484aeba3cf1ae35aaa35c923eedcc9edfe9834914ebc43efaa64f02f3f",
+        "experimental/uccl_gin/tests/local/model_e2e.py": "525d849985c79a6a7a490dd1ca6055df08ec6154470d26af8b82832d55115f32"
+      },
+      "archive_sha256": "1562e661899e2123e39adb2ca93840e40837cb9550d2706b5dc491d512239de4"
+    },
+    "v1": {
+      "files": {
+        "experimental/uccl_gin/uccl_gin/uccl_gin.cuh": "6caaaa76dcf8ce7d06b7357efe85dff836de9aed6858312ded57b22da33658fb",
+        "thirdparty/nccl-ep/adapter/uccl_gin_net.cuh": "4dda99ca38d053ed026536ae8893fd0bbb5c4d11cdee65c0260e01d16769e965",
+        "experimental/uccl_gin/tests/local/model_transport.cu": "5ff964484aeba3cf1ae35aaa35c923eedcc9edfe9834914ebc43efaa64f02f3f",
+        "experimental/uccl_gin/tests/local/model_e2e.py": "525d849985c79a6a7a490dd1ca6055df08ec6154470d26af8b82832d55115f32"
+      },
+      "archive_sha256": "a6da564f17e74b19dae951b4cd78ea01e47213e1bda91e209eda0dcfdf9aefe9"
+    },
+    "v2": {
+      "files": {
+        "experimental/uccl_gin/uccl_gin/uccl_gin.cuh": "5c45a1115a2a2f7e96afe917f2e6c82d6995f8b09289240c371c105f1eff3d32",
+        "thirdparty/nccl-ep/adapter/uccl_gin_net.cuh": "4dda99ca38d053ed026536ae8893fd0bbb5c4d11cdee65c0260e01d16769e965",
+        "experimental/uccl_gin/tests/local/model_transport.cu": "5ff964484aeba3cf1ae35aaa35c923eedcc9edfe9834914ebc43efaa64f02f3f",
+        "experimental/uccl_gin/tests/local/model_e2e.py": "525d849985c79a6a7a490dd1ca6055df08ec6154470d26af8b82832d55115f32"
+      },
+      "archive_sha256": "de9e6761b6c79b42f25e0a659ad67f90a82de68ea98e947a4eeecb9d941863e8"
+    }
+  },
+  "official_nccl_headers": 45,
+  "current_common_fixture_equal_across_arms": true,
+  "production_GIN_bytes_equal_to_original_frozen_arms": true,
+  "scope": "prepared inputs; supplemental native V2 proof is separate; required machines not run"
+}

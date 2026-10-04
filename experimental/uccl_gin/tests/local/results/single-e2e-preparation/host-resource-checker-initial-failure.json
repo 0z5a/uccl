@@ -1,0 +1,7 @@
+{
+  "initial_checker_exit": 1,
+  "cause": "test checker probe missing closing bracket; controller lock code did not fail",
+  "reproduced_probe_exit": 1,
+  "stderr": "  File \"<string>\", line 3\n    locks=[Path(p).open(\"a\") for p in []\n          ^\nSyntaxError: '[' was never closed\n",
+  "gpu_or_remote_actions": 0
+}

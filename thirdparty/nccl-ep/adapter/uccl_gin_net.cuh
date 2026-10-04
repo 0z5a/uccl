@@ -1,25 +1,13 @@
 #pragma once
-//
-// UcclGinNet — drop-in replacement for ncclGin at NCCL-EP HT call sites.
-// Put accepts the same extra parameters (team, windows, actions, coop, scopes,
-// optFlags) but uses only dst, offsets, bytes, signal id, and delta.
-// Flush preserves thread/full-warp cooperation and acquire completion ordering.
-//
-// The ONLY code change needed in hybrid_ep.cuh:
-//   #ifdef NCCL_EP_USE_UCCL_GIN
-//     UcclGinNet net(*uccl_resources, global_channel);
-//   #else
-//     ncclGin net(dcomms[comm_idx], ctx_idx, NCCL_GIN_RESOURCE_SHARING_CTA);
-//     ncclTeam world = ncclTeamWorld(dcomms[comm_idx]);
-//   #endif
-//
-// All net.put(world, ...) / net.signal(world, ...) / net.waitSignal(...)
-// call sites remain unchanged under the macro guard that provides `world`
-// as a dummy for the UCCL path.
 
+// NCCL-EP HT subset: one registered window, rail team peers, indexed additive
+// signals and thread/full-warp cooperation. Host setup must register gin_base_ptr
+// and provide the same UCCL signal storage to senders and receivers.
 #include <cuda_runtime.h>
+#include <climits>
 #include <cstdint>
 #include <nccl_device.h>
+#include <type_traits>
 
 #include "uccl_gin/uccl_gin.cuh"
 
@@ -30,98 +18,98 @@ struct UcclGinNet {
   int lane_hint;
 
   __device__ __forceinline__
-  UcclGinNet(const uccl_gin::UCCLGinResources& res, int lane)
-    : gin(res), lane_hint(lane) {}
+  UcclGinNet(uccl_gin::UCCLGinResources const& res, int lane)
+      : gin(res), lane_hint(lane) {}
 
-  // -- put: NCCL-EP passes (world, dst, win, roff, win, soff, bytes,
-  //    ncclGin_None, ncclGin_None, ncclCoopThread, ncclGin_None,
-  //    cuda::thread_scope_thread, cuda::thread_scope_device,
-  //    ncclGinOptFlagsAggregateRequests)
-  // We ignore world/win/remote_action/local_action/coop/descriptor/scopes/flags.
-  // Symmetric window: window_base + offset = same VA everywhere.
-  template <typename... Args>
-  __device__ __forceinline__
-  void put(ncclTeam /*world*/, int dst,
-           ncclWindow_t /*w1*/, size_t dst_off,
-           ncclWindow_t /*w2*/, size_t src_off,
-           size_t bytes, Args&&... /*ignored*/) {
+  __device__ __forceinline__ void put(
+      ncclTeam, int peer, ncclWindow_t, size_t dst_off, ncclWindow_t,
+      size_t src_off, size_t bytes, ncclGin_None = {}, ncclGin_None = {},
+      ncclCoopThread = {}, ncclGin_None = {},
+      cuda::thread_scope given_release = cuda::thread_scope_thread,
+      cuda::thread_scope required_release = cuda::thread_scope_device,
+      uint32_t flags = ncclGinOptFlagsDefault,
+      ncclGin_SegmentDevice = {}) const {
+    if (bytes > INT_MAX || given_release != cuda::thread_scope_thread ||
+        required_release != cuda::thread_scope_device ||
+        (flags != ncclGinOptFlagsDefault &&
+         flags != ncclGinOptFlagsAggregateRequests)) UCCL_GIN_TRAP();
     void* recv = reinterpret_cast<void*>(gin.res.window_base + dst_off);
     void* send = reinterpret_cast<void*>(gin.res.window_base + src_off);
-    gin.put<ncclTeamTagRail>(recv, send, static_cast<int>(bytes), dst, lane_hint);
+    gin.put<ncclTeamTagRail>(recv, send, static_cast<int>(bytes),
+                             rail_peer(peer), lane_hint);
   }
 
-  // -- signal: NCCL-EP passes (world, dst, signal_descriptor)
-  // signal_descriptor is a struct with .indexedSignal.signalId and .opArg
-  // For SignalAdd: .type = NCCL_GIN_SIGNAL_TYPE_INDEXED, .op = NCCL_GIN_SIGNAL_OP_ADD
-  // We accept the raw descriptor but extract id/delta ourselves.
-  struct SignalDescriptor {
-    int type;
-    struct { int signalId; } indexedSignal;
-    int op;
-    uint64_t opArg;
-  };
-
-  template <typename... Args>
-  __device__ __forceinline__
-  void signal(ncclTeam /*world*/, int dst, const SignalDescriptor& sd) {
-    const uint64_t slot_addr = gin.res.atomic_tail_base +
-        static_cast<uint64_t>(sd.indexedSignal.signalId) * sizeof(int64_t);
-    gin.red_add_rel<ncclTeamTagRail>(
-        reinterpret_cast<void*>(slot_addr),
-        static_cast<int>(sd.opArg), dst, lane_hint);
-  }
-
-  // Accept the NCCL-EP signal call format: signal(world, dst, ncclGin_SignalAdd{id, delta})
-  // which constructs an ncclGinSignalDescriptor with type=INDEXED, op=ADD, opArg=delta.
-  // The NCCL GIN types aren't directly usable here, so we accept via template + reinterpret.
-  // NCCL-EP calls: net.signal(world, dst, ncclGin_SignalAdd{id, delta})
-  // where ncclGin_SignalAdd is an aggregate with .signal and .value fields.
-  struct SignalAdd {
-    ncclGinSignal_t signal;
-    uint64_t value;
-  };
-
-  // Overload for the common NCCL-EP pattern: signal(world, dst, SignalAdd{id, delta})
-  __device__ __forceinline__
-  void signal(ncclTeam /*world*/, int dst, const SignalAdd& sa) {
-    const uint64_t slot_addr = gin.res.atomic_tail_base +
-        static_cast<uint64_t>(sa.signal) * sizeof(int64_t);
-    gin.red_add_rel<ncclTeamTagRail>(
-        reinterpret_cast<void*>(slot_addr),
-        static_cast<int>(sa.value), dst, lane_hint);
-  }
-
-  // -- waitSignal: NCCL-EP passes (coop, id, expected)
-  template <typename Coop>
-  __device__ __forceinline__
-  void waitSignal(Coop /*coop*/, int signal_id, uint64_t expected) const {
-    int64_t* slot = reinterpret_cast<int64_t*>(
-        gin.res.atomic_tail_base +
-        static_cast<uint64_t>(signal_id) * sizeof(int64_t));
-    while (mscclpp::atomicLoad<int64_t, mscclpp::scopeSystem>(
-               slot, mscclpp::memoryOrderAcquire) <
-           static_cast<int64_t>(expected)) {
-      __nanosleep(64);
+  template <typename Coop = ncclCoopThread>
+  __device__ __forceinline__ void signal(
+      ncclTeam, int peer, ncclGin_SignalAdd action, Coop coop = {},
+      ncclGin_None = {},
+      cuda::thread_scope given_release = cuda::thread_scope_thread,
+      cuda::thread_scope required_release = cuda::thread_scope_device,
+      uint32_t flags = ncclGinOptFlagsDefault) const {
+    validate_coop<Coop>();
+    if (action.value >= kMaxSendAtomicValue ||
+        given_release != cuda::thread_scope_thread ||
+        (required_release != cuda::thread_scope_thread &&
+         required_release != cuda::thread_scope_device) ||
+        flags != ncclGinOptFlagsDefault) UCCL_GIN_TRAP();
+    coop.sync();
+    if (coop.thread_rank() == 0) {
+      gin.red_add_rel<ncclTeamTagRail>(
+          signal_slot(action.signal), static_cast<int>(action.value),
+          rail_peer(peer), lane_hint);
     }
+    coop.sync();
   }
 
-  // -- readSignal
-  __device__ __forceinline__
-  uint64_t readSignal(int signal_id) const {
-    int64_t* slot = reinterpret_cast<int64_t*>(
-        gin.res.atomic_tail_base +
-        static_cast<uint64_t>(signal_id) * sizeof(int64_t));
+  template <typename Coop>
+  __device__ __forceinline__ void waitSignal(
+      Coop coop, ncclGinSignal_t id, uint64_t expected, int bits = 64,
+      cuda::memory_order order = cuda::memory_order_acquire) const {
+    validate_coop<Coop>();
+    if (bits != 64 || order != cuda::memory_order_acquire) UCCL_GIN_TRAP();
+    coop.sync();
+    if (coop.thread_rank() == 0) {
+      while (!nccl::utility::rollingLessEq(expected, readSignal(id), bits))
+        __nanosleep(64);
+    }
+    coop.sync();
+  }
+
+  __device__ __forceinline__ uint64_t readSignal(
+      ncclGinSignal_t id, int bits = 64,
+      cuda::memory_order order = cuda::memory_order_acquire) const {
+    if (bits != 64 || order != cuda::memory_order_acquire) UCCL_GIN_TRAP();
     return static_cast<uint64_t>(
         mscclpp::atomicLoad<int64_t, mscclpp::scopeSystem>(
-            slot, mscclpp::memoryOrderAcquire));
+            signal_slot(id), mscclpp::memoryOrderAcquire));
   }
 
-  // -- flush: NCCL-EP passes (ncclCoopWarp(), cuda::memory_order_acquire)
   template <typename Coop>
   __device__ __forceinline__ void flush(
-      Coop coop, cuda::memory_order ord = cuda::memory_order_acquire) const {
-    if (ord != cuda::memory_order_acquire) UCCL_GIN_TRAP();
+      Coop coop, cuda::memory_order order = cuda::memory_order_acquire) const {
+    if (order != cuda::memory_order_acquire) UCCL_GIN_TRAP();
     gin.flush(coop);
+  }
+
+ private:
+  template <typename Coop>
+  __device__ static constexpr void validate_coop() {
+    static_assert(std::is_same_v<Coop, ncclCoopThread> ||
+                      std::is_same_v<Coop, ncclCoopWarp>,
+                  "UCCL-GIN: signal cooperation supports Thread/Warp only");
+  }
+
+  __device__ __forceinline__ int rail_peer(int node) const {
+    if (node < 0 || node >= gin.res.num_scaleout_ranks) UCCL_GIN_TRAP();
+    return node * gin.res.num_scaleup_ranks + gin.res.scaleup_rank;
+  }
+
+  __device__ __forceinline__ int64_t* signal_slot(ncclGinSignal_t id) const {
+    if (id > uccl_gin::kAtomicOffMask / sizeof(int64_t)) UCCL_GIN_TRAP();
+    // Ordered ATOMIC uses atomic_offset=1 as its opcode flag, so byte offset 0
+    // is valid here. Only WRITE piggyback reserves counter slot 0.
+    return reinterpret_cast<int64_t*>(gin.res.atomic_tail_base +
+                                      uint64_t{id} * sizeof(int64_t));
   }
 };
 

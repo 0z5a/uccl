@@ -1,0 +1,10 @@
+{
+  "attempt": 5,
+  "source_commit": "3e9ea407bae317abec1c2e36f0ac6281ec23b344",
+  "controller_pid": 7488,
+  "ssh_natural_exit": 0,
+  "make_natural_exit": 0,
+  "evidence_collected": true,
+  "archive_bytes": 23229,
+  "archive_sha256": "95bf71197bbf40057e37af4ea8db10d20a5855d7ce16f923dd90cc1177904d88"
+}

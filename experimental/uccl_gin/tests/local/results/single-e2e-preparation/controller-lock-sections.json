@@ -1,0 +1,17 @@
+{
+  "scope": "actual host-tested source sections; no target-machine run",
+  "sections": {
+    "campaign.py": {
+      "controller_sha256": "07b58d96e870557dc139a4a0e4175332b0e8dc042cb082891683595abad243ca",
+      "executed_lock_section": "inherited = os.environ.pop('UCCL_NATIVE_LOCK_FDS', '')\nlocks = ([os.fdopen(int(fd), 'a') for fd in inherited.split(':')] if inherited else\n         [Path(path).open('a') for path in grant['locks']])\nassert len(locks) == len(grant['locks'])\nfor lock, path in zip(locks, grant['locks']):\n    assert (os.fstat(lock.fileno()).st_dev, os.fstat(lock.fileno()).st_ino) == (\n        Path(path).stat().st_dev, Path(path).stat().st_ino)\n    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)\nlock_fds = tuple(lock.fileno() for lock in locks)"
+    },
+    "ht-campaign.py": {
+      "controller_sha256": "e99811fa96bd85c081e6e6e7cd91c2c966f0103e84c1e6fa8923f0dd0795c88d",
+      "executed_lock_section": "inherited = os.environ.pop('UCCL_NATIVE_LOCK_FDS', '')\nlocks = ([os.fdopen(int(fd), 'a') for fd in inherited.split(':')] if inherited else\n         [Path(path).open('a') for path in grant['locks']])\nassert len(locks) >= (1 if grant['machine'] == 'thor' else 2)\nassert len(locks) == len(grant['locks'])\nfor lock, path in zip(locks, grant['locks']):\n    assert (os.fstat(lock.fileno()).st_dev, os.fstat(lock.fileno()).st_ino) == (\n        Path(path).stat().st_dev, Path(path).stat().st_ino)\n    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)\nfds = tuple(lock.fileno() for lock in locks)"
+    },
+    "run-target.py": {
+      "controller_sha256": "4a6224e07cadc5caeafedd8a86075873b43d4ad7b40e00231e0355517003d42e",
+      "executed_lock_section": "inherited = os.environ.pop('UCCL_NATIVE_LOCK_FDS', '')\nlocks = ([os.fdopen(int(fd), 'a') for fd in inherited.split(':')] if inherited else\n         [Path(path).open('a') for path in grant['locks']])\nassert len(locks) == len(grant['locks']) >= (1 if grant['machine'] == 'thor' else 2)\nfor lock, path in zip(locks, grant['locks']):\n    assert (os.fstat(lock.fileno()).st_dev, os.fstat(lock.fileno()).st_ino) == (\n        Path(path).stat().st_dev, Path(path).stat().st_ino)\n    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)\nfds = tuple(lock.fileno() for lock in locks)"
+    }
+  }
+}

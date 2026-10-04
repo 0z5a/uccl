@@ -1,0 +1,7 @@
+{
+  "collection_succeeded": true,
+  "initial_handoff_probe_exit": 1,
+  "reason_not_inferred": true,
+  "later_independent_handoff_probe_exit": 0,
+  "later_dual_lock_acquisition_verified": true
+}

@@ -1,0 +1,64 @@
+{
+  "machine": "supplemental RTX5090 westd",
+  "scope": "r1-r4 actual failed builds; all had zero GPU test processes; later successful r5 is recorded separately",
+  "attempts": [
+    {
+      "attempt": 1,
+      "source_commit": "cf70e266079d525dbfdb94e466fa9ca0d261c515",
+      "controller_ssh_natural_exit": 1,
+      "make_natural_exit": 2,
+      "GPU_test_processes": 0,
+      "reason": "NVCC ordinary .so.1 input rejected",
+      "evidence_archive_sha256": "7d43ec5f4871007710628c92037ea0a324acda672c0d5f6c0ecf515719e48bf3",
+      "collected_before_handoff": true
+    },
+    {
+      "attempt": 2,
+      "source_commit": "cf70e266079d525dbfdb94e466fa9ca0d261c515",
+      "controller_ssh_natural_exit": 1,
+      "make_natural_exit": 2,
+      "GPU_test_processes": 0,
+      "reason": "optional GDAKI/DOCA developer header missing",
+      "evidence_archive_sha256": "a26a27d76d15ea7343ac7f639110401a2bc0976dc918dd741af849cdcfa5693c",
+      "collected_before_handoff": true
+    },
+    {
+      "attempt": 3,
+      "source_commit": "cf70e266079d525dbfdb94e466fa9ca0d261c515",
+      "controller_ssh_natural_exit": 1,
+      "make_natural_exit": 2,
+      "GPU_test_processes": 0,
+      "reason": "signal fixture constant collides with transport kIterations macro",
+      "evidence_archive_sha256": "1316c3244440f1b539c3da579d94ce29d14e18f1e487ec837b64cd07eae0c273",
+      "collected_before_handoff": true
+    },
+    {
+      "attempt": 4,
+      "source_commit": "cc203297a3c5cc0ed2666cb85fa940127b57d5bb",
+      "controller_ssh_natural_exit": 1,
+      "make_natural_exit": 2,
+      "GPU_test_processes": 0,
+      "reason": "local HT Makefile missing vendored include/common.hpp search path",
+      "evidence_archive_sha256": "fd4c018d401f4c5f5690481dc9764b40cde39e7b07640344f05ac9b6ce68d040",
+      "collected_before_handoff": true
+    }
+  ],
+  "release": {
+    "own_controller_pid": 6194,
+    "present": false,
+    "gpu0_and_io_locks_acquired_together": true,
+    "no_process_signals": true,
+    "archive_sha256": "fd4c018d401f4c5f5690481dc9764b40cde39e7b07640344f05ac9b6ce68d040",
+    "boot_id": "18dbe202-804d-4276-8357-baf55f7d79f7"
+  },
+  "subsequent_success": {
+    "source_commit": "3e9ea407bae317abec1c2e36f0ac6281ec23b344",
+    "evidence": "r5/validation-summary.json",
+    "controller_ssh_natural_exit": 0,
+    "make_natural_exit": 0,
+    "GPU_test_processes": 14,
+    "native_ht_rounds": 70,
+    "full_model_tested": false,
+    "formal_timing": false
+  }
+}

@@ -1,0 +1,2 @@
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+{"test":"capabilities","device":0,"name":"NVIDIA GeForce RTX 5090","cc":"12.0","compiled_arch":1200,"runtime":13000,"driver":13000,"async_engines":2,"mapped_host":true,"production_fifo_alloc":true,"pass":true}

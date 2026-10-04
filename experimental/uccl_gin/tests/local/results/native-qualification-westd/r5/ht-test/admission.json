@@ -1,0 +1,35 @@
+{
+  "grant": {
+    "thread": "01a104db-113f-7890-85a0-ddc427410d08",
+    "status": "granted",
+    "scope": "native_ht_and_gin_correctness",
+    "machine": "westd-5090",
+    "work": "/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-3e9ea40-r5",
+    "owner_thread": "01a10834-5cc0-71a1-a13e-a76cbf8931a7",
+    "authorization": "direct human resource broadcast; fresh GPU0 finite native grant after hybrid-v1 session70982 natural0; GPU1 PID7254 emitted weights_loaded_io_released; shared heavyIO serialized after owner public download",
+    "boot_id": "18dbe202-804d-4276-8357-baf55f7d79f7",
+    "init_start_ticks": "2518089639",
+    "gpu_index": 0,
+    "gpu_uuid": "GPU-209bed64-f11a-c1f3-fe87-8a69538d8d79",
+    "sm": "120",
+    "exclusive_gpu_and_io": true,
+    "runtime_existing_readonly": true,
+    "locks": [
+      "/root/autodl-tmp/0z5a/gpu0-perf.lock",
+      "/root/autodl-tmp/0z5a/heavy-io.lock"
+    ],
+    "cuda_home": "/usr/local/cuda-13.0",
+    "python": "/root/miniconda3/bin/python",
+    "build_flags": [
+      "NUMA_INCLUDE_DIR=/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-3e9ea40-r5/numactl-v2.0.14",
+      "EXTRA_DEVFLAGS=-DNCCL_GIN_GDAKI_ENABLE=0",
+      "LIBS=-L/usr/local/cuda-13.0/lib64 -Xlinker=-rpath -Xlinker=/usr/local/cuda-13.0/lib64 -Xlinker=/usr/lib/x86_64-linux-gnu/libnuma.so.1 -Xlinker=/usr/lib/x86_64-linux-gnu/libcuda.so.1"
+    ]
+  },
+  "filesystem": "xfs",
+  "observed_gpus": "0, GPU-209bed64-f11a-c1f3-fe87-8a69538d8d79, NVIDIA GeForce RTX 5090, 580.105.08, 0 MiB\n1, GPU-84c4d7e9-b1c7-5d12-e7c2-6ec2a136044d, NVIDIA GeForce RTX 5090, 580.105.08, 0 MiB\n",
+  "controller_pid": 7488,
+  "controller_start_ticks": "2518673983",
+  "controller_sha256": "d84a3336716b3951815f259f8468e179bd13d3d2098683a65ccb1da5854f2535",
+  "manifest_sha256": "403ffd03ccb2a5d494de1ffed0b1452c5a15e6f785de644861d635314218ef40"
+}

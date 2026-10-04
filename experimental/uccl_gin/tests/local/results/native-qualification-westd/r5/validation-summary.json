@@ -1,0 +1,63 @@
+{
+  "source_commit": "3e9ea407bae317abec1c2e36f0ac6281ec23b344",
+  "machine": "supplemental westd RTX5090 GPU0 / SM120",
+  "native_ht_rounds": 70,
+  "native_ht_processes": 10,
+  "test_processes": 14,
+  "native_signal_cases": 24,
+  "native_tensor_cases": 7,
+  "matrix": [
+    {
+      "batch": 8,
+      "concurrency": 32,
+      "tail": 0,
+      "tokens_per_batch": 1024,
+      "rounds_per_backend": 7,
+      "backend_oracle_hashes_match": true,
+      "gin_commands": 0
+    },
+    {
+      "batch": 16,
+      "concurrency": 64,
+      "tail": 0,
+      "tokens_per_batch": 2048,
+      "rounds_per_backend": 7,
+      "backend_oracle_hashes_match": true,
+      "gin_commands": 0
+    },
+    {
+      "batch": 32,
+      "concurrency": 128,
+      "tail": 0,
+      "tokens_per_batch": 4096,
+      "rounds_per_backend": 7,
+      "backend_oracle_hashes_match": true,
+      "gin_commands": 0
+    },
+    {
+      "batch": 64,
+      "concurrency": 128,
+      "tail": 0,
+      "tokens_per_batch": 8192,
+      "rounds_per_backend": 7,
+      "backend_oracle_hashes_match": true,
+      "gin_commands": 0
+    },
+    {
+      "batch": 8,
+      "concurrency": 32,
+      "tail": 4,
+      "tokens_per_batch": 1020,
+      "rounds_per_backend": 7,
+      "backend_oracle_hashes_match": true,
+      "gin_commands": 0
+    }
+  ],
+  "all_natural_exits_zero": true,
+  "evidence_collected_before_handoff": true,
+  "full_model_tested": false,
+  "formal_timing": false,
+  "required_Thor_RTX5080_tested": false,
+  "numa_policy_warnings_preserved": true,
+  "pass": true
+}

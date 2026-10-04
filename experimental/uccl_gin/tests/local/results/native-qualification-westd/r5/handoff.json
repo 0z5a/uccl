@@ -1,0 +1,10 @@
+{
+  "own_controller_pid": 7488,
+  "present": false,
+  "gpu0_lock_acquired": true,
+  "io_lock_probe_exit": 0,
+  "gpu0_and_io_locks_acquired_together": true,
+  "no_process_signals": true,
+  "archive_sha256": "95bf71197bbf40057e37af4ea8db10d20a5855d7ce16f923dd90cc1177904d88",
+  "boot_id": "18dbe202-804d-4276-8357-baf55f7d79f7"
+}

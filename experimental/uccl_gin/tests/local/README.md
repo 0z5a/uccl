@@ -1,5 +1,9 @@
 # Local device validation
 
+The current Thor/RTX 5080 single-device model E2E campaign is described in
+[SINGLE_DEVICE_E2E.md](SINGLE_DEVICE_E2E.md). Its high batch/request-concurrency
+gates are pending actual machine admission and execution.
+
 Build native SM120 device code and exercise the production MSCCLPP FIFO without
 an RDMA NIC, EFA, MPI, PyTorch, or NCCL. CUDA, a C++17 compiler, pthread, and
 libnuma development files are the only dependencies.
@@ -135,6 +139,12 @@ proxy can pop WRITE on collection and must retire QUIET only after network
 completion. A passing local oracle does not validate that production bookkeeping.
 
 ## EFA gate
+
+The separate [HT adapter contract design](HT_ADAPTER_DESIGN.md) documents the
+native SignalAdd call shape, rail peer mapping and indexed signal limits.
+`make adapter-tests adapter-compile-fail` builds a native CUDA signal FIFO gate
+and rejects CTA signal cooperation. These new gates await their own coordinated
+validation window; the V2 speed tables measure the earlier frozen adapter.
 
 The existing network microbench now accepts `--only coop-flush`. Eight complete
 warps publish disjoint payloads with separate receiver completion slots, call

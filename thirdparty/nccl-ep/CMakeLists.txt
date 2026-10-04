@@ -56,7 +56,7 @@ set_target_properties(nccl_ep_shared PROPERTIES
 # Restricting the range reduces build time during development.  Example:
 #   cmake ... -D_NCCL_EP_LSA_TEAM_SIZE_MIN=8 -D_NCCL_EP_LSA_TEAM_SIZE_MAX=8
 set(_NCCL_EP_LSA_TEAM_SIZE_MIN "4" CACHE STRING
-    "Minimum LSA team size to compile (must be multiple of 4, min 4)")
+    "Minimum LSA team size to compile (1 or a multiple of 4)")
 set(_NCCL_EP_LSA_TEAM_SIZE_MAX "32" CACHE STRING
     "Maximum LSA team size to compile (must be multiple of 4, max 32)")
 set(_NCCL_EP_NUM_LSA_TEAMS_LIST "1;2;3;4;8" CACHE STRING

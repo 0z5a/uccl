@@ -1,0 +1,7 @@
+make: Entering directory '/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26/source/native-ht/experimental/uccl_gin/tests/local'
+mkdir -p build/sm120
+g++ -O3 -std=c++17 -pthread -Wall -I../.. -I../../../../include -I/usr/local/cuda-13.0/include -I/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26/numactl-v2.0.14 -MMD -MP -c ../../transport/fifo.cpp -o build/sm120/fifo.o
+/usr/local/cuda-13.0/bin/nvcc -O3 -std=c++17 -arch=sm_120 -ccbin=g++ --expt-relaxed-constexpr -I../.. -I../../../../include -I/usr/local/cuda-13.0/include -I/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26/numactl-v2.0.14 -Xcompiler=-pthread,-Wall -DUCCL_GIN_WITH_NCCL_GIN=0 -MMD -MP capabilities.cu build/sm120/fifo.o -L/usr/local/cuda-13.0/lib64 -Xlinker=-rpath -Xlinker=/usr/local/cuda-13.0/lib64 /usr/lib/x86_64-linux-gnu/libnuma.so.1 /usr/lib/x86_64-linux-gnu/libcuda.so.1 -o build/sm120/capabilities
+nvcc fatal   : Don't know what to do with '/usr/lib/x86_64-linux-gnu/libcuda.so.1'
+make: *** [Makefile:73: build/sm120/capabilities] Error 1
+make: Leaving directory '/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26/source/native-ht/experimental/uccl_gin/tests/local'

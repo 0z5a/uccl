@@ -1,0 +1,69 @@
+{
+  "scope": "CPU strict compilation of actual parameter structs/builders and LSA switch; source call propagation; no CUDA or native HT run",
+  "pass": true,
+  "builder_compile_and_execution": [
+    {
+      "backend": "nccl",
+      "range": [
+        1,
+        1
+      ],
+      "selected": 1,
+      "exit": 0
+    },
+    {
+      "backend": "nccl",
+      "range": [
+        4,
+        32
+      ],
+      "selected": 8,
+      "exit": 0
+    },
+    {
+      "backend": "nccl",
+      "range": [
+        1,
+        32
+      ],
+      "selected": 1,
+      "exit": 0
+    },
+    {
+      "backend": "uccl",
+      "range": [
+        1,
+        1
+      ],
+      "selected": 1,
+      "exit": 0
+    },
+    {
+      "backend": "uccl",
+      "range": [
+        4,
+        32
+      ],
+      "selected": 8,
+      "exit": 0
+    },
+    {
+      "backend": "uccl",
+      "range": [
+        1,
+        32
+      ],
+      "selected": 1,
+      "exit": 0
+    }
+  ],
+  "network_helper_resource_paths": 4,
+  "resource_members_checked_per_builder": 10,
+  "files": {
+    "thirdparty/nccl-ep/device/hybrid_ep.cuh": "a2d9f6783f3e71c1fa64a2ccd8dcacbd2a4b7fac3fef3e7c53001bcc84d93f68",
+    "thirdparty/nccl-ep/device/hybridep_adapter.cuh": "ac074aea2335846a4568333f116386744a7a76bec0971e17a9eedec844cc0c51",
+    "thirdparty/nccl-ep/device/hybridep_adapter.cu": "8af01264eec1ccf1a74e25d89b6a8874101e10c17513efa59759d6d6728f2b99",
+    "experimental/uccl_gin/tests/local/ht_single_rank.cu": "4e8dcc9e72a7268a90751745a5cf49646869db8d0c7dfc307038862bd9a88ce2"
+  },
+  "test_script_sha256": "6b55e546c66b785b5cfb1e14d482e1e36f78ce97e3ecf2a67acf02ff3d32593c"
+}

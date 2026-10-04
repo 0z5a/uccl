@@ -11,6 +11,10 @@
 
 #pragma once
 
+#ifdef NCCL_EP_USE_UCCL_GIN
+#include "uccl_gin/resources.cuh"
+#endif
+
 #include <cstdint>
 #include <cuda_runtime.h>
 #include <nccl.h>
@@ -118,7 +122,7 @@ void dense_to_sparse_prob_combine(
 
 
 
-// Switch on LSA team size (multiples of 4, up to 32).
+// Switch on LSA team size (one local rank or multiples of 4, up to 32).
 // Instantiates templates with LSA_TEAM_SIZE, sizing register-file arrays exactly.
 // MNNVL configurations (NVL72, LSA_TEAM_SIZE > 32) are not yet supported:
 // the scan kernel in metadata_preprocessing uses warp-reduction and requires
@@ -132,6 +136,11 @@ void dense_to_sparse_prob_combine(
 // Per-size case helpers — expand to the switch case when N is within the configured
 // [MIN, MAX] range, empty otherwise.  #if must live at file scope (not inside a macro
 // body).  MIN/MAX are always defined by the build system (Makefile/?= 4/32, CMake default 4/32).
+#if _NCCL_EP_LSA_TEAM_SIZE_MIN <= 1 && _NCCL_EP_LSA_TEAM_SIZE_MAX >= 1
+#define _NCCL_EP_LSA_CASE_1(...) case 1: { constexpr int LSA_TEAM_SIZE = 1; __VA_ARGS__; } break;
+#else
+#define _NCCL_EP_LSA_CASE_1(...)
+#endif
 #if _NCCL_EP_LSA_TEAM_SIZE_MIN <=  4 && _NCCL_EP_LSA_TEAM_SIZE_MAX >=  4
 #define _NCCL_EP_LSA_CASE_4(...)  case  4: { constexpr int LSA_TEAM_SIZE =  4; __VA_ARGS__; } break;
 #else
@@ -175,6 +184,7 @@ void dense_to_sparse_prob_combine(
 
 #define HYBRIDEP_SWITCH_LSA_TEAM_SIZE(lsa_val, ...) \
     do { switch (lsa_val) { \
+        _NCCL_EP_LSA_CASE_1(__VA_ARGS__) \
         _NCCL_EP_LSA_CASE_4(__VA_ARGS__) \
         _NCCL_EP_LSA_CASE_8(__VA_ARGS__) \
         _NCCL_EP_LSA_CASE_12(__VA_ARGS__) \
@@ -183,7 +193,7 @@ void dense_to_sparse_prob_combine(
         _NCCL_EP_LSA_CASE_24(__VA_ARGS__) \
         _NCCL_EP_LSA_CASE_28(__VA_ARGS__) \
         _NCCL_EP_LSA_CASE_32(__VA_ARGS__) \
-        default: assert(false && "Unsupported LSA team size (must be multiple of 4, " \
+        default: assert(false && "Unsupported LSA team size (must be 1 or multiple of 4, " \
                         "in [_NCCL_EP_LSA_TEAM_SIZE_MIN, _NCCL_EP_LSA_TEAM_SIZE_MAX])"); \
     } } while(0)
 
@@ -345,6 +355,9 @@ struct DispatchParams {
     int num_ctx_per_comm;            // Number of contexts per communicator
     void* gin_base_ptr;              // Base pointer for offset calculations
     unsigned signals_base;           // Base signal ID
+#ifdef NCCL_EP_USE_UCCL_GIN
+    uccl_gin::UCCLGinResources uccl_resources;
+#endif
     dispatch_memory_region_info_t mr_info;
 
     // Runtime config
@@ -407,6 +420,9 @@ struct CombineParams {
     void* gin_base_ptr;              // Base pointer for offset calculations
     unsigned signals_base;           // Base signal ID
     unsigned combine_signal_offset;  // Signal offset for combine operations
+#ifdef NCCL_EP_USE_UCCL_GIN
+    uccl_gin::UCCLGinResources uccl_resources;
+#endif
     combine_memory_region_info_t mr_info;
 
     // Runtime config

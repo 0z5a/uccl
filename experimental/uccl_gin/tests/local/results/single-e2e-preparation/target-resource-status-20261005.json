@@ -1,0 +1,48 @@
+{
+  "recorded_utc": "2026-10-04T22:10:58.280129+00:00",
+  "scope": "Required Thor and RTX5080 single-device high-batch/high-concurrency E2E",
+  "thor": {
+    "whole_job_handoff": false,
+    "required_gpu_runs": "NOT_RUN"
+  },
+  "rtx5080": {
+    "owner_boot_observed_utc": "2026-10-04T21:55:49Z",
+    "owner_reported_boot_changed": true,
+    "new_boot_independently_verified_by_this_task": false,
+    "prior_job_and_waiter_absent_owner_reported": true,
+    "normal_exit_receipt_available": false,
+    "partial_baseline_native_nonzero_updates": 3,
+    "partial_baseline_full_disk_publications": 4,
+    "complete_matched_pair": false,
+    "coordinator_normal_windows_ssh_probe": {
+      "command": "wsl.exe --list --running --quiet",
+      "exit": 0,
+      "stdout": "",
+      "Ubuntu_invoked": false,
+      "WSL_started_or_restarted_or_restored": false,
+      "other_chat_socket_used": false
+    },
+    "this_task_remote_probe_performed": false,
+    "invalidated_snapshots": [
+      "boot",
+      "PID",
+      "runtime",
+      "mount",
+      "physical_capacity",
+      "dual_locks"
+    ],
+    "predecessor_ownership_and_queue_order_retained": true,
+    "whole_job_handoff": false,
+    "required_gpu_runs": "NOT_RUN"
+  },
+  "target_input_packet": {
+    "source_fixture_commit": "3e9ea407bae317abec1c2e36f0ac6281ec23b344",
+    "files": 21,
+    "manifest_sha256": "30bd9f1ff08e573c9bc4f0c86cafb40dcc3d0ee57be8eb66d7540bc98638ac56",
+    "contains_machine_grant_runtime_snapshot_or_weights": false,
+    "admission_granted_by_packet": false
+  },
+  "next_dependency": "Explicit whole-job owner handoff, then fresh boot/mount/capacity/runtime/lock verification",
+  "new_target_GPU_heavy_IO_or_model_transfer": false,
+  "target_speed_results_available": false
+}

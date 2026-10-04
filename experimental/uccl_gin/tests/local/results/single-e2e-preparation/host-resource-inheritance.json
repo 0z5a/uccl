@@ -1,0 +1,60 @@
+{
+  "scope": "actual host OS fd/flock behavior only; no GPU or target-machine execution",
+  "checks": [
+    {
+      "controller": "campaign.py",
+      "stage": 0,
+      "child_exit": 0,
+      "independent_contender_blocked_after_child_exit": true
+    },
+    {
+      "controller": "campaign.py",
+      "stage": 1,
+      "child_exit": 0,
+      "independent_contender_blocked_after_child_exit": true
+    },
+    {
+      "controller": "ht-campaign.py",
+      "stage": 0,
+      "child_exit": 0,
+      "independent_contender_blocked_after_child_exit": true
+    },
+    {
+      "controller": "ht-campaign.py",
+      "stage": 1,
+      "child_exit": 0,
+      "independent_contender_blocked_after_child_exit": true
+    },
+    {
+      "controller": "run-target.py",
+      "stage": 0,
+      "child_exit": 0,
+      "independent_contender_blocked_after_child_exit": true
+    },
+    {
+      "controller": "run-target.py",
+      "stage": 1,
+      "child_exit": 0,
+      "independent_contender_blocked_after_child_exit": true
+    },
+    {
+      "controller": "campaign.py",
+      "standalone_exit": 0
+    },
+    {
+      "controller": "ht-campaign.py",
+      "standalone_exit": 0
+    },
+    {
+      "controller": "run-target.py",
+      "standalone_exit": 0
+    }
+  ],
+  "parent_release_unlocks_both": true,
+  "pass": true,
+  "controller_sha256": {
+    "campaign.py": "07b58d96e870557dc139a4a0e4175332b0e8dc042cb082891683595abad243ca",
+    "ht-campaign.py": "e99811fa96bd85c081e6e6e7cd91c2c966f0103e84c1e6fa8923f0dd0795c88d",
+    "run-target.py": "4a6224e07cadc5caeafedd8a86075873b43d4ad7b40e00231e0355517003d42e"
+  }
+}

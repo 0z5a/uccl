@@ -1,0 +1,8 @@
+{
+  "capabilities": "01124d2d4646760f540606c944cae6cabae5c6317e95224c0d23a75131203743",
+  "queue_smoke": "3042a12af7dbaf25ebe8dd1484fd087a0fa227cdddd6386ff0c326d809e2b3d0",
+  "adapter_signal": "67cb0a49929bfd033f21d0a37f272e12c01cfc0d2f9d794f5a7c28a92b3f5d52",
+  "libmodel_transport.so": "46a5ed958838912c0d871bf7bebe84d92dd9c43b88d3dfaad30cefa76e90a629",
+  "ht_single_rank-nccl": "5370f77391caaa4bfef5cfb4227054e8305b59628b3058e3be8c39ab1ae0da71",
+  "ht_single_rank-uccl": "7ca286312a5c508e001038da1cde89f46759e934b210ab298fb35939e5df3c1c"
+}

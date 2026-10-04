@@ -1,0 +1,39 @@
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+{"test":"native_ht_single_rank","backend":"nccl","batch":8,"concurrency":32,"round":0,"warmup":true,"tokens_per_batch":1020,"peak_pending_requests":32,"actual_batches":4,"completed_requests":32,"received_tokens":3498,"gpu_ms":6.132384,"wave_ms_with_oracle":42.637485,"oracle_hash":"90075622313c52d2","gin_commands":0,"pass":true}
+{"test":"native_ht_single_rank","backend":"nccl","batch":8,"concurrency":32,"round":1,"warmup":true,"tokens_per_batch":1020,"peak_pending_requests":32,"actual_batches":4,"completed_requests":32,"received_tokens":3496,"gpu_ms":0.271104,"wave_ms_with_oracle":37.364660,"oracle_hash":"77bcc73b219c4e6e","gin_commands":0,"pass":true}
+{"test":"native_ht_single_rank","backend":"nccl","batch":8,"concurrency":32,"round":2,"warmup":false,"tokens_per_batch":1020,"peak_pending_requests":32,"actual_batches":4,"completed_requests":32,"received_tokens":3498,"gpu_ms":0.281920,"wave_ms_with_oracle":42.643178,"oracle_hash":"9c959a815f2677c6","gin_commands":0,"pass":true}
+{"test":"native_ht_single_rank","backend":"nccl","batch":8,"concurrency":32,"round":3,"warmup":false,"tokens_per_batch":1020,"peak_pending_requests":32,"actual_batches":4,"completed_requests":32,"received_tokens":3497,"gpu_ms":0.279904,"wave_ms_with_oracle":42.704382,"oracle_hash":"e7c8e58d630b375a","gin_commands":0,"pass":true}
+{"test":"native_ht_single_rank","backend":"nccl","batch":8,"concurrency":32,"round":4,"warmup":false,"tokens_per_batch":1020,"peak_pending_requests":32,"actual_batches":4,"completed_requests":32,"received_tokens":3497,"gpu_ms":0.280000,"wave_ms_with_oracle":42.703586,"oracle_hash":"8cbb3d2035119695","gin_commands":0,"pass":true}
+{"test":"native_ht_single_rank","backend":"nccl","batch":8,"concurrency":32,"round":5,"warmup":false,"tokens_per_batch":1020,"peak_pending_requests":32,"actual_batches":4,"completed_requests":32,"received_tokens":3498,"gpu_ms":0.270368,"wave_ms_with_oracle":47.081474,"oracle_hash":"a3b2ab5efe491444","gin_commands":0,"pass":true}
+{"test":"native_ht_single_rank","backend":"nccl","batch":8,"concurrency":32,"round":6,"warmup":false,"tokens_per_batch":1020,"peak_pending_requests":32,"actual_batches":4,"completed_requests":32,"received_tokens":3496,"gpu_ms":0.253504,"wave_ms_with_oracle":34.379865,"oracle_hash":"4484a82cd01aedb5","gin_commands":0,"pass":true}
