@@ -101,4 +101,10 @@ build/sm120/ht_single_rank-uccl --batch 64 --concurrency 128 --rounds 7
 
 先核对已有终态、源码和资源 owner，复用完成证据；交接前仅做本地准备。一机有限 case 执行时，另一机在其获准窗口内准备或下载；缓存使用本任务私有目录。每机完成这个模型的全部 arm/case，保存并核实证据后，立即清理**本任务拥有的权重**。已有其他任务的 model/cache 只读且不清理。禁止访问 lcpu NFS。
 
+整轮控制器按 native HT → 三 arm 构建 → signal/tensor/flush 正确性 → 高 BS 通信矩阵 → 独立诊断 → 完整模型 → 速度汇总执行。所有子阶段继承父进程的同一组 lock fd；父进程在阶段切换时继续持锁。任务私有 HF/Torch/Triton/Inductor 缓存与禁止写入共享 bytecode 的环境变量随子进程传入。交接后取得的既有 runtime 文件 manifest 在整轮开始和结束分别校验。
+
+本机 [实际 fd/flock 检查](results/single-e2e-preparation/host-resource-inheritance.json)执行了[三个控制器的原始锁代码](results/single-e2e-preparation/controller-lock-sections.json)：两次子阶段退出后，独立竞争进程仍被阻塞；父进程释放后两锁可取，三个独立启动模式也通过。首次 checker 的括号错误[保留](results/single-e2e-preparation/host-resource-checker-initial-failure.json)，修正后通过。这些是 Darwin host 证据；目标机仍须实际执行。
+
+[整轮输入 manifest](results/single-e2e-preparation/whole-machine-inputs.json)固定21个控制器/源码包/头文件输入，不包含权重、runtime 快照或机器 grant。权重仍使用已下载的固定版本，获准后传到任务私有目录。控制器退出后还需从外部确认自然终态、收集证据、清理本任务权重并交回窗口；`results_ready` 不表示整轮任务已完成。
+
 速度 MD 将列出同机同 case 的 median、p95、requests/s、tokens/s、Scalar/V2、V1/V2，并保留低于 1× 的行。当前没有 Thor/5080 性能数字。

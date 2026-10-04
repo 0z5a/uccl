@@ -1,0 +1,103 @@
+{
+  "source_fixture_commit": "3e9ea407bae317abec1c2e36f0ac6281ec23b344",
+  "payload_manifest_sha256": "30bd9f1ff08e573c9bc4f0c86cafb40dcc3d0ee57be8eb66d7540bc98638ac56",
+  "files": {
+    "model-gin/campaign.py": {
+      "bytes": 12626,
+      "sha256": "07b58d96e870557dc139a4a0e4175332b0e8dc042cb082891683595abad243ca"
+    },
+    "model-gin/clean-own-weights.py": {
+      "bytes": 1635,
+      "sha256": "594a6de45ce5b262815bb9eb52f967353ae3fd61f01f00af906a3b25bea730d6"
+    },
+    "model-gin/nccl-include.tar.gz": {
+      "bytes": 66517,
+      "sha256": "b73245197a329914e494b161a736e9cdfd45d43153ddbb6ad7f4b010b7a7b666"
+    },
+    "model-gin/source-comm-base.tar.gz": {
+      "bytes": 224870,
+      "sha256": "58b2bc6c072f643850299be9f43ca268079a8ef29d4881c70b814f99b7ebb008"
+    },
+    "model-gin/source-comm-v1.tar.gz": {
+      "bytes": 224842,
+      "sha256": "1549d3471c29e013d819e64609ce91886948fc584e3733b561d38c7266524c8b"
+    },
+    "model-gin/source-comm-v2.tar.gz": {
+      "bytes": 224899,
+      "sha256": "3eb7c838ad8786bf455586d2e7cc942d9d67fb48e24519fe542d6c43ef0ccde8"
+    },
+    "model-gin/source-manifest.json": {
+      "bytes": 8382,
+      "sha256": "983e25761eab90fa7152008a05a3760cc3e9ed0d526cb502cb2f53bf6d150d7e"
+    },
+    "model-gin/source-model-scalar.tar.gz": {
+      "bytes": 282463,
+      "sha256": "1562e661899e2123e39adb2ca93840e40837cb9550d2706b5dc491d512239de4"
+    },
+    "model-gin/source-model-v1.tar.gz": {
+      "bytes": 282378,
+      "sha256": "a6da564f17e74b19dae951b4cd78ea01e47213e1bda91e209eda0dcfdf9aefe9"
+    },
+    "model-gin/source-model-v2.tar.gz": {
+      "bytes": 282408,
+      "sha256": "de9e6761b6c79b42f25e0a659ad67f90a82de68ea98e947a4eeecb9d941863e8"
+    },
+    "model-gin/summarize.py": {
+      "bytes": 7338,
+      "sha256": "3698061dde06f016c17d512d74040632443b1e2b1ebf90e38d2f370736e48468"
+    },
+    "native-gate/ht-campaign.py": {
+      "bytes": 8834,
+      "sha256": "e99811fa96bd85c081e6e6e7cd91c2c966f0103e84c1e6fa8923f0dd0795c88d"
+    },
+    "native-gate/nccl-include.tar.gz": {
+      "bytes": 66557,
+      "sha256": "89f18019bbd55825b1bb19e5f16d743bf69b81b4ef1f2d924dda634530745f4b"
+    },
+    "native-gate/numactl-source-manifest.json": {
+      "bytes": 1240,
+      "sha256": "6a7d23d806f4d79ae4f9aef472f534337d9d3d5e9ac61b79d2c6073f6ee9d056"
+    },
+    "native-gate/numactl-v2.0.14/LICENSE.LGPL2.1": {
+      "bytes": 26530,
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+    },
+    "native-gate/numactl-v2.0.14/numa.h": {
+      "bytes": 13539,
+      "sha256": "c99115754248890ba461c1722eb4a2c7ab684613e326284646a5101673a8604e"
+    },
+    "native-gate/numactl-v2.0.14/numacompat1.h": {
+      "bytes": 1231,
+      "sha256": "cfe32ae7891dd0620a6bd80605e0c52db34be4dedd855329452b4a6cece220a4"
+    },
+    "native-gate/numactl-v2.0.14/numaif.h": {
+      "bytes": 1521,
+      "sha256": "d51824f24264e5727612754344a8d35422352efe34e3cad2984cec4155bc0d02"
+    },
+    "native-gate/source-ht-manifest.json": {
+      "bytes": 25297,
+      "sha256": "403ffd03ccb2a5d494de1ffed0b1452c5a15e6f785de644861d635314218ef40"
+    },
+    "native-gate/source-ht.tar.gz": {
+      "bytes": 439410,
+      "sha256": "4e47235cbd079356c56af8da50ce74006cbf9faecc1f21815df96e171b756f5e"
+    },
+    "run-target.py": {
+      "bytes": 4807,
+      "sha256": "4a6224e07cadc5caeafedd8a86075873b43d4ad7b40e00231e0355517003d42e"
+    }
+  },
+  "scope": "prepared full native/model machine campaign; no authorization/runtime manifest/weights included",
+  "outer_stage_order": [
+    "native-ht",
+    "build",
+    "native",
+    "communication",
+    "diagnostic",
+    "model",
+    "model-summary"
+  ],
+  "GPU_target_execution": false,
+  "own_weights_cleanup_requires_collection_receipt": true,
+  "controller_checks_runtime_file_hashes_before_and_after": true
+}
