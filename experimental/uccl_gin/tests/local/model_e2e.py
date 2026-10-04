@@ -9,13 +9,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 import torch
-import transformers
-from transformers import AutoTokenizer, GraniteMoeForCausalLM
-from transformers.modeling_outputs import MoeCausalLMOutputWithPast
+if TYPE_CHECKING:
+    from transformers.modeling_outputs import MoeCausalLMOutputWithPast
 
 MODEL = "ibm-granite/granite-3.1-1b-a400m-base"
 REVISION = "408b6e90baab8cf24f4aa9f8e19703ffa0a53b29"
@@ -69,6 +68,8 @@ class Request:
 
 class Inference:
     def __init__(self, weights: Path, prompt_tokens: int, new_tokens: int, device: int):
+        from transformers import AutoTokenizer, GraniteMoeForCausalLM
+
         self.device = device
         self.new_tokens = new_tokens
         self.transport: GinTransport | None = None
@@ -116,7 +117,7 @@ class Inference:
         cache = None
         digest = hashlib.sha256()
         for step in range(self.new_tokens):
-            result = cast(MoeCausalLMOutputWithPast, self.model(
+            result = cast("MoeCausalLMOutputWithPast", self.model(
                 input_ids=tokens, past_key_values=cache, use_cache=True,
                 logits_to_keep=1, return_dict=True))
             logits = result.logits
@@ -199,7 +200,6 @@ def main() -> None:
     assert 1 <= args.batch_size <= 64 and args.concurrency >= args.batch_size
     assert args.concurrency % args.batch_size == 0 and args.new_tokens > 0
     assert args.rounds > args.warmup >= 0 and args.prompt_tokens > 0
-    assert transformers.__version__ == "4.57.1", "use the pinned private Transformers runtime"
     torch.cuda.set_device(args.device)
     torch.manual_seed(20261005)
     torch.use_deterministic_algorithms(True)
@@ -209,6 +209,9 @@ def main() -> None:
     if args.native_only:
         transport.close()
         return
+    import transformers
+
+    assert transformers.__version__ == "4.57.1", "use the pinned private Transformers runtime"
     assert args.weights is not None
     inference = Inference(args.weights, args.prompt_tokens, args.new_tokens, args.device)
     print(json.dumps({"test": "model_configuration", "model": MODEL, "revision": REVISION,

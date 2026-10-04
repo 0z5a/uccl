@@ -15,7 +15,7 @@ DEVFLAGS := -O3 -std=c++17 -arch=sm_$(SM) -ccbin=$(CXX) --expt-relaxed-constexpr
 DEVFLAGS += $(EXTRA_DEVFLAGS)
 LIBS := -L$(CUDA_HOME)/lib64 -Xlinker=-rpath -Xlinker=$(CUDA_HOME)/lib64 $(if $(NUMA_LIBRARY_DIR),-L$(NUMA_LIBRARY_DIR)) -lnuma -lcuda
 
-.PHONY: all clean coop-tests adapter-tests adapter-compile-fail compile-fail model-tests
+.PHONY: all clean coop-tests adapter-tests adapter-compile-fail compile-fail model-tests ht-tests
 all: $(BUILD_DIR)/capabilities $(BUILD_DIR)/queue_smoke
 
 coop-tests: $(BUILD_DIR)/coop_flush $(BUILD_DIR)/network_gate.o
@@ -23,6 +23,19 @@ coop-tests: $(BUILD_DIR)/coop_flush $(BUILD_DIR)/network_gate.o
 adapter-tests: $(BUILD_DIR)/adapter_signal
 
 model-tests: $(BUILD_DIR)/libmodel_transport.so
+
+EP := $(ROOT)/thirdparty/nccl-ep
+HTFLAGS := -I$(EP) -I$(NCCL_INCLUDE_DIR) -I$(CUDA_HOME)/include/cccl -DNCCL_CHECK_CUDACC=1 -DUCCL_GIN_WITH_NCCL_GIN=1 -D_NCCL_EP_LSA_TEAM_SIZE_MIN=1 -D_NCCL_EP_LSA_TEAM_SIZE_MAX=1 -D_NCCL_EP_NUM_LSA_TEAMS_1=1
+
+ht-tests: $(BUILD_DIR)/ht_single_rank-nccl $(BUILD_DIR)/ht_single_rank-uccl
+
+.SECONDARY: $(BUILD_DIR)/ht_adapter-nccl.o $(BUILD_DIR)/ht_adapter-uccl.o
+
+$(BUILD_DIR)/ht_adapter-%.o: $(EP)/device/hybridep_adapter.cu | $(BUILD_DIR)
+	$(NVCC) $(DEVFLAGS) $(HTFLAGS) $(if $(filter uccl,$*),-DNCCL_EP_USE_UCCL_GIN=1) -MMD -MP -c $< -o $@
+
+$(BUILD_DIR)/ht_single_rank-%: ht_single_rank.cu queue_fixture.hpp $(BUILD_DIR)/ht_adapter-%.o $(BUILD_DIR)/fifo.o
+	$(NVCC) $(DEVFLAGS) $(HTFLAGS) $(if $(filter uccl,$*),-DNCCL_EP_USE_UCCL_GIN=1) -MMD -MP $< $(BUILD_DIR)/ht_adapter-$*.o $(BUILD_DIR)/fifo.o $(LIBS) -o $@
 
 # The model fixture exchanges raw tensor pointers through a C ABI, so it needs
 # no PyTorch headers, libtorch ABI, EFA/MPI or NCCL runtime.

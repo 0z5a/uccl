@@ -49,7 +49,9 @@ Ordered ATOMIC 的 `atomic_offset=1` 是 opcode 标记，`req_rptr` 是 counter 
 
 构造宏修复四处接缝：dispatch 的 world 重声明、receiver 的未定义 channel、combine sender 的固定零 channel、combine receiver 直接构造 ncclGin。SIMPLE 宏接收实际 channel 并提供 world；NCCL 分支保留原两参数 constructor 的 sharing 语义。
 
-完整 Hybrid 还需要 kernel 参数与 helper 的 resources 贯通。Context 当前分配自己的 payload window；HT 注册的是 `gin_base_ptr`。必须明确注册同一 payload 存储、signal 存储的初始化/代际/context namespace 和释放时机，再执行真实 dispatch/combine 数值对照。当前代码没有用空指针或默认资源掩盖这项缺口。
+kernel 参数与四个 network helper 的 resources 已贯通：host params 和 kernel params 内嵌同一个 bundle，实际 builders 复制后以 const reference 传入 helper；无需额外 device allocation。scan 和纯本地 helper 移除无用资源参数，NCCL backend 的布局不增加 UCCL 字段。LSA size1 显式构建和原生单 rank 数值链路见 [单卡 HT gate](SINGLE_DEVICE_E2E.md#原生-ht-单-rank-数值链路)，CPU 严格构建通过，CUDA 未执行。
+
+跨节点公共 host API 仍缺 Context lifecycle bridge：Context 当前分配自己的 payload window；HT 注册的是 `gin_base_ptr`。必须接通同一 payload 存储、signal 存储的初始化/代际/context namespace 和释放时机。单 rank 数值测试提供有效私有队列/window 资源，并断言没有网络命令；它不掩盖跨节点 bridge 的缺口。
 
 ## 检查与下一 gate
 
@@ -59,6 +61,8 @@ Ordered ATOMIC 的 `atomic_offset=1` 是 opcode 标记，`req_rptr` 是 counter 
 | 普通、UINT64 回绕、INT64 边界 wait | 3 cases，通过 |
 | 过宽 delta、sentinel、slot1024、过宽 put、bits32、relaxed read | 6 个子进程按预期自 abort；不是 CUDA trap 记录 |
 | 实际 Hybrid constructor 宏，两个 backend | 严格 C++17 编译与 channel/sharing 检查通过；不是完整 Hybrid TU |
+| 实际 HT params / builders / LSA switch | 6 个严格 C++17 构建与运行通过，10 字段完整传递；CUDA 未编译 |
+| 原生 scan / dispatch / combine 高 B/C 单 rank | 两 backend、4 个高 B/C 和尾 chunk 已提供；未执行 |
 | 原生 CUDA / production FIFO signal | 24 cases/卡已提供，未编译或执行 |
 | CTA signal | 编译拒绝 gate 已提供，尚未执行 |
 | EFA、完整 Hybrid、模型高请求并发 | 未完成 |

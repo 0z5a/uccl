@@ -22,19 +22,21 @@
 #include "include/common.hpp"
 
 // UCCL-GIN adapter: when NCCL_EP_USE_UCCL_GIN is defined, replace ncclGin with UcclGinNet.
-// NCCL_EP_UCCL_PARAM adds the UCCL resources pointer to kernel function signatures.
+// Only network helpers receive the kernel's embedded UCCL resource bundle.
 // NCCL_EP_NET_CREATE replaces the ncclGin + ncclTeam creation at each call site.
 #ifdef NCCL_EP_USE_UCCL_GIN
 #include "adapter/uccl_gin_net.cuh"
-#define NCCL_EP_UCCL_PARAM , uccl_gin::UCCLGinResources* uccl_resources
+#define NCCL_EP_UCCL_PARAM , const uccl_gin::UCCLGinResources& uccl_resources
+#define NCCL_EP_UCCL_ARG , param.uccl_resources
 #define NCCL_EP_NET_CREATE(comm_idx, ctx_idx, chan) \
-    nccl_ep_adapter::UcclGinNet net(*uccl_resources, (chan)); \
+    nccl_ep_adapter::UcclGinNet net(uccl_resources, (chan)); \
     ncclTeam world{}  /* dummy for UcclGinNet */
 #define NCCL_EP_NET_CREATE_SIMPLE(comm_idx, ctx_idx, chan) \
-    nccl_ep_adapter::UcclGinNet net(*uccl_resources, (chan)); \
+    nccl_ep_adapter::UcclGinNet net(uccl_resources, (chan)); \
     ncclTeam world{}
 #else
 #define NCCL_EP_UCCL_PARAM
+#define NCCL_EP_UCCL_ARG
 #define NCCL_EP_NET_CREATE(comm_idx, ctx_idx, chan) \
     ncclGin net(dcomms[comm_idx], ctx_idx, NCCL_GIN_RESOURCE_SHARING_CTA); \
     ncclTeam world = ncclTeamWorld(dcomms[comm_idx])
@@ -841,6 +843,9 @@ struct dispatch_kernel_param_t{
   int num_ctx_per_comm;            // Number of contexts per communicator
   void* gin_base_ptr;              // Base pointer for offset calculations
   unsigned signals_base;           // Base signal ID
+#ifdef NCCL_EP_USE_UCCL_GIN
+  uccl_gin::UCCLGinResources uccl_resources;
+#endif
   // Memory Region info
   struct dispatch_memory_region_info_t mr_info;
   // Grid barrier counter for fused device_sync in dispatch tail (per-rank, not IPC-shared)
@@ -891,6 +896,9 @@ struct combine_kernel_param_t{
   void* gin_base_ptr;              // Base pointer for offset calculations
   unsigned signals_base;           // Base signal ID
   unsigned combine_signal_offset;  // Signal offset for combine operations
+#ifdef NCCL_EP_USE_UCCL_GIN
+  uccl_gin::UCCLGinResources uccl_resources;
+#endif
   // qp info and mr info
   struct combine_memory_region_info_t mr_info;
 };
@@ -1299,7 +1307,7 @@ __forceinline__ __device__ void S2G_warp_group_device_function(const int local_r
                                                       float* const* remote_expert_output_prob,
                                                       float* const* remote_expert_output_scaling_factor,
                                                       SMEM_TYPE* smem_buffer_ptr,
-                                                      const int experts_per_rank NCCL_EP_UCCL_PARAM)
+                                                      const int experts_per_rank)
 {
   constexpr int STAGES_PER_PIPELINE = NUM_OF_STAGES / NUM_PIPELINES;
   static_assert(NUM_OF_IN_FLIGHT_S2G < STAGES_PER_PIPELINE, "NUM_OF_IN_FLIGHT_S2G must be smaller than STAGES_PER_PIPELINE.");
@@ -1514,7 +1522,7 @@ __forceinline__ __device__ void intra_node_G2S_warp_group_device_function(const 
                                                                  float* const* remote_expert_input_prob,
                                                                  SMEM_TYPE* smem_buffer_ptr,
                                                                  const int HIDDEN_DIM,
-                                                                 const int experts_per_rank NCCL_EP_UCCL_PARAM)
+                                                                 const int experts_per_rank)
 {
   static_assert(sizeof(bool) == 1, "Routing map loads assume sizeof(bool) == 1");
 
@@ -1684,7 +1692,7 @@ __forceinline__ __device__ void intra_node_red_warp_group_device_function(const 
                                                                  float* rdma_intra_node_red_prob,
                                                                  SMEM_TYPE* smem_buffer_ptr,
                                                                  const int HIDDEN_DIM,
-                                                                 const int experts_per_rank NCCL_EP_UCCL_PARAM)
+                                                                 const int experts_per_rank)
 {
   // Vectorized loads from rdma_to_attn_map. Each destination token contributes one bool.
   using rdma_to_attn_map_load_t = uint4;
@@ -2919,7 +2927,7 @@ __forceinline__ __device__ void inter_node_red_warp_group_device_function(const 
                                                                  float* attn_output_prob,
                                                                  SMEM_TYPE* smem_buffer_ptr,
                                                                  const int HIDDEN_DIM,
-                                                                 const int experts_per_rank NCCL_EP_UCCL_PARAM)
+                                                                 const int experts_per_rank)
 {
 
   // The warps from inter-node red warp group will be divided into multiple independent pipeline. Each pipeline has INTER_NODE_RED_GROUP::warp_size() / NUM_OF_DATA_PIPELINE_PER_BLOCK warps.
@@ -3704,7 +3712,7 @@ __global__ void dispatch_kernel(const __grid_constant__ dispatch_kernel_param_t<
       <INTER_NODE_GROUP, TOKEN_DATA_TYPE, cur_smem_t, NUM_OF_STAGES, NUM_OF_TOKENS_PER_CHUNK, MAX_NUM_OF_TOKENS_PER_RANK, NUM_LSA_TEAMS, NUM_OF_BLOCKS, FORWARD_DISPATCH>
       (param.local_rank, param.node_rank, param.num_of_tokens_per_rank, param.num_of_ranks_per_node, param.attn_to_rdma_map,
        param.dcomms, param.nccl_window, param.num_gin_comms, param.num_ctx_per_comm, param.gin_base_ptr, param.signals_base,
-       &param.mr_info, smem_buffer_ptr, param.hidden_dim, param.experts_per_rank);
+       &param.mr_info, smem_buffer_ptr, param.hidden_dim, param.experts_per_rank NCCL_EP_UCCL_ARG);
     }
   } else if (threadIdx_x_int < INTER_NODE_GROUP::size() + INTRA_NODE_G2S_GROUP::size()){
     G2S_warp_group_device_function
@@ -3713,7 +3721,7 @@ __global__ void dispatch_kernel(const __grid_constant__ dispatch_kernel_param_t<
     (param.local_rank, param.node_rank, param.num_of_tokens_per_rank, param.num_of_ranks_per_node, param.expected_rdma_flag_value, param.hidden_dim, param.rdma_to_attn_map, param.attn_input_token,
     param.attn_input_prob, param.attn_input_token_scaling_factor,
     param.rdma_inter_node_group_flags, param.dcomms, param.signals_base, param.num_gin_comms, param.num_ctx_per_comm,
-    param.gin_base_ptr, &param.mr_info, smem_buffer_ptr, param.experts_per_rank);
+    param.gin_base_ptr, &param.mr_info, smem_buffer_ptr, param.experts_per_rank NCCL_EP_UCCL_ARG);
   } else if (threadIdx_x_int < INTER_NODE_GROUP::size() + INTRA_NODE_G2S_GROUP::size() + INTRA_NODE_S2G_GROUP::size()){
     S2G_warp_group_device_function
     <INTRA_NODE_S2G_GROUP, TOKEN_DATA_TYPE, cur_smem_t, NUM_OF_STAGES, NUM_OF_IN_FLIGHT_S2G, NUM_OF_TOKENS_PER_CHUNK, NUM_LSA_TEAMS, NUM_OF_BLOCKS, FORWARD_DISPATCH, NUM_PIPELINES, LSA_TEAM_SIZE>
@@ -3922,7 +3930,7 @@ __global__ void combine_kernel(const __grid_constant__ combine_kernel_param_t<LS
     <cur_smem_t, INTER_NODE_G2S_GROUP, NUM_OF_STAGES_G2S, NUM_OF_TOKENS_PER_CHUNK, MAX_NUM_OF_TOKENS_PER_RANK, NUM_LSA_TEAMS, NUM_OF_BLOCKS,
     NUM_OF_TOKENS_PER_GROUP, BACKWARD_COMBINE>
     (param.local_rank, param.node_rank, param.num_of_tokens_per_rank, param.num_of_ranks_per_node, param.expected_rdma_flag_value, param.rdma_to_attn_map, param.attn_to_rdma_map, param.sparse_to_dense_map, param.expert_input_token, param.expert_input_prob,
-    param.rdma_inter_node_group_token, param.rdma_inter_node_group_prob, param.dcomms, param.signals_base, param.combine_signal_offset, param.num_gin_comms, param.num_ctx_per_comm, param.rdma_inter_node_group_flags, smem_buffer_ptr, param.hidden_dim, param.experts_per_rank);
+    param.rdma_inter_node_group_token, param.rdma_inter_node_group_prob, param.dcomms, param.signals_base, param.combine_signal_offset, param.num_gin_comms, param.num_ctx_per_comm, param.rdma_inter_node_group_flags, smem_buffer_ptr, param.hidden_dim, param.experts_per_rank NCCL_EP_UCCL_ARG);
   }else if(threadIdx_x_int < INTRA_NODE_RED_GROUP::size() + INTER_NODE_RED_GROUP::size() + INTRA_NODE_G2S_GROUP::size() + INTER_NODE_G2S_GROUP::size() + INTER_NODE_RDMA_GROUP::size()){
     // Inter-node rdma warp group.
     if constexpr(NUM_LSA_TEAMS != 1){
@@ -3930,7 +3938,7 @@ __global__ void combine_kernel(const __grid_constant__ combine_kernel_param_t<LS
       <INTER_NODE_RDMA_GROUP, cur_smem_t, NUM_OF_STAGES_S2G, NUM_OF_TOKENS_PER_CHUNK, MAX_NUM_OF_TOKENS_PER_RANK, NUM_LSA_TEAMS, NUM_OF_BLOCKS, BACKWARD_COMBINE>
       (param.local_rank, param.node_rank, param.num_of_tokens_per_rank, param.num_of_ranks_per_node, param.rdma_to_attn_map,
        param.dcomms, param.nccl_window, param.num_gin_comms, param.num_ctx_per_comm, param.gin_base_ptr, param.signals_base, param.combine_signal_offset,
-       &param.mr_info, smem_buffer_ptr, param.hidden_dim, param.experts_per_rank);
+       &param.mr_info, smem_buffer_ptr, param.hidden_dim, param.experts_per_rank NCCL_EP_UCCL_ARG);
     }
   }else{
     // Too many threads, should not goes here.
@@ -4005,7 +4013,7 @@ __global__ void scan(const uint8_t* input_routing_map,
                      const int local_rank,
                      const int num_of_tokens_per_rank,
                      const int num_of_ranks_per_node,
-                     const int experts_per_rank NCCL_EP_UCCL_PARAM)
+                     const int experts_per_rank)
 {
   (void)per_expert_token_counts;
   // Calculate the warps per block.

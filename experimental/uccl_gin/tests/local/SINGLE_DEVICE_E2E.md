@@ -32,6 +32,32 @@ flowchart LR
 
 每个进程先运行 7 个原生 tensor case，覆盖组数增减与不均匀分片。模型执行线程串行使用其私有资源，上次 kernel 和 consumer 全部退出后才更新 counter 代际。model stream、GIN kernel 和独立 nonblocking copy stream 的依赖显式完成；stream、event、pinned buffers 在 producer 启动前创建。
 
+## 原生 HT 单 rank 数值链路
+
+`ht_single_rank.cu` 另行调用 vendored `call_metadata_preprocessing`、`call_dispatch`、`call_combine`，执行原始 scan / dispatch / combine CUDA kernels。新增 LSA size=1 的显式构建实例；NCCL 与 UCCL 两个 backend 都构建。kernel 内嵌 resources，由实际 host builder 复制、以 const reference 传入四个 network helper；scan 和纯本地 helper 不接收无用参数。
+
+```mermaid
+flowchart LR
+  Q[一次入队 C32 / C64 / C128 请求] --> B[实际 B8 / B16 / B32 / B64]
+  B --> S[原生 scan<br/>32 专家 top8 / 每7个丢弃1 token]
+  S --> D[原生 HT dispatch<br/>BF16 activation + FP32 probability]
+  D --> E[数值 expert transform<br/>BF16 multiply2]
+  E --> C[原生 HT combine]
+  C --> O[CPU 独立全值 oracle<br/>routing / counts / BF16 / generation]
+  P[有效单卡队列与 window 资源] --> K[kernel 内嵌 resources]
+  K --> H[4 个实际 network helper]
+  H --> Z[单 rank 编译删除网络路径<br/>断言 GIN 命令数为0]
+```
+
+每请求 128 tokens，batch 的 1024/2048/4096/8192 tokens 使用相同 hidden1024、32 experts、top8。另测 B8C32 最后请求减少4 tokens，形成60-token尾 chunk。独立 CPU oracle 比对所有 sparse/dense map、expert counts、rank mask、local routing、dispatch BF16/probability、combine BF16（含被丢弃 token 的零值），并检查单调 flag、grid counter 复位和所有网络队列为空。C 个请求先实际进入队列，单执行线程按 B 完成，报告实际 pending/batch/completion 数。
+
+此数值链路的 expert transform 用于验证搬运与 reduction；完整 Granite 推理仍由上一节验证。它执行 HT kernels，尚不提供 `ncclEpCreateGroup` 公共 host API、跨节点 Context bridge 或 NIC 证据。单 rank 路径没有 GIN 流量，其 CUDA event 时间只是数值测试诊断，不能作为 flush 加速比。当前 [实际参数 builder 的 6 个 host 构建](results/single-e2e-preparation/ht-host-result.json) 和 [两个实际 constructor 宏](results/single-e2e-preparation/ht-host-macro-result.json)通过；CUDA 未编译/运行。
+
+```sh
+make ht-tests SM=120 NCCL_INCLUDE_DIR=/path/to/nccl-include
+build/sm120/ht_single_rank-uccl --batch 64 --concurrency 128 --rounds 7
+```
+
 ## 有限矩阵与证据
 
 | 单机 case | 最大 batch | 同时待处理请求 | Prefill / Decode | 模型路径 |
@@ -62,7 +88,8 @@ flowchart LR
 | V2 review：大 payload、lane/warp affinity、Q1/3/32/33/64、分段诊断 | 原 fixture 在每机重跑高 G64 / BS2048，单 GPU 即可 | 三 arm 原始分轮结果；未运行 |
 | handoff / V2 design 中的实际模型、请求并发缺口 | 上述 4 case，全部 24 层 GIN 链路与模型输出对照 | 实际 B/C、全部 logits/tokens、速度 MD；未运行 |
 | HT adapter 类型、rail rank、signal index、counter lifecycle | 原 24-case `adapter_signal`，另加 native tensor 不均匀 partition/代际 gate | 每机实际 CUDA 结果；未运行 |
-| NCCL_EP_PLAN 的 EFA、完整 vendored Hybrid gates | 保留原范围；本轮单侧 gate 覆盖实际 HT 方法与模型边界 | 不用 model fixture 冒充 NIC/完整 Hybrid |
+| NCCL_EP_PLAN 的原生 HT dispatch/combine 数值 gate | 上述原生 scan→dispatch→数值 transform→combine，两 backend、高 B/C 和尾 chunk | 每机 CUDA 原始日志与 oracle；未运行 |
+| NCCL_EP_PLAN 的 EFA、跨节点 host bridge | 保留原范围与缺口 | 单卡测试不提供 NIC 或公共 host API 集成证据 |
 
 ## 执行与清理
 

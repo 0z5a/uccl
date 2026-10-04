@@ -413,6 +413,9 @@ build_dispatch_param(const DispatchParams& params) {
     kp.num_ctx_per_comm = params.num_ctx_per_comm;
     kp.gin_base_ptr = params.gin_base_ptr;
     kp.signals_base = params.signals_base;
+#ifdef NCCL_EP_USE_UCCL_GIN
+    kp.uccl_resources = params.uccl_resources;
+#endif
     // Use offsets relative to gin_base_ptr
     kp.mr_info = {
                .attn_input_token_offset = params.mr_info.attn_input_token_offset,
@@ -546,6 +549,9 @@ build_combine_param(const CombineParams& params) {
     kp.gin_base_ptr = params.gin_base_ptr;
     kp.signals_base = params.signals_base;
     kp.combine_signal_offset = params.combine_signal_offset;
+#ifdef NCCL_EP_USE_UCCL_GIN
+    kp.uccl_resources = params.uccl_resources;
+#endif
     // Use offsets relative to gin_base_ptr
     kp.mr_info = {
                .rdma_intra_node_red_token_offset = params.mr_info.rdma_intra_node_red_token_offset,

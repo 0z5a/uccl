@@ -1,0 +1,15 @@
+{
+  "scope": "CPU substitution runs actual constructor macros; no CUDA/NIC execution",
+  "pass": true,
+  "commands": [
+    {
+      "backend": "nccl",
+      "exit": 0
+    },
+    {
+      "backend": "uccl",
+      "exit": 0
+    }
+  ],
+  "source_sha256": "77775dafe72c03df134afad20794ad10359d329df3056a5c7b4c0252c96396c0"
+}
