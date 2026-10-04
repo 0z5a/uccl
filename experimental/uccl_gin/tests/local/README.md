@@ -7,8 +7,8 @@ libnuma development files are the only dependencies.
 ```sh
 make -C experimental/uccl_gin/tests/local SM=120 CUDA_HOME=/usr/local/cuda -j4
 LOCAL_BIN=experimental/uccl_gin/tests/local/build/sm120
-CUDA_VISIBLE_DEVICES=0 timeout 90s "$LOCAL_BIN/capabilities" --device 0
-CUDA_VISIBLE_DEVICES=0 timeout 90s "$LOCAL_BIN/queue_smoke" --device 0 \
+CUDA_VISIBLE_DEVICES=0 "$LOCAL_BIN/capabilities" --device 0
+CUDA_VISIBLE_DEVICES=0 "$LOCAL_BIN/queue_smoke" --device 0 \
   --producers 32 --capacity 512 --commands 100000 --rounds 3
 ```
 
@@ -23,7 +23,7 @@ checks signed atomic values and the FIFO reserved-bit transformation, reuses the
 FIFO across rounds, and tests scalar completion. Producers are limited to FIFO
 capacity; vary `--producers` and `--capacity` for backpressure and wraparound.
 The consumer starts before the producer kernel and has a 60-second deadline.
-Use the outer timeout to bound CUDA initialization and teardown as well.
+Wait for the process's own exit and record its status before releasing resources.
 
 For a rootless libnuma prefix, pass `NUMA_INCLUDE_DIR` and `NUMA_LIBRARY_DIR`.
 An SM90 compile comparison uses `make SM=90`; architecture-specific directories
@@ -42,7 +42,7 @@ links no NCCL runtime and creates no communicator.
 ```sh
 make -C experimental/uccl_gin/tests/local coop-tests compile-fail \
   SM=120 NCCL_INCLUDE_DIR=/path/to/nccl/include
-CUDA_VISIBLE_DEVICES=0 timeout 90s "$LOCAL_BIN/coop_flush" \
+CUDA_VISIBLE_DEVICES=0 "$LOCAL_BIN/coop_flush" \
   --via adapter --group warp --warps 8 --queues 32 --iterations 100 \
   --shared 1 --check-source-reuse 1
 ```
@@ -56,8 +56,10 @@ No peer pointer or host-staged production transport is introduced.
 
 With `--shared 0`, each group has separate queues. Per-queue traces check that
 participant WRITEs precede each drain marker. System-scope release/acquire status
-words verify that no participant returns before the final QUIET acknowledgement.
-`--delay-us 50` holds that acknowledgement. Both layouts require exactly
+words verify that no participant returns before any queue's QUIET acknowledgement;
+the check runs after any artificial delay and before the consumer pops that slot.
+`--delay-us 50 --delay-queue 0` holds an early queue's acknowledgement; the default
+delayed queue is Q−1. Both layouts require exactly
 `warps * iterations * queues` QUIETs for the fixed warp path.
 
 After the entry rendezvous, member `r` drains queue indices `r + k * coop.size()`.
@@ -66,6 +68,19 @@ the exit rendezvous waits for all members' assigned queues. With 32 queues,
 a full warp drains one queue per member in parallel. Thread groups retain the
 sequential all-queue behavior. Use Q=3/33/64 to test uneven and repeated assignments.
 All group members must pass the same resource array and queue count.
+
+`--channel-hint lane` (default) routes by lane index. `--channel-hint warp`
+routes a full warp by its group index, matching one aspect of the production
+global-channel affinity. `--num-lanes N` selects the production proxy-major
+queue layout and must divide Q. It does not add host workers: this fixture
+still has one consumer per device. An independently inverted layout checks
+every WRITE's destination FIFO and exact per-FIFO WRITE/QUIET counts.
+At G64/Q32, either hint assigns 64 writers per queue per iteration: lane hint
+uses one member of each of 64 warps; warp hint uses all members of two warps.
+
+Private groups test completion ordering. Changing shared G64/Q32 to private
+also increases the worker's scanned FIFO count from 32 to 2,048; it cannot
+isolate atomic contention. Use shared queues for the three-arm speed comparison.
 
 Thread groups are supported; CTA groups must fail compilation. The adapter
 accepts acquire ordering only: `--invalid-order 1 --bytes 0 --check-source-reuse 0`
@@ -102,6 +117,22 @@ nsys profile --trace=cuda --sample=none --cpuctxsw=none --kill=none \
 nsys stats -r cuda_gpu_kern_sum,cuda_api_sum,cuda_gpu_mem_time_sum \
   coop_flush_diagnostic.nsys-rep
 ```
+
+For host-stage diagnostics, use a separate run with `--diagnose-consumer 1`.
+The JSON records callback wall time, copy/event submission, event synchronization,
+full pattern checking, and time between adjacent callbacks. The three WRITE
+stages are nested in `callback_ns`; do not add them to it. The inter-callback
+time includes FIFO pop, scanning, polling and host scheduling, excludes the first
+and last boundary, and is not a measurement of GPU idle. With diagnostics off,
+zero fields mean uncollected. Main timing keeps diagnostics off and uses identical
+fixture bytes and CLI options across Original, V1 and V2. ABC/CBA with seven rounds
+and two discarded rounds gives ten warm observations from two independent
+process starts per arm/device; report each wave as well as the pooled median.
+
+The [design document](COOP_FLUSH_DESIGN.md) explains queue ownership and the
+source-lifetime proof. Local WRITE slots are popped after copy/check; the real
+proxy can pop WRITE on collection and must retire QUIET only after network
+completion. A passing local oracle does not validate that production bookkeeping.
 
 ## EFA gate
 

@@ -19,14 +19,23 @@ both group rendezvous but assigns queue indices `r + k * coop.size()` to member
 `r`. Thus every queue receives one QUIET, all assigned queues finish before the
 exit rendezvous, and thread groups retain sequential all-queue completion.
 This preserves the group source-lifetime requirement in the
-[NCCL GIN flush contract](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device_gin.html#ncclGin::flush).
+[NCCL GIN flush contract](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device_gin.html).
 Scalar `flush()` and the adapter's acquire-order guard are unchanged.
+
+The [design document and relationship figures](COOP_FLUSH_DESIGN.md) explain
+the completion chain, queue ownership and current validation boundaries. The
+new common fixture adds proxy-major routing checks, delayed ACK checks on every
+private queue, exact per-FIFO counts and separate optional host-stage diagnostics.
+Host checks pass for 11,760 configurations and 8,699,600 producer routes; these
+are not CUDA compilation or GPU results. New GPU timing remains pending.
 
 Q=3/33/64 extend validation beyond even, single-warp assignments. A new
 dual-GPU comparison will use the original adapter, the first cooperative
 implementation, and the queue-partition candidate with identical fixture
 source and settings. Forward/reverse execution order and seven rounds per
-process leave ten warm samples per arm/device after discarding the first two.
+process leave ten warm observations per arm/device after discarding the first two:
+two independent process starts with five repeated observations each. Both waves
+and their pooled medians will be reported; p95 is descriptive at this sample size.
 The real HBM source-copy and pattern checks remain enabled.
 
 | New candidate gate | Current result |
