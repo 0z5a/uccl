@@ -1,0 +1,18 @@
+make: Entering directory '/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r2/source/native-ht/experimental/uccl_gin/tests/local'
+mkdir -p build/sm120
+g++ -O3 -std=c++17 -pthread -Wall -I../.. -I../../../../include -I/usr/local/cuda-13.0/include -I/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r2/numactl-v2.0.14 -MMD -MP -c ../../transport/fifo.cpp -o build/sm120/fifo.o
+/usr/local/cuda-13.0/bin/nvcc -O3 -std=c++17 -arch=sm_120 -ccbin=g++ --expt-relaxed-constexpr -I../.. -I../../../../include -I/usr/local/cuda-13.0/include -I/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r2/numactl-v2.0.14 -Xcompiler=-pthread,-Wall -DUCCL_GIN_WITH_NCCL_GIN=0 -MMD -MP capabilities.cu build/sm120/fifo.o -L/usr/local/cuda-13.0/lib64 -Xlinker=-rpath -Xlinker=/usr/local/cuda-13.0/lib64 -Xlinker=/usr/lib/x86_64-linux-gnu/libnuma.so.1 -Xlinker=/usr/lib/x86_64-linux-gnu/libcuda.so.1 -o build/sm120/capabilities
+/usr/local/cuda-13.0/bin/nvcc -O3 -std=c++17 -arch=sm_120 -ccbin=g++ --expt-relaxed-constexpr -I../.. -I../../../../include -I/usr/local/cuda-13.0/include -I/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r2/numactl-v2.0.14 -Xcompiler=-pthread,-Wall -DUCCL_GIN_WITH_NCCL_GIN=0 -MMD -MP queue_smoke.cu build/sm120/fifo.o -L/usr/local/cuda-13.0/lib64 -Xlinker=-rpath -Xlinker=/usr/local/cuda-13.0/lib64 -Xlinker=/usr/lib/x86_64-linux-gnu/libnuma.so.1 -Xlinker=/usr/lib/x86_64-linux-gnu/libcuda.so.1 -o build/sm120/queue_smoke
+/usr/local/cuda-13.0/bin/nvcc -O3 -std=c++17 -arch=sm_120 -ccbin=g++ --expt-relaxed-constexpr -I../.. -I../../../../include -I/usr/local/cuda-13.0/include -I/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r2/numactl-v2.0.14 -Xcompiler=-pthread,-Wall -I../../../.. -I/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r2/nccl-include -DNCCL_CHECK_CUDACC=1 -DUCCL_GIN_WITH_NCCL_GIN=1 -MMD -MP adapter_signal.cu build/sm120/fifo.o -L/usr/local/cuda-13.0/lib64 -Xlinker=-rpath -Xlinker=/usr/local/cuda-13.0/lib64 -Xlinker=/usr/lib/x86_64-linux-gnu/libnuma.so.1 -Xlinker=/usr/lib/x86_64-linux-gnu/libcuda.so.1 -o build/sm120/adapter_signal
+In file included from /root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r2/nccl-include/nccl_device/gin/gin_device_api.h:13,
+                 from /root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r2/nccl-include/nccl_device/impl/gin__funcs.h:13,
+                 from /root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r2/nccl-include/nccl_device.h:16,
+                 from ../../uccl_gin/uccl_gin.cuh:31,
+                 from queue_fixture.hpp:4,
+                 from adapter_signal.cu:1:
+/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r2/nccl-include/nccl_device/gin/gdaki/gin_gdaki.h:26:10: fatal error: doca_gpunetio/doca_gpunetio_device.h: No such file or directory
+   26 | #include "doca_gpunetio/doca_gpunetio_device.h"
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+compilation terminated.
+make: *** [Makefile:49: build/sm120/adapter_signal] Error 1
+make: Leaving directory '/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r2/source/native-ht/experimental/uccl_gin/tests/local'

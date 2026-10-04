@@ -1,0 +1,13 @@
+make: Entering directory '/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r3/source/native-ht/experimental/uccl_gin/tests/local'
+mkdir -p build/sm120
+g++ -O3 -std=c++17 -pthread -Wall -I../.. -I../../../../include -I/usr/local/cuda-13.0/include -I/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r3/numactl-v2.0.14 -MMD -MP -c ../../transport/fifo.cpp -o build/sm120/fifo.o
+/usr/local/cuda-13.0/bin/nvcc -O3 -std=c++17 -arch=sm_120 -ccbin=g++ --expt-relaxed-constexpr -I../.. -I../../../../include -I/usr/local/cuda-13.0/include -I/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r3/numactl-v2.0.14 -Xcompiler=-pthread,-Wall -DNCCL_GIN_GDAKI_ENABLE=0 -DUCCL_GIN_WITH_NCCL_GIN=0 -MMD -MP capabilities.cu build/sm120/fifo.o -L/usr/local/cuda-13.0/lib64 -Xlinker=-rpath -Xlinker=/usr/local/cuda-13.0/lib64 -Xlinker=/usr/lib/x86_64-linux-gnu/libnuma.so.1 -Xlinker=/usr/lib/x86_64-linux-gnu/libcuda.so.1 -o build/sm120/capabilities
+/usr/local/cuda-13.0/bin/nvcc -O3 -std=c++17 -arch=sm_120 -ccbin=g++ --expt-relaxed-constexpr -I../.. -I../../../../include -I/usr/local/cuda-13.0/include -I/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r3/numactl-v2.0.14 -Xcompiler=-pthread,-Wall -DNCCL_GIN_GDAKI_ENABLE=0 -DUCCL_GIN_WITH_NCCL_GIN=0 -MMD -MP queue_smoke.cu build/sm120/fifo.o -L/usr/local/cuda-13.0/lib64 -Xlinker=-rpath -Xlinker=/usr/local/cuda-13.0/lib64 -Xlinker=/usr/lib/x86_64-linux-gnu/libnuma.so.1 -Xlinker=/usr/lib/x86_64-linux-gnu/libcuda.so.1 -o build/sm120/queue_smoke
+/usr/local/cuda-13.0/bin/nvcc -O3 -std=c++17 -arch=sm_120 -ccbin=g++ --expt-relaxed-constexpr -I../.. -I../../../../include -I/usr/local/cuda-13.0/include -I/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r3/numactl-v2.0.14 -Xcompiler=-pthread,-Wall -DNCCL_GIN_GDAKI_ENABLE=0 -I../../../.. -I/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r3/nccl-include -DNCCL_CHECK_CUDACC=1 -DUCCL_GIN_WITH_NCCL_GIN=1 -MMD -MP adapter_signal.cu build/sm120/fifo.o -L/usr/local/cuda-13.0/lib64 -Xlinker=-rpath -Xlinker=/usr/local/cuda-13.0/lib64 -Xlinker=/usr/lib/x86_64-linux-gnu/libnuma.so.1 -Xlinker=/usr/lib/x86_64-linux-gnu/libcuda.so.1 -o build/sm120/adapter_signal
+adapter_signal.cu(7): error: expected an identifier
+  constexpr int kChannel = 7, 40000 = 10;
+                              ^
+
+1 error detected in the compilation of "adapter_signal.cu".
+make: *** [Makefile:49: build/sm120/adapter_signal] Error 2
+make: Leaving directory '/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-cf70e26-r3/source/native-ht/experimental/uccl_gin/tests/local'
