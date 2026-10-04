@@ -4,7 +4,7 @@
 
 using namespace local_test;
 using nccl_ep_adapter::UcclGinNet;
-constexpr int kChannel = 7, kIterations = 10;
+constexpr int kChannel = 7, kSignalTestGenerations = 10;
 
 template <int Width, int Arity>
 __global__ void send_signals(uccl_gin::UCCLGinResources resources,
@@ -12,13 +12,13 @@ __global__ void send_signals(uccl_gin::UCCLGinResources resources,
   using Coop = std::conditional_t<Width == 32, ncclCoopWarp, ncclCoopThread>;
   UcclGinNet net(resources, kChannel);
   Coop coop;
-  for (int generation = 1; generation <= kIterations; ++generation) {
+  for (int generation = 1; generation <= kSignalTestGenerations; ++generation) {
     // A late non-leader makes a missing entry barrier observable.
     if (threadIdx.x == Width - 1) __nanosleep(100000);
     size_t const word = (generation - 1) * Width + threadIdx.x;
     auto* source = reinterpret_cast<uint64_t*>(resources.window_base);
     source[word] = generation * 1000 + threadIdx.x;
-    net.put({}, 1, {}, (kIterations * Width + word) * sizeof(uint64_t),
+    net.put({}, 1, {}, (kSignalTestGenerations * Width + word) * sizeof(uint64_t),
             {}, word * sizeof(uint64_t), sizeof(uint64_t),
             ncclGin_None{}, ncclGin_None{}, ncclCoopThread{}, ncclGin_None{},
             cuda::thread_scope_thread, cuda::thread_scope_device,
@@ -42,13 +42,13 @@ void check_signals(int device, int local_world, ncclGinSignal_t id) {
   QueueFixture fixture(device, 3, 4096);
   uint64_t* window;
   int64_t *host_counters, *device_counters;
-  CUDA_CHECK(cudaMalloc(&window, 2 * kIterations * Width * sizeof(uint64_t)));
+  CUDA_CHECK(cudaMalloc(&window, 2 * kSignalTestGenerations * Width * sizeof(uint64_t)));
   CUDA_CHECK(cudaHostAlloc(&host_counters, 1024 * sizeof(int64_t),
                            cudaHostAllocMapped));
   CUDA_CHECK(cudaHostGetDevicePointer(&device_counters, host_counters, 0));
   std::memset(host_counters, 0, 1024 * sizeof(int64_t));
   fixture.resources.window_base = reinterpret_cast<uint64_t>(window);
-  fixture.resources.window_bytes = 2 * kIterations * Width * sizeof(uint64_t);
+  fixture.resources.window_bytes = 2 * kSignalTestGenerations * Width * sizeof(uint64_t);
   fixture.resources.atomic_tail_base = reinterpret_cast<uint64_t>(device_counters);
   fixture.resources.num_scaleout_ranks = 2;
   fixture.resources.num_scaleup_ranks = local_world;
@@ -61,7 +61,7 @@ void check_signals(int device, int local_world, ncclGinSignal_t id) {
   CUDA_CHECK(cudaEventRecord(copied, copy_stream));
   CUDA_CHECK(cudaEventSynchronize(copied));
   int writes = 0, signals = 0, quiets = 0;
-  std::array<bool, kIterations * Width> seen{};
+  std::array<bool, kSignalTestGenerations * Width> seen{};
   fixture.start([&](size_t queue, TransferCmd const& cmd) {
     CmdType const kind = get_base_cmd(cmd.cmd_type);
     if (kind == CmdType::QUIET) { ++quiets; return; }
@@ -71,7 +71,7 @@ void check_signals(int device, int local_world, ncclGinSignal_t id) {
       size_t const word = (cmd.req_lptr << kWriteAddrShiftNormal) / sizeof(uint64_t);
       require(word < seen.size() && !seen[word], "duplicate/invalid source offset");
       require((cmd.req_rptr << kWriteAddrShiftNormal) ==
-                  (kIterations * Width + word) * sizeof(uint64_t),
+                  (kSignalTestGenerations * Width + word) * sizeof(uint64_t),
               "destination offset");
       require(cmd.bytes == sizeof(uint64_t), "put byte count");
       CUDA_CHECK(cudaMemcpyAsync(capture.get(), window + word, sizeof(uint64_t),
@@ -93,9 +93,9 @@ void check_signals(int device, int local_world, ncclGinSignal_t id) {
   });
   send_signals<Width, Arity><<<1, Width, 0, fixture.stream>>>(fixture.resources, id);
   fixture.finish();
-  require(writes == kIterations * Width && signals == kIterations && quiets == 3,
+  require(writes == kSignalTestGenerations * Width && signals == kSignalTestGenerations && quiets == 3,
           "logical signal/flush count");
-  require(host_counters[id] == kIterations, "counter value");
+  require(host_counters[id] == kSignalTestGenerations, "counter value");
   CUDA_CHECK(cudaEventDestroy(copied));
   CUDA_CHECK(cudaStreamDestroy(copy_stream));
   CUDA_CHECK(cudaFreeHost(host_counters));
