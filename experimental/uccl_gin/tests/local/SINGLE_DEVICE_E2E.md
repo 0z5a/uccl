@@ -60,7 +60,7 @@ build/sm120/ht_single_rank-uccl --batch 64 --concurrency 128 --rounds 7
 
 使用官方 NCCL 2.30.4 头文件时，上述单卡构建还需传入 `EXTRA_DEVFLAGS=-DNCCL_GIN_GDAKI_ENABLE=0`。这些 gate 不使用 GDAKI/DOCA；缺少开发头文件的现有环境无需安装该后端。三个比较 arm 使用同一选项。
 
-补充 RTX 5090 资格窗口已保存[三次实际构建失败](results/native-qualification-westd/README.md)：链接器输入、可选 GDAKI 头文件、signal fixture 常量与 `kIterations` 宏冲突。三个控制器均自然退出，GPU 测试进程数均为 0。最后一个问题已在 `cc203297a3c5cc0ed2666cb85fa940127b57d5bb` 修复；下一轮源码包已固定，尚未运行。这些记录不改变 Thor / 5080 的未执行状态。
+补充 RTX 5090 资格窗口已保存[四次实际构建失败](results/native-qualification-westd/README.md)：链接器输入、可选 GDAKI 头文件、signal fixture 常量与 `kIterations` 宏冲突，以及原生 HT include 搜索路径。控制器均自然退出，GPU 测试进程数均为 0。r4 的 signal fixture 和模型传输库已编译，原生 HT TU 因 include 路径失败；该测试路径已补齐，下一轮待验证。这些记录不改变 Thor / 5080 的未执行状态。
 
 ## 有限矩阵与证据
 

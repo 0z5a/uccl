@@ -25,7 +25,7 @@ adapter-tests: $(BUILD_DIR)/adapter_signal
 model-tests: $(BUILD_DIR)/libmodel_transport.so
 
 EP := $(ROOT)/thirdparty/nccl-ep
-HTFLAGS := -I$(EP) -I$(NCCL_INCLUDE_DIR) -I$(CUDA_HOME)/include/cccl -DNCCL_CHECK_CUDACC=1 -DUCCL_GIN_WITH_NCCL_GIN=1 -D_NCCL_EP_LSA_TEAM_SIZE_MIN=1 -D_NCCL_EP_LSA_TEAM_SIZE_MAX=1 -D_NCCL_EP_NUM_LSA_TEAMS_1=1
+HTFLAGS := -I$(ROOT) -I$(EP) -I$(EP)/include -I$(NCCL_INCLUDE_DIR) -I$(CUDA_HOME)/include/cccl -DNCCL_CHECK_CUDACC=1 -DUCCL_GIN_WITH_NCCL_GIN=1 -D_NCCL_EP_LSA_TEAM_SIZE_MIN=1 -D_NCCL_EP_LSA_TEAM_SIZE_MAX=1 -D_NCCL_EP_NUM_LSA_TEAMS_1=1
 
 ht-tests: $(BUILD_DIR)/ht_single_rank-nccl $(BUILD_DIR)/ht_single_rank-uccl
 

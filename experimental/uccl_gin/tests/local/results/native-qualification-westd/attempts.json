@@ -31,14 +31,25 @@
       "reason": "signal fixture constant collides with transport kIterations macro",
       "evidence_archive_sha256": "1316c3244440f1b539c3da579d94ce29d14e18f1e487ec837b64cd07eae0c273",
       "collected_before_handoff": true
+    },
+    {
+      "attempt": 4,
+      "source_commit": "cc203297a3c5cc0ed2666cb85fa940127b57d5bb",
+      "controller_ssh_natural_exit": 1,
+      "make_natural_exit": 2,
+      "GPU_test_processes": 0,
+      "reason": "local HT Makefile missing vendored include/common.hpp search path",
+      "evidence_archive_sha256": "fd4c018d401f4c5f5690481dc9764b40cde39e7b07640344f05ac9b6ce68d040",
+      "collected_before_handoff": true
     }
   ],
   "release": {
-    "boot_id": "18dbe202-804d-4276-8357-baf55f7d79f7",
-    "own_r3_controller_present": false,
-    "gpu0_and_io_lock_probe_exit": 0,
-    "gpu0": "0, GPU-209bed64-f11a-c1f3-fe87-8a69538d8d79, 0 MiB"
+    "own_controller_pid": 6194,
+    "present": false,
+    "gpu0_and_io_locks_acquired_together": true,
+    "no_process_signals": true,
+    "archive_sha256": "fd4c018d401f4c5f5690481dc9764b40cde39e7b07640344f05ac9b6ce68d040",
+    "boot_id": "18dbe202-804d-4276-8357-baf55f7d79f7"
   },
-  "next_source_commit": "cc203297a3c5cc0ed2666cb85fa940127b57d5bb",
-  "next_source_NOT_RUN": true
+  "pending_fix": "add ROOT and nccl-ep/include to local HTFLAGS; next repair build NOT_RUN"
 }
