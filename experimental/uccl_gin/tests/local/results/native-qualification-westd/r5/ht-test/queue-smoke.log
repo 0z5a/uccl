@@ -1,0 +1,4 @@
+Warning: set_mempolicy failed for device 0 numaNode 0: Operation not permitted (errno=1). Continuing without NUMA mempolicy.
+{"test":"queue_smoke","device":0,"round":0,"producers":32,"capacity":512,"commands":100000,"quiet":1,"elapsed_ms":15.444,"pass":true}
+{"test":"queue_smoke","device":0,"round":1,"producers":32,"capacity":512,"commands":100000,"quiet":1,"elapsed_ms":15.209,"pass":true}
+{"test":"queue_smoke","device":0,"round":2,"producers":32,"capacity":512,"commands":100000,"quiet":1,"elapsed_ms":18.303,"pass":true}

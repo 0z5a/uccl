@@ -1,0 +1,16 @@
+{
+  "case": "ht-uccl-B8C32-tail4",
+  "command": [
+    "/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-3e9ea40-r5/source/native-ht/experimental/uccl_gin/tests/local/build/sm120/ht_single_rank-uccl",
+    "--batch",
+    "8",
+    "--concurrency",
+    "32",
+    "--token-tail",
+    "4",
+    "--rounds",
+    "7"
+  ],
+  "started_utc": "2026-10-04T20:20:57.182289+00:00",
+  "pid": 8002
+}

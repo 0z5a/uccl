@@ -1,0 +1,9 @@
+{
+  "pass": true,
+  "machine": "westd-5090",
+  "native_ht_processes": 10,
+  "native_ht_rounds": 70,
+  "cases": 5,
+  "backends": 2,
+  "scope": "actual single-rank HT CUDA kernels and GIN local tensor/signal gates; no model/NIC/timing claim"
+}

@@ -2,9 +2,11 @@
 
 2026-10-05 用户将本轮验收改为 Thor、RTX 5080 **各自单机单侧测试**，重点是高请求并发和大 batch。原有 5090 测量保持原样。
 
-状态：本地实现准备中；**两机 CUDA、模型正确性、速度测量均未执行**。两机仍由前驱任务保留 whole-job 窗口，暂时空锁和空闲 GPU 不构成交接。
+状态：补充 RTX5090 原生资格已完成；**Thor / RTX5080 两机 CUDA、完整模型正确性、速度测量均未执行**。两机仍由前驱任务保留 whole-job 窗口，暂时空锁和空闲 GPU 不构成交接。
 
 已完成的准备证据：[42 个分片形状](results/single-e2e-preparation/host-preparation.json)、[实际异步调度器的 4 个 CPU 组合](results/single-e2e-preparation/host-request-wave.json)、[固定权重的本机下载和 LFS 校验](results/single-e2e-preparation/model-inputs.json)。权重在开发过程中并行下载，2,671,359,655 bytes；这些准备结果不代表 GPU/model 测试通过。
+
+三个 arm 已按 `3e9ea407` [重新冻结输入](results/single-e2e-preparation/current-inputs-3e9ea40.json)，共同包含 signal 常量和本地 include 修复，production GIN 字节与原三个固定版本相同。旧 `ad7dc31` 包保留供核对。
 
 ## 模型与数据流
 
@@ -51,7 +53,7 @@ flowchart LR
 
 每请求 128 tokens，batch 的 1024/2048/4096/8192 tokens 使用相同 hidden1024、32 experts、top8。另测 B8C32 最后请求减少4 tokens，形成60-token尾 chunk。独立 CPU oracle 比对所有 sparse/dense map、expert counts、rank mask、local routing、dispatch BF16/probability、combine BF16（含被丢弃 token 的零值），并检查单调 flag、grid counter 复位和所有网络队列为空。C 个请求先实际进入队列，单执行线程按 B 完成，报告实际 pending/batch/completion 数。
 
-此数值链路的 expert transform 用于验证搬运与 reduction；完整 Granite 推理仍由上一节验证。它执行 HT kernels，尚不提供 `ncclEpCreateGroup` 公共 host API、跨节点 Context bridge 或 NIC 证据。单 rank 路径没有 GIN 流量，其 CUDA event 时间只是数值测试诊断，不能作为 flush 加速比。当前 [实际参数 builder 的 6 个 host 构建](results/single-e2e-preparation/ht-host-result.json) 和 [两个实际 constructor 宏](results/single-e2e-preparation/ht-host-macro-result.json)通过；CUDA 未编译/运行。
+此数值链路的 expert transform 用于验证搬运与 reduction；完整 Granite 推理仍由上一节验证。它执行 HT kernels，尚不提供 `ncclEpCreateGroup` 公共 host API、跨节点 Context bridge 或 NIC 证据。单 rank 路径没有 GIN 流量，其 CUDA event 时间只是数值测试诊断，不能作为 flush 加速比。[实际参数 builder 的 6 个 host 构建](results/single-e2e-preparation/ht-host-result.json)、[两个实际 constructor 宏](results/single-e2e-preparation/ht-host-macro-result.json)通过；补充 RTX5090 上的两个实际 CUDA backend 共70轮也已通过，原始结果见下文。Thor / RTX5080 仍须分别执行。
 
 ```sh
 make ht-tests SM=120 NCCL_INCLUDE_DIR=/path/to/nccl-include
@@ -60,7 +62,7 @@ build/sm120/ht_single_rank-uccl --batch 64 --concurrency 128 --rounds 7
 
 使用官方 NCCL 2.30.4 头文件时，上述单卡构建还需传入 `EXTRA_DEVFLAGS=-DNCCL_GIN_GDAKI_ENABLE=0`。这些 gate 不使用 GDAKI/DOCA；缺少开发头文件的现有环境无需安装该后端。三个比较 arm 使用同一选项。
 
-补充 RTX 5090 资格窗口已保存[四次实际构建失败](results/native-qualification-westd/README.md)：链接器输入、可选 GDAKI 头文件、signal fixture 常量与 `kIterations` 宏冲突，以及原生 HT include 搜索路径。控制器均自然退出，GPU 测试进程数均为 0。r4 的 signal fixture 和模型传输库已编译，原生 HT TU 因 include 路径失败；该测试路径已补齐，下一轮待验证。这些记录不改变 Thor / 5080 的未执行状态。
+补充 RTX5090 r5 在源码 `3e9ea407` 上完成[实际原生资格](results/native-qualification-westd/README.md)：70轮 HT（两个 backend、四个高 B/C 与尾 chunk）、24 signal cases、7 不均匀 tensor cases 和队列 gate 均通过，14个测试进程/控制器/SSH/make 全部自然退出0，证据已收集并归还 GPU0 / IO。四次构建失败仍完整保留。r5 没有完整 Granite 或正式速度测量；Thor / RTX5080 的未执行状态保持不变。
 
 ## 有限矩阵与证据
 

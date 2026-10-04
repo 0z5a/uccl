@@ -1,0 +1,8 @@
+../../../../thirdparty/nccl-ep/adapter/uccl_gin_net.cuh(97): error: static assertion failed with "UCCL-GIN: signal cooperation supports Thread/Warp only"
+      static_assert(std::is_same_v<Coop, ncclCoopThread> ||
+      ^
+          detected during:
+            instantiation of "void nccl_ep_adapter::UcclGinNet::validate_coop<Coop>() [with Coop=ncclCoopCta]" at line 49
+            instantiation of "void nccl_ep_adapter::UcclGinNet::signal(ncclTeam, int, ncclGin_SignalAdd, Coop, ncclGin_None, cuda::std::__4::thread_scope, cuda::std::__4::thread_scope, uint32_t) const [with Coop=ncclCoopCta]" at line 5 of unsupported_signal_coop.cu
+
+1 error detected in the compilation of "unsupported_signal_coop.cu".

@@ -1,0 +1,9 @@
+{
+  "command_route": "normal SSH westd:47325",
+  "work": "/root/autodl-tmp/0z5a/uccl-gin-20261005/native-ht-3e9ea40-r5",
+  "started_utc": "2026-10-04T20:18:50.858796+00:00",
+  "payload_sha256": "b1c8b91faa1446edf8fb31a5011478c59a7ac0403b173fee3b1b26a230f68e55",
+  "local_ssh_pid": 41672,
+  "ssh_exit": 0,
+  "ended_utc": "2026-10-04T20:20:57.776887+00:00"
+}

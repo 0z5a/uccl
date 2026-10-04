@@ -1,6 +1,6 @@
 # HT adapter：类型、rank 与 signal 完成关系
 
-状态：本分支接通实际 HT 调用形状，CPU 合同检查通过；本分支 CUDA 编译、原生 signal gate 和完整 Hybrid 尚未验证。父分支的 V2 速度数据固定在 `2abdfdce17ab5747e136701b4fdfd2d0bd5bff43`，不作为这个 adapter 改动的性能数据。
+状态：本分支接通实际 HT 调用形状，CPU 合同检查通过；补充 RTX5090 / SM120 的两个 backend 原生 HT 数值70轮、24 signal cases 和7 tensor cases 已通过。Thor / RTX5080 的 CUDA、完整模型与速度仍未执行。父分支的 V2 速度数据固定在 `2abdfdce17ab5747e136701b4fdfd2d0bd5bff43`，不作为这个 adapter 改动的性能数据。
 
 2026-10-05 单侧模型验收见 [Thor/RTX 5080 E2E](SINGLE_DEVICE_E2E.md)：全部 24 层真实 MoE 输入/输出连接实际 adapter 与 production FIFO，覆盖 B8–64/C32–128。本地源码已提供，两机尚未编译或运行；完整 vendored Hybrid 的 host bridge 缺口仍如下记录。
 
@@ -49,7 +49,7 @@ Ordered ATOMIC 的 `atomic_offset=1` 是 opcode 标记，`req_rptr` 是 counter 
 
 构造宏修复四处接缝：dispatch 的 world 重声明、receiver 的未定义 channel、combine sender 的固定零 channel、combine receiver 直接构造 ncclGin。SIMPLE 宏接收实际 channel 并提供 world；NCCL 分支保留原两参数 constructor 的 sharing 语义。
 
-kernel 参数与四个 network helper 的 resources 已贯通：host params 和 kernel params 内嵌同一个 bundle，实际 builders 复制后以 const reference 传入 helper；无需额外 device allocation。scan 和纯本地 helper 移除无用资源参数，NCCL backend 的布局不增加 UCCL 字段。LSA size1 显式构建和原生单 rank 数值链路见 [单卡 HT gate](SINGLE_DEVICE_E2E.md#原生-ht-单-rank-数值链路)，CPU 严格构建通过，CUDA 未执行。
+kernel 参数与四个 network helper 的 resources 已贯通：host params 和 kernel params 内嵌同一个 bundle，实际 builders 复制后以 const reference 传入 helper；无需额外 device allocation。scan 和纯本地 helper 移除无用资源参数，NCCL backend 的布局不增加 UCCL 字段。LSA size1 显式构建和原生单 rank 数值链路见 [单卡 HT gate](SINGLE_DEVICE_E2E.md#原生-ht-单-rank-数值链路)，CPU 严格构建和补充 SM120 原生 CUDA 资格通过。
 
 跨节点公共 host API 仍缺 Context lifecycle bridge：Context 当前分配自己的 payload window；HT 注册的是 `gin_base_ptr`。必须接通同一 payload 存储、signal 存储的初始化/代际/context namespace 和释放时机。单 rank 数值测试提供有效私有队列/window 资源，并断言没有网络命令；它不掩盖跨节点 bridge 的缺口。
 
@@ -61,12 +61,14 @@ kernel 参数与四个 network helper 的 resources 已贯通：host params 和 
 | 普通、UINT64 回绕、INT64 边界 wait | 3 cases，通过 |
 | 过宽 delta、sentinel、slot1024、过宽 put、bits32、relaxed read | 6 个子进程按预期自 abort；不是 CUDA trap 记录 |
 | 实际 Hybrid constructor 宏，两个 backend | 严格 C++17 编译与 channel/sharing 检查通过；不是完整 Hybrid TU |
-| 实际 HT params / builders / LSA switch | 6 个严格 C++17 构建与运行通过，10 字段完整传递；CUDA 未编译 |
-| 原生 scan / dispatch / combine 高 B/C 单 rank | 两 backend、4 个高 B/C 和尾 chunk 已提供；未执行 |
-| 原生 CUDA / production FIFO signal | 24 cases/卡已提供，未编译或执行 |
-| CTA signal | 编译拒绝 gate 已提供，尚未执行 |
+| 实际 HT params / builders / LSA switch | 6 个严格 C++17 构建与运行通过，10 字段完整传递；补充 SM120 两 backend TU 编译通过 |
+| 原生 scan / dispatch / combine 高 B/C 单 rank | 补充 SM120 两 backend、4 个高 B/C 和尾 chunk，共70轮通过 |
+| 原生 CUDA / production FIFO signal | 补充 SM120 24 cases 通过 |
+| CTA signal | 补充 SM120 按预期编译拒绝 |
 | EFA、完整 Hybrid、模型高请求并发 | 未完成 |
 
 CPU 证据在 [host signal result](results/ht-contract/host-result.json) 和 [macro result](results/ht-contract/macro-result.json)。类型与 rolling comparison 取自 pinned NVIDIA source；执行使用 CPU substitutes，不推导 CUDA ABI、NIC completion 或模型吞吐。
+
+补充 CUDA 证据在 [原生资格结果](results/native-qualification-westd/README.md)，固定源码 `3e9ea407`，包含4次构建失败、r5完整原始日志、机器准入、自然终态和交接收据；它只完成该补充设备的局部正确性，不完成 Thor / RTX5080 的模型与速度 gate。
 
 新窗口内执行 `make adapter-tests adapter-compile-fail SM=120 NCCL_INCLUDE_DIR=...`，再在每卡运行 `build/sm120/adapter_signal --device 0`。该 gate 用实际 NCCL types、实际 UCCL 方法与 production FIFO：延迟非 leader；每代检查全部成员 WRITE 在唯一 ATOMIC 之前；检查 ID0/1023、rail rank1/2/8、真实 source 值和 counter；Thread/Warp 都 flush 后退出。consumer 只提供本地测试完成，仍不初始化网络。
