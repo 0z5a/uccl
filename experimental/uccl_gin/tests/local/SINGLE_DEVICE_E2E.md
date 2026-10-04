@@ -4,6 +4,8 @@
 
 状态：补充 RTX5090 原生资格已完成；**Thor / RTX5080 两机 CUDA、完整模型正确性、速度测量均未执行**。两机仍由前驱任务保留 whole-job 窗口，暂时空锁和空闲 GPU 不构成交接。
 
+2026-10-05 [资源状态](results/single-e2e-preparation/target-resource-status-20261005.json)：5080 owner 观察到 WSL boot ID 已变化，旧作业及等待进程消失但没有正常退出回执；中断前的部分 baseline 不构成完整配对。协调任务通过正常 Windows SSH 查询到运行中的 WSL 列表为空，未启动或恢复 WSL。旧 boot、PID、runtime、挂载、容量与双锁快照均已失效，原 #460/#453 工作归属和后继顺序保留。全队列交接后须重新核验这些条件，才能启动本轮测试。Thor 原 whole-job / R6 也未交接。
+
 已完成的准备证据：[42 个分片形状](results/single-e2e-preparation/host-preparation.json)、[实际异步调度器的 4 个 CPU 组合](results/single-e2e-preparation/host-request-wave.json)、[固定权重的本机下载和 LFS 校验](results/single-e2e-preparation/model-inputs.json)。权重在开发过程中并行下载，2,671,359,655 bytes；这些准备结果不代表 GPU/model 测试通过。
 
 三个 arm 已按 `3e9ea407` [重新冻结输入](results/single-e2e-preparation/current-inputs-3e9ea40.json)，共同包含 signal 常量和本地 include 修复，production GIN 字节与原三个固定版本相同。旧 `ad7dc31` 包保留供核对。
