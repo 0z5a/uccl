@@ -15,6 +15,7 @@ struct Metadata {
 int main() {
   int devices = 0;
   UCCL_LOCAL_CUDA(cudaGetDeviceCount(&devices));
+  if (!devices) return 2;
   constexpr uint32_t maximum = 65536;
   constexpr size_t workspace = 96 << 20;
   const std::array<uint32_t, 17> sizes{1, 7, 8, 15, 16, 31, 32, 63, 64,

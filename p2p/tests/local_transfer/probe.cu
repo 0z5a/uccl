@@ -10,6 +10,7 @@ using uccl::local::DeviceScope;
 int main() {
   int count = 0;
   UCCL_LOCAL_CUDA(cudaGetDeviceCount(&count));
+  if (!count) return 2;
   std::cout << "{\"device_count\":" << count << ",\"devices\":[";
   for (int i = 0; i < count; ++i) {
     cudaDeviceProp prop{};
