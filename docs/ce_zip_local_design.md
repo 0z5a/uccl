@@ -116,13 +116,28 @@ There is no PRO5000 speed result.
 
 The replacement endpoint inventories as two RTX PRO6000 Blackwell Server
 Edition 96GB cards, CUDA13.0.88, driver580.95.05 and SYS topology across NUMA0/1.
-Kandinsky preparation already occupies this node; a dual-GPU qualification
-window has been requested. Hardware inventory does not authorize taking a peer
-job's slot. Thor and RTX5080 single-device E2E remain separate outstanding gates.
+The CPU-only SM120 build of source `136112fb1c1315dbb3462f3b4da2b4d32ec4f667`
+completed with native controller/build/SSH exits0. It compiled the codec, probe,
+codec test, staged test and C ABI library; the ABI layout assertions passed at
+compile time. No GPU program was executed. The build receipt contains binary
+SHA256s for reproducibility.
+
+Kandinsky environment preparation continues on this node; a GPU qualification
+window has been requested. No existing vLLM-Omni inference process was found,
+so the human-authorized shutdown required no signals. Thor and RTX5080
+single-device E2E remain separate outstanding gates.
+
+The first model campaign is prepared with GPT-2 revision
+`607a30d783dfa663caf39e06633721c8d4cfcd7e`. Seven downloaded files, including the
+548,105,171-byte safetensors weight, passed the advertised LFS/git-blob hashes.
+The intended comparison is the framework's real two-device model boundary
+against RAW and Zip over complete requests, with B32/B128/B256 and C1/C8/C32.
+The model server and these runs are not yet implemented or executed.
 
 | Gate | Actual status | Speedup versus baseline |
 |---|---|---|
 | PRO5000 native codec/DMA | Cancelled before GPU execution | Not measured |
+| PRO6000 CPU-only SM120 build | Compiled successfully; exit0 | Not a speed measurement |
 | PRO6000 native codec and bounded staging | Pending resource handoff and execution | Not measured |
 | Two-rank RAW/Zip | Not implemented or measured | Not measured |
 | RAW Graph replay and zero-CTA trace | Not run | Not measured |
