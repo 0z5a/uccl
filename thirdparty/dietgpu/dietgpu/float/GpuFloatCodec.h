@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <cassert>
+
 #include "dietgpu/ans/GpuANSCodec.h"
 #include "dietgpu/utils/StackDeviceMemory.h"
 
