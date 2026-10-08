@@ -96,6 +96,9 @@ baseline ACK ordering with real codec kernels, while the production receiver
 integration still needs a separate RDMA reproduction. Timings include host
 submission and event completion and are diagnostic, not distributed E2E
 speedups. Synthetic BF16 buffers are not real RL weight refreshes.
+The data matrix includes varied exponents, signed zeros, subnormals, infinities
+and NaN payloads, checked as raw words. The harness requires exactly one visible
+GPU and fails an SM-limited case if the requested green context did not activate.
 
 ## Remaining safety gates before performance work
 
