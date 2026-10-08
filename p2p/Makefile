@@ -106,6 +106,7 @@ P2P_IMPL_SOURCES := \
 	util/adaptive_sleeper.cc \
 	util/common.cc \
 	rdma/compression.cc \
+	rdma/dietgpu_decompress.cc \
 	util/epoll_client.cc \
 	util/epoll_server.cc \
 	util/memory_allocator.cc \

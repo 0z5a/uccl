@@ -180,6 +180,8 @@ SendConnection::channels() const {
 
 int64_t SendConnection::post_write_or_read(
     std::shared_ptr<RDMASendRequest> req) {
+  if (failed_compressed_wr_.load(std::memory_order_acquire) >= 0)
+    return kPostError;
   if (unlikely(req->send_type != SendType::Write &&
                req->send_type != SendType::Read)) {
     UCCL_LOG(ERROR) << "SendConnection::write - Invalid send_type, expected "
@@ -432,6 +434,16 @@ void SendConnection::set_local_ack_ring(std::shared_ptr<RegMemBlock> ring) {
 
 bool SendConnection::check_completion(int64_t wr_id) {
   return tracker_->is_acknowledged(wr_id);
+}
+
+CompressedWriteStatus SendConnection::check_compressed_completion(
+    int64_t wr_id) {
+  std::lock_guard<std::mutex> lock(pending_compressed_mu_);
+  if (failed_compressed_wr_.load(std::memory_order_acquire) >= 0)
+    return CompressedWriteStatus::kFailed;
+  if (pending_compressed_.count(wr_id) || !tracker_->is_acknowledged(wr_id))
+    return CompressedWriteStatus::kPending;
+  return CompressedWriteStatus::kReady;
 }
 
 // ── SendConnection: Polling ──────────────────────────────────────────────────
@@ -868,9 +880,15 @@ void SendConnection::poll_ack_ring() {
          it != pending_compressed_.end();) {
       uint32_t ack_slot = it->second.ack_slot;
       uint64_t v = slots[ack_slot].value.load(std::memory_order_acquire);
-      if (v == 0) {
+      auto status = compressed_ack_status(v, it->first);
+      if (status == CompressedWriteStatus::kPending) {
         ++it;
         continue;
+      }
+      if (status == CompressedWriteStatus::kFailed) {
+        failed_compressed_wr_.store(it->first, std::memory_order_release);
+        UCCL_LOG(ERROR) << "Compressed write decode failed, wr_id="
+                        << it->first;
       }
       slots[ack_slot].value.store(0, std::memory_order_relaxed);
       if (it->second.arena_bytes > 0)
@@ -935,7 +953,11 @@ void SendConnection::DecompressArena::release(uint64_t offset) {
 
 RecvConnection::RecvConnection() = default;
 
-RecvConnection::~RecvConnection() = default;
+RecvConnection::~RecvConnection() {
+  for (auto& pending : pending_decompress_) {
+    if (pending.request) pending.request->wait();
+  }
+}
 
 // ── RecvConnection: Channel registry ─────────────────────────────────────────
 
@@ -982,8 +1004,14 @@ void RecvConnection::handle_compressed_write_arrival(WriteReqMeta const& m) {
       << " total_uncomp=" << m.total_uncomp_size
       << " float_type=" << m.float_type << " ack_slot=" << m.ack_slot;
   auto decomp_buf = Compressor::get_instance().get_decompress_buffer();
-  if (unlikely(!decomp_buf || remote_ack_ring_.length == 0)) {
+  if (unlikely(!decomp_buf || remote_ack_ring_.length == 0 ||
+               m.ack_slot >= remote_ack_ring_.length / sizeof(AckSlot))) {
     UCCL_LOG(WARN) << "handle_compressed_write_arrival: missing infra";
+    return;
+  }
+  if (m.decompress_offset > decomp_buf->size ||
+      m.compressed_size > decomp_buf->size - m.decompress_offset) {
+    pending_decompress_.push_back({m, nullptr});
     return;
   }
   uint64_t slot_base =
@@ -993,36 +1021,41 @@ void RecvConnection::handle_compressed_write_arrival(WriteReqMeta const& m) {
   RegMemBlock out(reinterpret_cast<void*>(m.user_remote_addr),
                   m.total_uncomp_size, MemoryType::GPU);
 
-  // Ack immediately: meta arrival implies data is already in
-  // decompress_buffer (sender posts meta only after all chunk WCs). wr_id+1
-  // avoids writing the zero sentinel that poll_ack_ring uses to mean "not yet
-  // acked".
-  ctrl_channel_->post_ack_write(
-      remote_ack_ring_.addr + m.ack_slot * sizeof(AckSlot),
-      remote_ack_ring_.get_rkey_by_context_id(0), m.ack_slot,
-      static_cast<uint64_t>(m.wr_id) + 1);
-
-  Compressor::get_instance().decompress_async(
-      in, out, static_cast<FloatType>(m.float_type),
-      /*on_done=*/nullptr, /*user_data=*/nullptr);
+  auto request = Compressor::get_instance().decompress_async(
+      in, out, static_cast<FloatType>(m.float_type));
+  pending_decompress_.push_back({m, std::move(request)});
 }
 
-void RecvConnection::post_ack_host_fn(void* user_data) {
-  std::unique_ptr<AsyncAckCtx> ctx(static_cast<AsyncAckCtx*>(user_data));
-  ctx->ctrl_channel->post_ack_write(ctx->remote_ack_addr, ctx->remote_ack_rkey,
-                                    ctx->ack_slot,
-                                    static_cast<uint64_t>(ctx->wr_id) + 1);
+void RecvConnection::poll_decompressions() {
+  while (!pending_decompress_.empty()) {
+    auto& pending = pending_decompress_.front();
+    auto status =
+        pending.request ? pending.request->poll() : DecompressStatus::kFailed;
+    if (status == DecompressStatus::kPending) return;
+    auto const& meta = pending.meta;
+    bool success = status == DecompressStatus::kSuccess;
+    int rc = ctrl_channel_->post_ack_write(
+        remote_ack_ring_.addr + meta.ack_slot * sizeof(AckSlot),
+        remote_ack_ring_.get_rkey_by_context_id(0), meta.ack_slot,
+        compressed_ack_value(meta.wr_id, success));
+    if (rc != 0) return;  // Retain the result and retry on the progress thread.
+    if (!success)
+      UCCL_LOG(ERROR) << "Compressed write decode failed, wr_id=" << meta.wr_id;
+    pending_decompress_.pop_front();
+  }
 }
 
 // ── RecvConnection: Polling loop ─────────────────────────────────────────────
 
 void RecvConnection::poll_and_process_completions() {
   std::shared_lock<std::shared_mutex> lock(mutex_);
+  poll_decompressions();
   if (ctrl_channel_) {
     ctrl_channel_->noblocking_poll();
     for (auto const& meta : ctrl_channel_->drain_pending_write_metas()) {
       handle_compressed_write_arrival(meta);
     }
+    poll_decompressions();
   }
   for (auto& [channel_id, channel] : channels_) {
     if (!channel) continue;

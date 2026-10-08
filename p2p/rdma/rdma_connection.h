@@ -7,6 +7,7 @@
 #include <cc/cc_state.h>
 #include <cc/link_bandwidth.h>
 #include <array>
+#include <deque>
 #include <limits>
 #include <optional>
 #include <random>
@@ -130,6 +131,10 @@ class SendConnection : public RDMAConnection {
   // ── Completion ─────────────────────────────────────────────────────────────
   bool check_completion(int64_t wr_id);
 
+  // Poll only compressed writes after post_write_or_read has returned. The
+  // existing check_completion reports sender-local completion as before.
+  CompressedWriteStatus check_compressed_completion(int64_t wr_id);
+
   // ── Polling ────────────────────────────────────────────────────────────────
   void send_routine();
 
@@ -167,6 +172,7 @@ class SendConnection : public RDMAConnection {
   std::mutex pending_compressed_mu_;
   std::unordered_map<int64_t, PendingCompressed> pending_compressed_;
   std::atomic<size_t> pending_compressed_count_{0};
+  std::atomic<int64_t> failed_compressed_wr_{-1};
 
   // Per-chunk inflight byte counter for CC window checks.
   // Unlike tracker_->get_total_inflight_bytes() which only decreases when ALL
@@ -287,17 +293,6 @@ class RecvConnection : public RDMAConnection {
 
   void handle_compressed_write_arrival(WriteReqMeta const& m);
 
-  // Context for the async-decompress callback path (currently unused).
-  struct AsyncAckCtx {
-    int64_t wr_id;
-    uint32_t ack_slot;
-    uint64_t remote_ack_addr;
-    uint32_t remote_ack_rkey;
-    std::shared_ptr<RecvControlChannel> ctrl_channel;
-  };
-
-  static void post_ack_host_fn(void* user_data);
-
   // ── Polling ────────────────────────────────────────────────────────────────
   void poll_and_process_completions();
 
@@ -308,4 +303,11 @@ class RecvConnection : public RDMAConnection {
   std::shared_ptr<RecvControlChannel> ctrl_channel_;
   std::mutex recv_routine_mu_;
   RemoteMemInfo remote_ack_ring_;  // peer (sender) ack ring — write target
+  struct PendingDecompress {
+    WriteReqMeta meta;
+    std::unique_ptr<DecompressRequest> request;
+  };
+  std::deque<PendingDecompress> pending_decompress_;
+
+  void poll_decompressions();
 };

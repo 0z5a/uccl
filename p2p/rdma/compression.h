@@ -1,9 +1,14 @@
 #pragma once
 #include "common.h"
+#include "decompress_request.h"
 #include "memory_allocator.h"
 #include "util/gpu_rt.h"
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <mutex>
+
+class DecompressPool;
 
 size_t get_min_compress_bytes_from_env();
 extern size_t const& kMinCompressBytes;
@@ -136,11 +141,11 @@ class ICompressorBackend {
   virtual bool decompress(RemoteMemInfo const& input, RegMemBlock& output,
                           FloatType float_type) = 0;
 
-  // Queue decompress asynchronously. on_done fires via gpuLaunchHostFunc after
-  // the kernel completes; it must not call any GPU APIs.
-  virtual void decompress_async(RemoteMemInfo const& input, RegMemBlock& output,
-                                FloatType float_type, gpuHostFn_t on_done,
-                                void* user_data) = 0;
+  // The request owns its device status and completion event. A null request
+  // means that no decoder was submitted. Destroying it drains GPU work.
+  virtual std::unique_ptr<DecompressRequest> decompress_async(
+      RemoteMemInfo const& input, RegMemBlock& output,
+      FloatType float_type) = 0;
 
   /**
    * @brief Check if a request should be compressed based on size threshold.
@@ -208,9 +213,9 @@ class NullCompressorBackend : public ICompressorBackend {
   bool decompress(RemoteMemInfo const& input, RegMemBlock& output,
                   FloatType float_type) override;
 
-  void decompress_async(RemoteMemInfo const& input, RegMemBlock& output,
-                        FloatType float_type, gpuHostFn_t on_done,
-                        void* user_data) override;
+  std::unique_ptr<DecompressRequest> decompress_async(
+      RemoteMemInfo const& input, RegMemBlock& output,
+      FloatType float_type) override;
 
   bool should_compress(size_t size) override;
 
@@ -250,9 +255,9 @@ class DietGPUCompressorBackend : public ICompressorBackend {
   bool decompress(RemoteMemInfo const& input, RegMemBlock& output,
                   FloatType float_type) override;
 
-  void decompress_async(RemoteMemInfo const& input, RegMemBlock& output,
-                        FloatType float_type, gpuHostFn_t on_done,
-                        void* user_data) override;
+  std::unique_ptr<DecompressRequest> decompress_async(
+      RemoteMemInfo const& input, RegMemBlock& output,
+      FloatType float_type) override;
 
   bool should_compress(size_t size) override;
 
@@ -268,6 +273,9 @@ class DietGPUCompressorBackend : public ICompressorBackend {
   CompressStrategy get_compress_strategy() override;
 
  private:
+  int device_;
+  std::mutex codec_mu_;
+  std::shared_ptr<DecompressPool> decompress_pool_;
   uint32_t* dev_compressed_size_;
   std::shared_ptr<RegMemBlock> buffer_;            // Compression buffer
   std::shared_ptr<RegMemBlock> decompressBuffer_;  // Decompression buffer
@@ -324,9 +332,8 @@ class Compressor {
   bool decompress(RemoteMemInfo const& input, RegMemBlock& output,
                   FloatType float_type);
 
-  void decompress_async(RemoteMemInfo const& input, RegMemBlock& output,
-                        FloatType float_type, gpuHostFn_t on_done,
-                        void* user_data);
+  std::unique_ptr<DecompressRequest> decompress_async(
+      RemoteMemInfo const& input, RegMemBlock& output, FloatType float_type);
 
   /**
    * @brief Check if a request should be compressed based on size threshold.

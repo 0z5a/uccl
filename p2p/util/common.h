@@ -1,6 +1,7 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#include "rdma/compressed_ack.h"
 #include <arpa/inet.h>
 #include <infiniband/efadv.h>
 #include <infiniband/verbs.h>
@@ -459,9 +460,8 @@ struct alignas(64) WriteReqMeta {
   int64_t wr_id;
 };
 
-// A small on-host ack slot. Receiver writes |wr_id| (or wr_id|kAckErrBit) once
-// decompress completes. Sender polls the value to determine completion.
-static constexpr uint64_t kAckErrBit = 1ull << 63;
+// Receiver writes wr_id+1 after decoder completion, with kAckErrBit on failure.
+// Sender-local data CQEs remain separate from receiver-ready acknowledgements.
 
 struct alignas(64) AckSlot {
   std::atomic<uint64_t> value;

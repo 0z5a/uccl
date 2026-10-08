@@ -1,4 +1,5 @@
 #include "compression.h"
+#include "dietgpu_decompress.h"
 #include "util/debug.h"
 #include "util/gpu_rt.h"
 #include "util/util.h"
@@ -166,12 +167,10 @@ bool NullCompressorBackend::decompress(RemoteMemInfo const& /*input*/,
   return false;
 }
 
-void NullCompressorBackend::decompress_async(RemoteMemInfo const& /*input*/,
-                                             RegMemBlock& /*output*/,
-                                             FloatType /*float_type*/,
-                                             gpuHostFn_t on_done,
-                                             void* user_data) {
-  if (on_done) on_done(user_data);  // synchronous fallback
+std::unique_ptr<DecompressRequest> NullCompressorBackend::decompress_async(
+    RemoteMemInfo const& /*input*/, RegMemBlock& /*output*/,
+    FloatType /*float_type*/) {
+  return nullptr;
 }
 
 bool NullCompressorBackend::should_compress(size_t /*size*/) { return false; }
@@ -200,14 +199,18 @@ CompressStrategy NullCompressorBackend::get_compress_strategy() {
 
 #ifdef USE_DIETGPU
 DietGPUCompressorBackend::DietGPUCompressorBackend()
-    : stream_(nullptr), res_(nullptr), dev_compressed_size_(nullptr) {
+    : device_(-1),
+      dev_compressed_size_(nullptr),
+      stream_(nullptr),
+      res_(nullptr) {
   compress_strategy_ = get_compress_strategy_from_env();
   if (compress_strategy_ == CompressStrategy::kNone) {
     return;
   }
+  device_ = dietgpu::getCurrentDevice();
   // Initialize green context BEFORE creating any CUDA resources (streams,
   // memory) so that they all belong to the green context.
-  dietgpu::initGreenContextIfNeeded(dietgpu::getCurrentDevice());
+  CodecContextScope context(device_);
 
   GPU_RT_CHECK(gpuMalloc(&dev_compressed_size_, sizeof(uint32_t)));
   // Initialize compression buffer
@@ -220,6 +223,7 @@ DietGPUCompressorBackend::DietGPUCompressorBackend()
 
   // Initialize GPU stream
   GPU_RT_CHECK(gpuStreamCreate(&stream_));
+  decompress_pool_ = make_decompress_pool(device_, kAckRingDepth);
 
   // Initialize StackDeviceMemory for compress/decompress operations
   res_ = new dietgpu::StackDeviceMemory(dietgpu::getCurrentDevice(),
@@ -229,8 +233,11 @@ DietGPUCompressorBackend::DietGPUCompressorBackend()
 }
 
 DietGPUCompressorBackend::~DietGPUCompressorBackend() {
+  if (device_ < 0) return;
+  CodecContextScope context(device_);
   if (stream_) {
-    gpuStreamDestroy(stream_);
+    GPU_RT_CHECK(gpuStreamSynchronize(stream_));
+    GPU_RT_CHECK(gpuStreamDestroy(stream_));
     stream_ = nullptr;
   }
   if (res_) {
@@ -240,6 +247,9 @@ DietGPUCompressorBackend::~DietGPUCompressorBackend() {
   if (dev_compressed_size_) {
     GPU_RT_CHECK(gpuFree(dev_compressed_size_));
   }
+  decompress_pool_.reset();
+  buffer_.reset();
+  decompressBuffer_.reset();
 }
 
 std::shared_ptr<RegMemBlock> DietGPUCompressorBackend::get_compress_buffer()
@@ -253,6 +263,9 @@ std::shared_ptr<RegMemBlock> DietGPUCompressorBackend::get_decompress_buffer()
 }
 
 bool DietGPUCompressorBackend::compress(std::shared_ptr<RDMASendRequest> req) {
+  if (device_ < 0) return false;
+  std::lock_guard<std::mutex> lock(codec_mu_);
+  CodecContextScope context(device_);
   if (unlikely(!req || !req->local_mem || !req->compress_ctx || !stream_ ||
                !res_ || !buffer_)) {
     UCCL_LOG(WARN) << "DietGPUCompressorBackend::compress - Invalid parameters";
@@ -301,91 +314,27 @@ bool DietGPUCompressorBackend::compress(std::shared_ptr<RDMASendRequest> req) {
 bool DietGPUCompressorBackend::decompress(RemoteMemInfo const& input,
                                           RegMemBlock& output,
                                           FloatType float_type) {
-  if (unlikely(!stream_ || !res_)) {
-    UCCL_LOG(WARN)
-        << "DietGPUCompressorBackend::decompress - Invalid internal state";
-    return false;
-  }
-
-  if (unlikely(input.addr == 0 || input.length == 0)) {
-    UCCL_LOG(WARN)
-        << "DietGPUCompressorBackend::decompress - Invalid input parameters";
-    return false;
-  }
-
-  if (unlikely(output.addr == nullptr || output.size == 0)) {
-    UCCL_LOG(WARN)
-        << "DietGPUCompressorBackend::decompress - Invalid output parameters";
-    return false;
-  }
-
-  dietgpu::FloatType ft = to_dietgpu(float_type);
-
-  // Setup decompression config
-  dietgpu::FloatDecompressConfig decompressConfig;
-  decompressConfig.floatType = ft;
-  decompressConfig.useChecksum = false;
-  decompressConfig.is16ByteAligned = true;
-
-  // Calculate element count from bytes for output capacity
-  uint32_t numFloats = dietgpu::getElementCountFromBytes(ft, output.size);
-
-  // Setup batch for decompression
-  void const* compInPtrs[1] = {reinterpret_cast<void const*>(input.addr)};
-  void* decompOutPtrs[1] = {output.addr};
-  uint32_t outCapacities[1] = {numFloats};
-
-  // Decompress
-  dietgpu::FloatDecompressStatus status =
-      dietgpu::floatDecompress(*res_, decompressConfig,
-                               1,  // numInBatch
-                               compInPtrs, decompOutPtrs, outCapacities,
-                               nullptr,  // out_success_dev (optional)
-                               nullptr,  // out_size_dev (optional)
-                               stream_);
-
-  GPU_RT_CHECK(gpuStreamSynchronize(stream_));
-
-  if (unlikely(status.error != dietgpu::FloatDecompressError::None)) {
-    UCCL_LOG(ERROR) << "DietGPUCompressorBackend: Decompression failed!";
-    return false;
-  }
-
-  UCCL_LOG(INFO, UCCL_RDMA)
-      << "DietGPUCompressorBackend: Decompressed data from " << input.length
-      << " bytes to " << output.size << " bytes";
-
-  return true;
+  auto request = decompress_async(input, output, float_type);
+  return request && request->wait() == DecompressStatus::kSuccess;
 }
 
-void DietGPUCompressorBackend::decompress_async(RemoteMemInfo const& input,
-                                                RegMemBlock& output,
-                                                FloatType float_type,
-                                                gpuHostFn_t on_done,
-                                                void* user_data) {
-  if (unlikely(!stream_ || !res_ || input.addr == 0 || input.length == 0 ||
-               output.addr == nullptr || output.size == 0)) {
-    UCCL_LOG(WARN) << "decompress_async - invalid params; firing on_done "
-                      "synchronously";
-    if (on_done) on_done(user_data);
-    return;
-  }
-  dietgpu::FloatType ft = to_dietgpu(float_type);
-  dietgpu::FloatDecompressConfig cfg;
-  cfg.floatType = ft;
-  cfg.useChecksum = false;
-  cfg.is16ByteAligned = true;
-  uint32_t numFloats = dietgpu::getElementCountFromBytes(ft, output.size);
-  void const* compIn[1] = {reinterpret_cast<void const*>(input.addr)};
-  void* decompOut[1] = {output.addr};
-  uint32_t outCap[1] = {numFloats};
-  // Queue kernel — NO gpuStreamSynchronize here. on_done fires on a CUDA
-  // host thread after the kernel completes.
-  dietgpu::floatDecompress(*res_, cfg, 1, compIn, decompOut, outCap, nullptr,
-                           nullptr, stream_);
-  if (on_done) {
-    GPU_RT_CHECK(gpuLaunchHostFunc(stream_, on_done, user_data));
-  }
+std::unique_ptr<DecompressRequest> DietGPUCompressorBackend::decompress_async(
+    RemoteMemInfo const& input, RegMemBlock& output, FloatType float_type) {
+  if (device_ < 0) return nullptr;
+  auto ft = to_dietgpu(float_type);
+  if (!stream_ || !res_ || input.addr == 0 || input.length == 0 ||
+      !output.addr || output.size == 0 || ft == dietgpu::FloatType::kUndefined)
+    return nullptr;
+  size_t word_bytes = ft == dietgpu::FloatType::kFloat32 ? 4
+                      : dietgpu::isFloat8Type(ft)        ? 1
+                                                         : 2;
+  if (output.size % word_bytes != 0 ||
+      (dietgpu::isFloat8Type(ft) && output.size % 2 != 0))
+    return nullptr;
+  uint32_t num_floats = dietgpu::getElementCountFromBytes(ft, output.size);
+  return make_decompress_request(
+      device_, *res_, stream_, codec_mu_, decompress_pool_,
+      reinterpret_cast<void const*>(input.addr), output.addr, ft, num_floats);
 }
 
 bool DietGPUCompressorBackend::should_compress(size_t size) {
@@ -408,6 +357,9 @@ bool DietGPUCompressorBackend::should_compress_and_split_first(size_t size) {
 
 void DietGPUCompressorBackend::prepare_split_context(void* addr, size_t size,
                                                      CompressCtx ctx) {
+  if (device_ < 0) return;
+  std::lock_guard<std::mutex> lock(codec_mu_);
+  CodecContextScope context(device_);
   if (unlikely(ctx == nullptr)) {
     std::cout << "unlikely(ctx == nullptr)" << std::endl;
     return;
@@ -459,6 +411,9 @@ void DietGPUCompressorBackend::prepare_split_context(void* addr, size_t size,
 
 bool DietGPUCompressorBackend::compress_split_one_batch(
     std::shared_ptr<RDMASendRequest> req) {
+  if (device_ < 0) return false;
+  std::lock_guard<std::mutex> lock(codec_mu_);
+  CodecContextScope context(device_);
   if (unlikely(!req || !req->compress_ctx || !stream_ || !res_)) {
     UCCL_LOG(WARN) << "DietGPUCompressorBackend::compress_split_one_batch - "
                       "Invalid parameters";
@@ -485,6 +440,9 @@ bool DietGPUCompressorBackend::compress_split_one_batch(
 
 uint32_t DietGPUCompressorBackend::compress_encode_one_batch(
     std::shared_ptr<RDMASendRequest> req) {
+  if (device_ < 0) return 0;
+  std::lock_guard<std::mutex> lock(codec_mu_);
+  CodecContextScope context(device_);
   if (unlikely(!req || !req->compress_ctx || !stream_ || !res_ || !buffer_)) {
     UCCL_LOG(WARN) << "DietGPUCompressorBackend::compress_encode_one_batch - "
                       "Invalid parameters";
@@ -550,10 +508,9 @@ bool Compressor::decompress(RemoteMemInfo const& input, RegMemBlock& output,
   return backend_->decompress(input, output, float_type);
 }
 
-void Compressor::decompress_async(RemoteMemInfo const& input,
-                                  RegMemBlock& output, FloatType float_type,
-                                  gpuHostFn_t on_done, void* user_data) {
-  backend_->decompress_async(input, output, float_type, on_done, user_data);
+std::unique_ptr<DecompressRequest> Compressor::decompress_async(
+    RemoteMemInfo const& input, RegMemBlock& output, FloatType float_type) {
+  return backend_->decompress_async(input, output, float_type);
 }
 
 bool Compressor::should_compress(size_t size) {
