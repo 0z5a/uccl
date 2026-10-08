@@ -211,8 +211,15 @@ int64_t SendConnection::post_write_or_read(
     bool const c_ctx = static_cast<bool>(req->compress_ctx);
     bool const c_ft =
         c_ctx && (req->compress_ctx->get_float_type() != FloatType::kUndefined);
-    bool const c_fit =
-        static_cast<uint64_t>(msg_size) <= remote_decompress_buf_.length;
+    size_t const encoded_bound =
+        c_ft
+            ? max_compressed_size(req->compress_ctx->get_float_type(), msg_size)
+            : 0;
+    auto buffer = Compressor::get_instance().get_compress_buffer();
+    bool const c_fit = encoded_bound && buffer &&
+                       encoded_bound <= buffer->size &&
+                       encoded_bound <= remote_decompress_buf_.length &&
+                       req->compress_ctx->get_max_size() == msg_size;
     if (c_ack && c_rdb && c_ctx && c_ft && c_fit &&
         Compressor::get_instance().should_compress_and_split_first(msg_size)) {
       return compress_write_request_split_first(req);
@@ -732,6 +739,8 @@ bool SendConnection::post_compressed_segment(
 
 int64_t SendConnection::compress_write_request_split_first(
     std::shared_ptr<RDMASendRequest> req) {
+  auto& compressor = Compressor::get_instance();
+  auto buffer_lease = compressor.lock_write_buffer();
   int64_t wr_id = req->wr_id;
   uint32_t total_uncomp = req->local_mem->size;
   uint64_t user_remote_addr = req->remote_mem->addr;
@@ -739,7 +748,8 @@ int64_t SendConnection::compress_write_request_split_first(
       req->remote_mem->get_rkey_by_context_id(0);  // diagnostic / logging only
 
   // Reserve space in the peer's decompress_buffer; released on ack receipt.
-  uint64_t arena_bytes = static_cast<uint64_t>(total_uncomp);
+  uint64_t arena_bytes =
+      max_compressed_size(req->compress_ctx->get_float_type(), total_uncomp);
   if (unlikely(arena_bytes > decompress_arena_.size)) {
     UCCL_LOG(ERROR) << "compress_write_request_split_first: request size "
                     << arena_bytes << " exceeds decompress arena size "
@@ -819,6 +829,13 @@ int64_t SendConnection::compress_write_request_split_first(
                                first_chunks))
     return kPostError;
   tracker_->update_expected_ack_count(wr_id, first_chunks + second_chunks);
+  // The next split writes the same singleton buffer. Keep it leased until
+  // every local NIC read of this request has completed; remote decode ACKs
+  // independently retain the peer's input arena for Q>1.
+  while (!check_completion(wr_id)) {
+    send_routine();
+    std::this_thread::yield();
+  }
   return wr_id;
 }
 

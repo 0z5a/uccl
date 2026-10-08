@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <limits>
 #include <string>
 
 size_t get_min_compress_bytes_from_env() {
@@ -60,6 +61,30 @@ CompressStrategy get_compress_strategy_from_env() {
   }
 
   return CompressStrategy::kSplitEncode;
+}
+
+size_t max_compressed_size(FloatType float_type, size_t bytes) {
+#ifdef USE_DIETGPU
+  auto type = to_dietgpu(float_type);
+  if (type == dietgpu::FloatType::kUndefined ||
+      bytes > std::numeric_limits<uint32_t>::max())
+    return 0;
+  size_t word_bytes = type == dietgpu::FloatType::kFloat32 ? 4
+                      : dietgpu::isFloat8Type(type)        ? 1
+                                                           : 2;
+  if (bytes == 0 || bytes % word_bytes != 0 ||
+      (dietgpu::isFloat8Type(type) && bytes % 2 != 0))
+    return 0;
+  size_t bound = dietgpu::getMaxFloatCompressedSize(
+      type, static_cast<uint32_t>(bytes / word_bytes));
+  // The bound includes headers and worst-case ANS expansion; an overflowed
+  // 32-bit codec size must not become a smaller arena reservation.
+  return bound >= bytes ? bound : 0;
+#else
+  (void)float_type;
+  (void)bytes;
+  return 0;
+#endif
 }
 
 #if defined USE_DIETGPU
@@ -497,6 +522,10 @@ std::shared_ptr<RegMemBlock> Compressor::get_compress_buffer() const {
 
 std::shared_ptr<RegMemBlock> Compressor::get_decompress_buffer() const {
   return backend_->get_decompress_buffer();
+}
+
+std::unique_lock<std::mutex> Compressor::lock_write_buffer() {
+  return std::unique_lock<std::mutex>(write_buffer_mu_);
 }
 
 bool Compressor::compress(std::shared_ptr<RDMASendRequest> req) {

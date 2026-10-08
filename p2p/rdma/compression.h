@@ -16,6 +16,8 @@ extern size_t const& kMinCompressBytes;
 size_t get_compress_buffer_bytes_from_env();
 extern size_t const& kCompressBufferSize;
 
+size_t max_compressed_size(FloatType float_type, size_t bytes);
+
 enum class CompressStrategy {
   kNone,         // no compression
   kSplitOnly,    // only split, no encode
@@ -315,6 +317,10 @@ class Compressor {
    */
   std::shared_ptr<RegMemBlock> get_decompress_buffer() const;
 
+  // Keep the singleton compressed buffer leased through both codec phases
+  // and their local NIC completions, across every SendConnection.
+  std::unique_lock<std::mutex> lock_write_buffer();
+
   /**
    * @brief Compress a send request's data.
    * @param req The send request to compress.
@@ -383,4 +389,5 @@ class Compressor {
   ~Compressor();
 
   std::unique_ptr<ICompressorBackend> backend_;
+  std::mutex write_buffer_mu_;
 };
