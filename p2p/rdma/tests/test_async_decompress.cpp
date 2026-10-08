@@ -77,8 +77,8 @@ void run_gated_slot(CodecFixture& codec, bool early_ack) {
     void const* inputs[1] = {source};
     void* archives[1] = {i == 0 ? archive_a : archive_b};
     uint32_t sizes[1] = {elements};
-    dietgpu::floatCompress(*codec.scratch, config, nullptr, 0, 1, inputs, sizes,
-                           archives, compressed_size, codec.stream);
+    dietgpu::floatCompress(*codec.scratch, config, 1, inputs, sizes, archives,
+                           compressed_size, codec.stream);
     GPU_RT_CHECK(gpuStreamSynchronize(codec.stream));
     GPU_RT_CHECK(gpuMemcpy(&archive_sizes[i], compressed_size, sizeof(uint32_t),
                            gpuMemcpyDeviceToHost));
@@ -161,8 +161,8 @@ void run_case(CodecFixture& codec, Case const& c) {
     void const* inputs[1] = {source};
     void* archives[1] = {archive};
     uint32_t sizes[1] = {elements};
-    dietgpu::floatCompress(*codec.scratch, config, nullptr, 0, 1, inputs, sizes,
-                           archives, compressed_size, codec.stream);
+    dietgpu::floatCompress(*codec.scratch, config, 1, inputs, sizes, archives,
+                           compressed_size, codec.stream);
     GPU_RT_CHECK(gpuStreamSynchronize(codec.stream));
   }
   GPU_RT_CHECK(gpuFree(source));
