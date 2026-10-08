@@ -38,8 +38,6 @@ class RDMAEndpoint {
 
   std::shared_ptr<RegMemBlock> ack_ring() const;
 
-  std::shared_ptr<RegMemBlock> write_meta_ring() const;
-
   uint16_t get_p2p_listen_port();
 
   int get_p2p_listen_fd();
@@ -83,10 +81,6 @@ class RDMAEndpoint {
 
   bool dereg_mem(std::shared_ptr<RegMemBlock> reg_block);
 
-  // Populate compression-related RemoteMemInfo fields in a handshake message.
-  // No-op if compression is disabled.
-  void fill_compression_meta(MetaInfoToExchange& m) const;
-
   // ── One-sided transfer and completion ──────────────────────────────────────
   int64_t write_or_read(std::shared_ptr<RDMASendRequest> req);
 
@@ -114,6 +108,8 @@ class RDMAEndpoint {
   std::shared_ptr<RdmaContext> get_context_by_channel_id(
       uint32_t channel_id) const;
 
+  std::shared_ptr<ZipRegion> acquire_metadata_region();
+
   // ── Active-side connection handshake (outbound) ────────────────────────────
   std::string const build_oob_connect(uint64_t peer_id);
 
@@ -140,7 +136,9 @@ class RDMAEndpoint {
       uint64_t peer_id, std::shared_ptr<SendControlChannel>&& ctrl_channel);
 
   void set_send_compression_peer_meta(uint64_t peer_id,
-                                      MetaInfoToExchange const& peer);
+                                      MetaInfoToExchange const& peer,
+                                      std::shared_ptr<ZipRegion> ack_region,
+                                      size_t local_metadata_slots);
 
   // ── RecvConnection group registry ──────────────────────────────────────────
   std::shared_ptr<RecvConnection> get_or_create_recv_group(uint64_t peer_id);
@@ -152,7 +150,8 @@ class RDMAEndpoint {
       uint64_t peer_id, std::shared_ptr<RecvControlChannel>&& ctrl_channel);
 
   void set_recv_compression_peer_meta(uint64_t peer_id,
-                                      MetaInfoToExchange const& peer);
+                                      MetaInfoToExchange const& peer,
+                                      std::shared_ptr<ZipRegion> region);
 
   // ── Members ────────────────────────────────────────────────────────────────
   int gpu_index_;
@@ -171,7 +170,9 @@ class RDMAEndpoint {
   std::shared_ptr<EpollServer> oob_server_;
   std::shared_ptr<MemoryAllocator> allocator_;
   std::shared_ptr<RegMemBlock> ack_ring_;
-  std::shared_ptr<RegMemBlock> write_meta_ring_;
+  std::unique_ptr<ZipRegionPool> ack_regions_;
+  std::shared_ptr<RegMemBlock> metadata_ring_;
+  std::unique_ptr<ZipRegionPool> metadata_regions_;
   mutable std::shared_mutex accepted_meta_mutex_;
   std::unordered_map<uint64_t, AcceptedMeta> accepted_meta_;
   std::atomic<int32_t> next_send_peer_id_;

@@ -15,7 +15,7 @@ SendControlChannel::SendControlChannel(std::shared_ptr<RdmaContext> ctx,
                                        std::shared_ptr<RegMemBlock> mem_block,
                                        uint32_t channel_id)
     : RDMADataChannel(ctx, channel_id) {
-  (void)mem_block;
+  retain_control_memory(std::move(mem_block));
 }
 
 SendControlChannel::SendControlChannel(std::shared_ptr<RdmaContext> ctx,
@@ -23,7 +23,7 @@ SendControlChannel::SendControlChannel(std::shared_ptr<RdmaContext> ctx,
                                        std::shared_ptr<RegMemBlock> mem_block,
                                        uint32_t channel_id)
     : RDMADataChannel(ctx, remote_meta, channel_id) {
-  (void)mem_block;
+  retain_control_memory(std::move(mem_block));
 }
 
 void SendControlChannel::bind_write_meta_ring(
@@ -38,6 +38,9 @@ void SendControlChannel::bind_write_meta_ring(
 bool SendControlChannel::push_write_meta(WriteReqMeta const& meta,
                                          uint32_t slot) {
   if (unlikely(!write_meta_local_ || !write_meta_remote_)) return false;
+  if (slot >= write_meta_local_->size / sizeof(WriteReqMeta) ||
+      slot >= write_meta_remote_->length / sizeof(WriteReqMeta))
+    return false;
   auto* local = static_cast<WriteReqMeta*>(write_meta_local_->addr) + slot;
   *local = meta;
 
@@ -78,7 +81,7 @@ RecvControlChannel::RecvControlChannel(std::shared_ptr<RdmaContext> ctx,
                                        std::shared_ptr<RegMemBlock> mem_block,
                                        uint32_t channel_id)
     : RDMADataChannel(ctx, channel_id) {
-  (void)mem_block;
+  retain_control_memory(std::move(mem_block));
 }
 
 RecvControlChannel::RecvControlChannel(std::shared_ptr<RdmaContext> ctx,
@@ -86,7 +89,7 @@ RecvControlChannel::RecvControlChannel(std::shared_ptr<RdmaContext> ctx,
                                        std::shared_ptr<RegMemBlock> mem_block,
                                        uint32_t channel_id)
     : RDMADataChannel(ctx, remote_meta.channel_meta, channel_id) {
-  (void)mem_block;
+  retain_control_memory(std::move(mem_block));
 }
 
 bool RecvControlChannel::noblocking_poll() {
@@ -99,6 +102,7 @@ bool RecvControlChannel::noblocking_poll() {
         << ", local_ring=" << (write_meta_local_ ? "set" : "NULL");
     if (cq_data.has_imm() && cq_data.imm.is_write_meta() && write_meta_local_) {
       uint16_t slot = cq_data.imm.plain_index();
+      if (slot >= write_meta_local_->size / sizeof(WriteReqMeta)) continue;
       auto* entry = static_cast<WriteReqMeta*>(write_meta_local_->addr) + slot;
       UCCL_LOG(INFO, UCCL_RDMA)
           << "RecvControlChannel: queued WriteReqMeta slot=" << slot

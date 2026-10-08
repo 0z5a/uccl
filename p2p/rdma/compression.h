@@ -3,6 +3,7 @@
 #include "decompress_request.h"
 #include "memory_allocator.h"
 #include "util/gpu_rt.h"
+#include "zip_region.h"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -15,6 +16,8 @@ extern size_t const& kMinCompressBytes;
 
 size_t get_compress_buffer_bytes_from_env();
 extern size_t const& kCompressBufferSize;
+extern size_t const kDecompressBufferSize;
+extern size_t const kZipMaxPeers;
 
 size_t max_compressed_size(FloatType float_type, size_t bytes);
 
@@ -317,6 +320,8 @@ class Compressor {
    */
   std::shared_ptr<RegMemBlock> get_decompress_buffer() const;
 
+  std::shared_ptr<ZipRegion> acquire_decompress_region();
+
   // Keep the singleton compressed buffer leased through both codec phases
   // and their local NIC completions, across every SendConnection.
   std::unique_lock<std::mutex> lock_write_buffer();
@@ -390,4 +395,5 @@ class Compressor {
 
   std::unique_ptr<ICompressorBackend> backend_;
   std::mutex write_buffer_mu_;
+  std::unique_ptr<ZipRegionPool> decompress_regions_;
 };

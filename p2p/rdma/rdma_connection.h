@@ -4,6 +4,7 @@
 #include "rdma_ctrl_channel.h"
 #include "rdma_data_channel.h"
 #include "seq_num.h"
+#include "zip_ack_slots.h"
 #include <cc/cc_state.h>
 #include <cc/link_bandwidth.h>
 #include <array>
@@ -30,6 +31,8 @@ class RDMAConnection {
   virtual std::unordered_map<uint32_t, std::shared_ptr<RDMADataChannel>> const&
   channels() const;
 
+  void set_zip_region(std::shared_ptr<ZipRegion> region);
+
   // ── Channel selection ──────────────────────────────────────────────────────
   // Select next channel using round-robin algorithm
   // Returns: pair<channel_id, context_id>, or pair<0, 0> on failure
@@ -54,6 +57,7 @@ class RDMAConnection {
 
   mutable std::shared_mutex mutex_;
   std::unordered_map<uint32_t, std::shared_ptr<RDMADataChannel>> channels_;
+  std::shared_ptr<ZipRegion> zip_region_;
   std::atomic<uint32_t> last_channel_id_;
 
   // Lock-free channel pointer cache (populated lazily on first hot-path use).
@@ -126,7 +130,8 @@ class SendConnection : public RDMAConnection {
   // ── Compression setup ──────────────────────────────────────────────────────
   void set_remote_decompress_buf(RemoteMemInfo const& m);
 
-  void set_local_ack_ring(std::shared_ptr<RegMemBlock> ring);
+  void set_local_ack_region(std::shared_ptr<ZipRegion> region,
+                            size_t metadata_slots);
 
   // ── Completion ─────────────────────────────────────────────────────────────
   bool check_completion(int64_t wr_id);
@@ -161,7 +166,7 @@ class SendConnection : public RDMAConnection {
   // Compressed-write state
   std::shared_ptr<RegMemBlock> ack_ring_;
   RemoteMemInfo remote_decompress_buf_;
-  std::atomic<uint64_t> next_ack_slot_{0};
+  std::unique_ptr<ZipAckSlots> ack_slots_;
   struct PendingCompressed {
     WriteReqMeta meta;
     uint32_t ack_slot = 0;
@@ -290,6 +295,8 @@ class RecvConnection : public RDMAConnection {
   // ── Compression recv path
   // ────────────────────────────────────────────────────
   void set_remote_ack_ring(RemoteMemInfo const& m);
+
+  void set_decompress_region(std::shared_ptr<ZipRegion> region);
 
   void handle_compressed_write_arrival(WriteReqMeta const& m);
 

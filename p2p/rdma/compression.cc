@@ -37,6 +37,20 @@ size_t const& kCompressBufferSize = []() -> size_t const& {
   return v;
 }();
 
+size_t const kDecompressBufferSize = [] {
+  char const* env = std::getenv("UCCL_P2P_DECOMPRESS_BUFFER_BYTES");
+  if (!env) return kCompressBufferSize;
+  return static_cast<size_t>(std::stoull(env));
+}();
+
+size_t const kZipMaxPeers = [] {
+  char const* env = std::getenv("UCCL_P2P_ZIP_MAX_PEERS");
+  size_t peers = env ? std::stoull(env) : 4;
+  if (!peers || peers > kAckRingDepth / 64)
+    throw std::invalid_argument("Zip max peers must be between 1 and 64");
+  return peers;
+}();
+
 CompressStrategy get_compress_strategy_from_env() {
   char const* env = std::getenv("UCCL_P2P_COMPRESS_STRATEGY");
 
@@ -244,7 +258,7 @@ DietGPUCompressorBackend::DietGPUCompressorBackend()
 
   // Initialize decompression buffer
   decompressBuffer_ =
-      allocator->allocate(kCompressBufferSize, MemoryType::GPU, nullptr);
+      allocator->allocate(kDecompressBufferSize, MemoryType::GPU, nullptr);
 
   // Initialize GPU stream
   GPU_RT_CHECK(gpuStreamCreate(&stream_));
@@ -524,6 +538,14 @@ std::shared_ptr<RegMemBlock> Compressor::get_decompress_buffer() const {
   return backend_->get_decompress_buffer();
 }
 
+std::shared_ptr<ZipRegion> Compressor::acquire_decompress_region() {
+  if (!decompress_regions_) return nullptr;
+  auto lease = decompress_regions_->acquire();
+  return lease ? std::make_shared<ZipRegion>(get_decompress_buffer(),
+                                             std::move(lease))
+               : nullptr;
+}
+
 std::unique_lock<std::mutex> Compressor::lock_write_buffer() {
   return std::unique_lock<std::mutex>(write_buffer_mu_);
 }
@@ -575,6 +597,10 @@ Compressor::Compressor() {
 #else
   backend_ = std::make_unique<NullCompressorBackend>();
 #endif
+  auto buffer = get_decompress_buffer();
+  if (buffer)
+    decompress_regions_ =
+        std::make_unique<ZipRegionPool>(buffer->size, kZipMaxPeers, 256);
 }
 
 Compressor::~Compressor() = default;

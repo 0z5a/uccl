@@ -129,25 +129,30 @@ void RDMAEndpoint::init_compressor() {
     UCCL_LOG(ERROR) << "Failed to register decompression buffer";
   }
   if (compressor.get_compress_strategy() == CompressStrategy::kNone) return;
-  // Host-side rings used to carry per-message compression metadata and
-  // completion acks. Registered on every context slot so any data/control
-  // QP can target them via rkey lookup.
+  // Fixed endpoint budgets, including both directions of control metadata.
   ack_ring_ = allocator_->allocate(kAckRingBytes, MemoryType::HOST, nullptr);
-  write_meta_ring_ =
-      allocator_->allocate(kWriteMetaRingBytes, MemoryType::HOST, nullptr);
-  std::memset(ack_ring_->addr, 0, kAckRingBytes);
-  std::memset(write_meta_ring_->addr, 0, kWriteMetaRingBytes);
-  if (!reg_mem(ack_ring_) || !reg_mem(write_meta_ring_)) {
+  std::uninitialized_value_construct_n(static_cast<AckSlot*>(ack_ring_->addr),
+                                       kAckRingDepth);
+  if (!reg_mem(ack_ring_)) {
     throw std::runtime_error("Failed to register compression metadata rings");
   }
+  ack_regions_ = std::make_unique<ZipRegionPool>(kAckRingBytes, kZipMaxPeers,
+                                                 sizeof(AckSlot));
+  metadata_ring_ =
+      allocator_->allocate(kWriteMetaRingBytes, MemoryType::HOST, nullptr);
+  std::uninitialized_value_construct_n(
+      static_cast<WriteReqMeta*>(metadata_ring_->addr), kWriteMetaRingCapacity);
+  if (!reg_mem(metadata_ring_))
+    throw std::runtime_error("Failed to register compression metadata ring");
+  metadata_regions_ = std::make_unique<ZipRegionPool>(
+      kWriteMetaRingBytes, 2 * kZipMaxPeers, sizeof(WriteReqMeta));
 }
 
-void RDMAEndpoint::fill_compression_meta(MetaInfoToExchange& m) const {
-  auto decomp = Compressor::get_instance().get_decompress_buffer();
-  if (decomp) m.decompress_buf_meta = RemoteMemInfo(*decomp);
-  if (write_meta_ring_)
-    m.write_meta_ring_meta = RemoteMemInfo(*write_meta_ring_);
-  if (ack_ring_) m.ack_ring_meta = RemoteMemInfo(*ack_ring_);
+std::shared_ptr<ZipRegion> RDMAEndpoint::acquire_metadata_region() {
+  if (!metadata_regions_) return nullptr;
+  auto lease = metadata_regions_->acquire();
+  return lease ? std::make_shared<ZipRegion>(metadata_ring_, std::move(lease))
+               : nullptr;
 }
 
 // ── Accessors ────────────────────────────────────────────────────────────────
@@ -157,10 +162,6 @@ size_t RDMAEndpoint::context_count() const { return contexts_.size(); }
 
 std::shared_ptr<RegMemBlock> RDMAEndpoint::ack_ring() const {
   return ack_ring_;
-}
-
-std::shared_ptr<RegMemBlock> RDMAEndpoint::write_meta_ring() const {
-  return write_meta_ring_;
 }
 
 // ── Memory registration ──────────────────────────────────────────────────────
@@ -364,17 +365,32 @@ std::string const RDMAEndpoint::build_oob_connect(uint64_t peer_id) {
 int RDMAEndpoint::build_control_channel(std::string const& oob_con,
                                         uint64_t peer_id, bool sync,
                                         int timeout_ms) {
-  auto ctrl_mem =
-      allocator_->allocate(kWriteMetaRingBytes, MemoryType::HOST, contexts_[0]);
+  auto metadata_region = acquire_metadata_region();
+  auto ctrl_mem = metadata_region
+                      ? metadata_region->memory
+                      : allocator_->allocate(sizeof(WriteReqMeta),
+                                             MemoryType::HOST, contexts_[0]);
+  std::uninitialized_value_construct_n(
+      static_cast<WriteReqMeta*>(ctrl_mem->addr),
+      ctrl_mem->size / sizeof(WriteReqMeta));
   auto control_channel = std::make_shared<SendControlChannel>(
       contexts_[0], ctrl_mem, kControlChannelID);
+  control_channel->retain_metadata_region(metadata_region);
+  std::shared_ptr<ZipRegion> ack_region;
+  if (ack_regions_ && metadata_region) {
+    auto lease = ack_regions_->acquire();
+    if (lease)
+      ack_region = std::make_shared<ZipRegion>(ack_ring_, std::move(lease));
+  }
+  control_channel->retain_zip_region(ack_region);
   auto ctrl_info = std::make_shared<RemoteMemInfo>(ctrl_mem);
 
   // Include OOB server port for back-connection (notifications)
   MetaInfoToExchange ctrl_meta(
       INVALID_PEER_ID, kControlChannelID, control_channel->get_local_meta(),
       ctrl_info, ChannelType::Control, gpu_index_, oob_server_->get_port());
-  fill_compression_meta(ctrl_meta);
+  if (ack_regions_) ctrl_meta.zip_protocol = kZipProtocol;
+  if (ack_region) ctrl_meta.ack_ring_meta = RemoteMemInfo(*ack_region->memory);
 
   UCCL_LOG(INFO, UCCL_RDMA)
       << "Control Meta: " << ctrl_meta
@@ -388,21 +404,24 @@ int RDMAEndpoint::build_control_channel(std::string const& oob_con,
 
   bool sent = oob_client_->send_meta(
       oob_con, ctrl_serialized_meta,
-      [this, control_channel, promise,
+      [this, control_channel, ctrl_mem, ack_region, promise,
        peer_id](std::string const& response) mutable {
         MetaInfoToExchange response_meta =
             deserialize<MetaInfoToExchange>(response);
+        if (response.size() < sizeof(MetaInfoToExchange))
+          response_meta.zip_protocol = 0;
         control_channel->establish_channel(response_meta.channel_meta);
-        // Bind WriteReqMeta ring: local mirror (this endpoint's own) +
-        // remote slot table on the peer receiver.
-        if (write_meta_ring_) {
+        if (ack_region && response_meta.zip_protocol == kZipProtocol &&
+            response_meta.write_meta_ring_meta.length >= sizeof(WriteReqMeta)) {
           control_channel->bind_write_meta_ring(
-              write_meta_ring_, response_meta.write_meta_ring_meta);
+              ctrl_mem, response_meta.write_meta_ring_meta);
         }
         this->set_send_control_channel(peer_id, std::move(control_channel));
         // Remember peer's decompress_buf so the SendConnection can target
         // it during compress_write_request_split_first.
-        this->set_send_compression_peer_meta(peer_id, response_meta);
+        this->set_send_compression_peer_meta(
+            peer_id, response_meta, ack_region,
+            ctrl_mem->size / sizeof(WriteReqMeta));
         promise->set_value(response_meta.peer_id);  // no try/catch; fail-fast
       });
 
@@ -593,17 +612,29 @@ void RDMAEndpoint::process_meta(std::string const& input, std::string& output,
     uint64_t actual_peer_id =
         next_recv_peer_id_.fetch_add(1, std::memory_order_relaxed);
 
-    auto ctrl_mem =
-        allocator_->allocate(kWriteMetaRingBytes, MemoryType::HOST, ctx_ptr);
+    auto metadata_region = input.size() >= sizeof(MetaInfoToExchange) &&
+                                   meta.zip_protocol == kZipProtocol &&
+                                   meta.ack_ring_meta.length >= sizeof(AckSlot)
+                               ? acquire_metadata_region()
+                               : nullptr;
+    auto ctrl_mem = metadata_region
+                        ? metadata_region->memory
+                        : allocator_->allocate(sizeof(WriteReqMeta),
+                                               MemoryType::HOST, ctx_ptr);
+    std::uninitialized_value_construct_n(
+        static_cast<WriteReqMeta*>(ctrl_mem->addr),
+        ctrl_mem->size / sizeof(WriteReqMeta));
     UCCL_LOG(INFO, UCCL_RDMA)
         << "process_meta: Allocated " << ctrl_mem->size
         << " bytes for recv control channel ring buffer at " << ctrl_mem->addr;
 
     auto recv_ctrl_channel = std::make_shared<RecvControlChannel>(
         ctx_ptr, meta, ctrl_mem, meta.channel_id);
-    // Receiver owns the authoritative WriteReqMeta ring.
-    if (write_meta_ring_)
-      recv_ctrl_channel->bind_write_meta_ring(write_meta_ring_);
+    recv_ctrl_channel->retain_metadata_region(metadata_region);
+    std::shared_ptr<ZipRegion> region;
+    if (metadata_region)
+      region = Compressor::get_instance().acquire_decompress_region();
+    if (region) recv_ctrl_channel->bind_write_meta_ring(ctrl_mem);
 
     // Create response (include our OOB port for potential future use)
     RemoteMemInfo ctrl_info(ctrl_mem);
@@ -611,7 +642,11 @@ void RDMAEndpoint::process_meta(std::string const& input, std::string& output,
         INVALID_PEER_ID, meta.channel_id, recv_ctrl_channel->get_local_meta(),
         nullptr, ChannelType::Control, gpu_index_, oob_server_->get_port());
     response.mem_meta = ctrl_info;
-    fill_compression_meta(response);
+    if (region) {
+      response.zip_protocol = kZipProtocol;
+      response.decompress_buf_meta = RemoteMemInfo(*region->memory);
+      response.write_meta_ring_meta = RemoteMemInfo(*ctrl_mem);
+    }
     UCCL_LOG(INFO, UCCL_RDMA)
         << "response (control channel):::::::" << response;
     output = serialize(response);
@@ -621,7 +656,7 @@ void RDMAEndpoint::process_meta(std::string const& input, std::string& output,
     set_recv_control_channel(actual_peer_id, std::move(ctrl_ch_copy));
     // Remember peer's ack_ring address+rkey - the receive side needs it
     // when decompress finishes and we post an ack back to the sender.
-    set_recv_compression_peer_meta(actual_peer_id, meta);
+    set_recv_compression_peer_meta(actual_peer_id, meta, region);
 
     // Store accepted connection metadata
     {
@@ -719,11 +754,17 @@ void RDMAEndpoint::set_send_control_channel(
 }
 
 void RDMAEndpoint::set_send_compression_peer_meta(
-    uint64_t peer_id, MetaInfoToExchange const& peer) {
-  if (!ack_ring_ || peer.decompress_buf_meta.length == 0) return;
+    uint64_t peer_id, MetaInfoToExchange const& peer,
+    std::shared_ptr<ZipRegion> ack_region, size_t local_metadata_slots) {
+  if (!ack_region || peer.zip_protocol != kZipProtocol ||
+      !peer.decompress_buf_meta.length || !peer.write_meta_ring_meta.length)
+    return;
   auto group = get_or_create_send_group(peer_id);
   group->set_remote_decompress_buf(peer.decompress_buf_meta);
-  group->set_local_ack_ring(ack_ring_);
+  group->set_local_ack_region(
+      std::move(ack_region),
+      std::min(local_metadata_slots,
+               peer.write_meta_ring_meta.length / sizeof(WriteReqMeta)));
 }
 
 // ── RecvConnection group registry ────────────────────────────────────────────
@@ -761,10 +802,12 @@ void RDMAEndpoint::set_recv_control_channel(
 }
 
 void RDMAEndpoint::set_recv_compression_peer_meta(
-    uint64_t peer_id, MetaInfoToExchange const& peer) {
-  if (peer.ack_ring_meta.length == 0) return;
+    uint64_t peer_id, MetaInfoToExchange const& peer,
+    std::shared_ptr<ZipRegion> region) {
+  if (!region) return;
   auto group = get_or_create_recv_group(peer_id);
   group->set_remote_ack_ring(peer.ack_ring_meta);
+  group->set_decompress_region(std::move(region));
 }
 
 // ── One-sided transfer and completion ────────────────────────────────────────

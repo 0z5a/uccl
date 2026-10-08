@@ -18,7 +18,15 @@ void RDMAConnection::add_channel(uint32_t channel_id,
   }
   std::unique_lock<std::shared_mutex> lock(mutex_);
 
+  channel->retain_zip_region(zip_region_);
   channels_[channel_id] = std::move(channel);
+}
+
+void RDMAConnection::set_zip_region(std::shared_ptr<ZipRegion> region) {
+  std::unique_lock<std::shared_mutex> lock(mutex_);
+  zip_region_ = std::move(region);
+  for (auto const& [id, channel] : channels_)
+    channel->retain_zip_region(zip_region_);
 }
 
 std::shared_ptr<RDMADataChannel> RDMAConnection::get_channel(
@@ -433,8 +441,12 @@ void SendConnection::set_remote_decompress_buf(RemoteMemInfo const& m) {
   decompress_arena_.size = m.length;
 }
 
-void SendConnection::set_local_ack_ring(std::shared_ptr<RegMemBlock> ring) {
-  ack_ring_ = ring;
+void SendConnection::set_local_ack_region(std::shared_ptr<ZipRegion> region,
+                                          size_t metadata_slots) {
+  set_zip_region(region);
+  ack_ring_ = region->memory;
+  ack_slots_ = std::make_unique<ZipAckSlots>(
+      std::min(ack_ring_->size / sizeof(AckSlot), metadata_slots));
 }
 
 // ── SendConnection: Completion ───────────────────────────────────────────────
@@ -538,11 +550,13 @@ int64_t SendConnection::submit_request(
 
 void SendConnection::drain_failed_request(int64_t wr_id, size_t posted_chunks) {
   std::optional<uint64_t> arena_offset;
+  std::optional<uint32_t> ack_slot;
   {
     std::lock_guard<std::mutex> guard(pending_compressed_mu_);
     auto it = pending_compressed_.find(wr_id);
     if (it != pending_compressed_.end()) {
       arena_offset = it->second.arena_offset;
+      ack_slot = it->second.ack_slot;
       pending_compressed_.erase(it);
       pending_compressed_count_.fetch_sub(1, std::memory_order_relaxed);
     }
@@ -558,6 +572,7 @@ void SendConnection::drain_failed_request(int64_t wr_id, size_t posted_chunks) {
     std::this_thread::yield();
   }
   if (arena_offset) decompress_arena_.release(*arena_offset);
+  if (ack_slot) ack_slots_->release(*ack_slot);
 }
 
 bool SendConnection::post_request_on_channel(
@@ -760,10 +775,24 @@ int64_t SendConnection::compress_write_request_split_first(
   uint64_t arena_offset = 0;
   while (!decompress_arena_.try_reserve(arena_bytes, &arena_offset)) {
     send_routine();
+    if (failed_compressed_wr_.load(std::memory_order_acquire) >= 0) {
+      drain_failed_request(wr_id, 0);
+      return kPostError;
+    }
     std::this_thread::yield();
   }
-  uint32_t ack_slot = static_cast<uint32_t>(
-      next_ack_slot_.fetch_add(1, std::memory_order_relaxed) % kAckRingDepth);
+  auto ticket = ack_slots_->acquire();
+  while (!ticket) {
+    send_routine();
+    if (failed_compressed_wr_.load(std::memory_order_acquire) >= 0) {
+      decompress_arena_.release(arena_offset);
+      drain_failed_request(wr_id, 0);
+      return kPostError;
+    }
+    std::this_thread::yield();
+    ticket = ack_slots_->acquire();
+  }
+  uint32_t ack_slot = ticket->slot;
   static_cast<AckSlot*>(ack_ring_->addr)[ack_slot].value.store(
       0, std::memory_order_relaxed);
   uint64_t slot_base = remote_decompress_buf_.addr + arena_offset;
@@ -796,6 +825,7 @@ int64_t SendConnection::compress_write_request_split_first(
                         : FloatType::kUndefined);
   entry.meta.ack_slot = ack_slot;
   entry.meta.wr_id = wr_id;
+  entry.meta.ack_token = ticket->token;
   {
     std::lock_guard<std::mutex> lk(pending_compressed_mu_);
     pending_compressed_.emplace(wr_id, entry);
@@ -891,14 +921,16 @@ void SendConnection::poll_ack_ring() {
   if (pending_compressed_count_.load(std::memory_order_relaxed) == 0) return;
   auto* slots = static_cast<AckSlot*>(ack_ring_->addr);
   std::vector<uint64_t> released_offsets;
+  std::vector<int64_t> retry_metadata;
   {
     std::lock_guard<std::mutex> lk(pending_compressed_mu_);
     for (auto it = pending_compressed_.begin();
          it != pending_compressed_.end();) {
       uint32_t ack_slot = it->second.ack_slot;
       uint64_t v = slots[ack_slot].value.load(std::memory_order_acquire);
-      auto status = compressed_ack_status(v, it->first);
+      auto status = compressed_token_status(v, it->second.meta.ack_token);
       if (status == CompressedWriteStatus::kPending) {
+        if (!it->second.meta_pushed) retry_metadata.push_back(it->first);
         ++it;
         continue;
       }
@@ -908,6 +940,7 @@ void SendConnection::poll_ack_ring() {
                         << it->first;
       }
       slots[ack_slot].value.store(0, std::memory_order_relaxed);
+      ack_slots_->release(ack_slot);
       if (it->second.arena_bytes > 0)
         released_offsets.push_back(it->second.arena_offset);
       it = pending_compressed_.erase(it);
@@ -915,6 +948,7 @@ void SendConnection::poll_ack_ring() {
     }
   }
   for (auto off : released_offsets) decompress_arena_.release(off);
+  for (auto wr_id : retry_metadata) maybe_push_compressed_meta(wr_id);
 }
 
 void SendConnection::maybe_push_compressed_meta(int64_t wr_id) {
@@ -925,10 +959,8 @@ void SendConnection::maybe_push_compressed_meta(int64_t wr_id) {
     auto it = pending_compressed_.find(wr_id);
     if (it == pending_compressed_.end() || it->second.meta_pushed) return;
     if (!tracker_->is_acknowledged(wr_id)) return;
-    it->second.meta_pushed = true;
     meta_to_push = it->second.meta;
-    push_slot = static_cast<uint32_t>(static_cast<uint64_t>(wr_id) %
-                                      kWriteMetaRingCapacity);
+    push_slot = it->second.ack_slot;
   }
   UCCL_LOG(INFO, UCCL_RDMA)
       << "SendConnection::maybe_push_compressed_meta - pushing wr_id=" << wr_id
@@ -938,7 +970,12 @@ void SendConnection::maybe_push_compressed_meta(int64_t wr_id) {
       << " ack_slot=" << meta_to_push.ack_slot << " user_remote_addr=0x"
       << std::hex << meta_to_push.user_remote_addr << std::dec;
   std::shared_lock<std::shared_mutex> lock(ctrl_channel_mutex_);
-  if (ctrl_channel_) ctrl_channel_->push_write_meta(meta_to_push, push_slot);
+  if (ctrl_channel_ &&
+      ctrl_channel_->push_write_meta(meta_to_push, push_slot)) {
+    std::lock_guard<std::mutex> lock(pending_compressed_mu_);
+    auto it = pending_compressed_.find(wr_id);
+    if (it != pending_compressed_.end()) it->second.meta_pushed = true;
+  }
 }
 
 bool SendConnection::DecompressArena::try_reserve(uint64_t bytes,
@@ -1013,6 +1050,11 @@ void RecvConnection::set_remote_ack_ring(RemoteMemInfo const& m) {
   remote_ack_ring_ = m;
 }
 
+void RecvConnection::set_decompress_region(std::shared_ptr<ZipRegion> region) {
+  set_zip_region(region);
+  ctrl_channel_->retain_zip_region(std::move(region));
+}
+
 void RecvConnection::handle_compressed_write_arrival(WriteReqMeta const& m) {
   UCCL_LOG(INFO, UCCL_RDMA)
       << "RecvConnection::handle_compressed_write_arrival - wr_id=" << m.wr_id
@@ -1020,9 +1062,10 @@ void RecvConnection::handle_compressed_write_arrival(WriteReqMeta const& m) {
       << " compressed_size=" << m.compressed_size
       << " total_uncomp=" << m.total_uncomp_size
       << " float_type=" << m.float_type << " ack_slot=" << m.ack_slot;
-  auto decomp_buf = Compressor::get_instance().get_decompress_buffer();
+  auto decomp_buf = zip_region_ ? zip_region_->memory : nullptr;
   if (unlikely(!decomp_buf || remote_ack_ring_.length == 0 ||
-               m.ack_slot >= remote_ack_ring_.length / sizeof(AckSlot))) {
+               m.ack_slot >= remote_ack_ring_.length / sizeof(AckSlot) ||
+               !m.ack_token || m.ack_token >= kAckErrBit)) {
     UCCL_LOG(WARN) << "handle_compressed_write_arrival: missing infra";
     return;
   }
@@ -1054,7 +1097,7 @@ void RecvConnection::poll_decompressions() {
     int rc = ctrl_channel_->post_ack_write(
         remote_ack_ring_.addr + meta.ack_slot * sizeof(AckSlot),
         remote_ack_ring_.get_rkey_by_context_id(0), meta.ack_slot,
-        compressed_ack_value(meta.wr_id, success));
+        compressed_token_value(meta.ack_token, success));
     if (rc != 0) return;  // Retain the result and retry on the progress thread.
     if (!success)
       UCCL_LOG(ERROR) << "Compressed write decode failed, wr_id=" << meta.wr_id;

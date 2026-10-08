@@ -5,6 +5,7 @@
 #include "transport_type.h"
 #include "util/debug.h"
 #include "util/util.h"
+#include "zip_region.h"
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -43,6 +44,18 @@ class RDMADataChannel {
   ~RDMADataChannel();
 
   void establish_channel(ChannelMetaData const& remote_meta);
+
+  void retain_zip_region(std::shared_ptr<ZipRegion> region) {
+    zip_region_ = std::move(region);
+  }
+
+  void retain_control_memory(std::shared_ptr<RegMemBlock> memory) {
+    control_memory_ = std::move(memory);
+  }
+
+  void retain_metadata_region(std::shared_ptr<ZipRegion> region) {
+    metadata_region_ = std::move(region);
+  }
 
   // ── Send posting and batching ──────────────────────────────────────────────
   int64_t submit_request(std::shared_ptr<RDMASendRequest> req);
@@ -86,6 +99,9 @@ class RDMADataChannel {
 
   // ── Members ────────────────────────────────────────────────────────────────
   std::shared_ptr<RdmaContext> ctx_;
+  std::shared_ptr<ZipRegion> zip_region_;
+  std::shared_ptr<ZipRegion> metadata_region_;
+  std::shared_ptr<RegMemBlock> control_memory_;
   uint32_t channel_id_;
 
   struct ibv_cq_ex* cq_ex_;

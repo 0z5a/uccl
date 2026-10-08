@@ -49,8 +49,8 @@ RDMADataChannel::RDMADataChannel(std::shared_ptr<RdmaContext> ctx,
 }
 
 RDMADataChannel::~RDMADataChannel() {
+  if (qp_) UCCL_CHECK_EQ(ibv_destroy_qp(qp_), 0);
   if (ack_staging_mr_) ibv_dereg_mr(ack_staging_mr_);
-  if (qp_) ibv_destroy_qp(qp_);
   if (cq_ex_) ibv_destroy_cq(ibv_cq_ex_to_cq(cq_ex_));
 }
 

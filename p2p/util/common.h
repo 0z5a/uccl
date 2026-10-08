@@ -11,6 +11,7 @@
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -458,18 +459,20 @@ struct alignas(64) WriteReqMeta {
   uint32_t ack_slot;  // sender expects ack written here in its ack_ring
   uint32_t _pad;
   int64_t wr_id;
+  uint64_t ack_token;
 };
+static_assert(sizeof(WriteReqMeta) == 64);
 
-// Receiver writes wr_id+1 after decoder completion, with kAckErrBit on failure.
-// Sender-local data CQEs remain separate from receiver-ready acknowledgements.
+// Receiver writes ack_token after decoder completion, with kAckErrBit on
+// failure. Sender-local data CQEs remain separate from receiver-ready
+// acknowledgements.
 
 struct alignas(64) AckSlot {
-  std::atomic<uint64_t> value;
+  std::atomic<uint64_t> value{0};
 };
 
-// Ring sizes for the WriteReqMeta channel and the ack ring. Must be ≥ max
-// in-flight compressed writes so the monotonic-modulo allocators don't
-// wrap onto a still-pending entry.
+// Endpoint ACK budget is partitioned among peers. Each connection reserves a
+// free slot until its decoder ACK arrives; metadata uses the same slot index.
 constexpr size_t kWriteMetaRingCapacity = 4096;
 constexpr size_t kAckRingDepth = 4096;
 constexpr size_t kWriteMetaRingBytes =
@@ -550,6 +553,7 @@ struct MetaInfoToExchange {
   RemoteMemInfo decompress_buf_meta;
   RemoteMemInfo write_meta_ring_meta;
   RemoteMemInfo ack_ring_meta;
+  uint64_t zip_protocol = 0;
 
   // Default constructor
   MetaInfoToExchange();
@@ -566,6 +570,11 @@ struct MetaInfoToExchange {
   friend std::ostream& operator<<(std::ostream& os,
                                   MetaInfoToExchange const& meta);
 };
+
+inline constexpr uint64_t kZipProtocol = 2;
+static_assert(offsetof(MetaInfoToExchange, zip_protocol) ==
+              offsetof(MetaInfoToExchange, ack_ring_meta) +
+                  sizeof(RemoteMemInfo));
 
 // Helper function: make socket non-blocking
 int make_socket_non_blocking(int fd);
