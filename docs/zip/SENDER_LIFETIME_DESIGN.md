@@ -25,8 +25,8 @@ sequenceDiagram
   Caller->>Buffer: split then encode
   Buffer->>NIC: two-phase data writes
   NIC-->>Caller: all local data CQEs
-  Caller->>Buffer: release source lease
   Caller->>Receiver: control metadata after data CQEs
+  Caller->>Buffer: release source lease
   Receiver-->>Caller: separate decoder-complete ACK
   Caller->>Caller: release remote arena
 ```
