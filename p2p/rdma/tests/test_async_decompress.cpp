@@ -3,6 +3,7 @@
 #include "util/debug.h"
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <thread>
@@ -141,8 +142,16 @@ void run_gated_slot(CodecFixture& codec, bool early_ack) {
 
 void run_case(CodecFixture& codec, Case const& c) {
   std::vector<uint16_t> input(c.bytes / sizeof(uint16_t));
-  for (size_t i = 0; i < input.size(); ++i)
-    input[i] = static_cast<uint16_t>(0x3f00 | ((i * 13) & 0x7f));
+  constexpr uint16_t edges[] = {0x0000, 0x8000, 0x0001, 0x007f, 0x0080, 0x8080,
+                                0x3f80, 0xbf80, 0x7f80, 0xff80, 0x7fc1, 0xffc3,
+                                0x7fff, 0xffff, 0x3a80, 0xbe80};
+  for (size_t i = 0; i < input.size(); ++i) {
+    uint32_t bits = static_cast<uint32_t>(i) * 1664525u + 1013904223u;
+    input[i] = i % 64 < 16
+                   ? edges[i % 16]
+                   : static_cast<uint16_t>((bits & 0x807f) |
+                                           ((115 + (bits >> 8) % 10) << 7));
+  }
   void* source = nullptr;
   void* archive = nullptr;
   uint32_t* compressed_size = nullptr;
@@ -224,11 +233,24 @@ void run_case(CodecFixture& codec, Case const& c) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  int visible_devices = 0;
+  GPU_RT_CHECK(gpuGetDeviceCount(&visible_devices));
+  require(visible_devices == 1,
+          "run in an explicitly isolated single-GPU step");
   GPU_RT_CHECK(gpuSetDevice(0));
   GPU_RT_CHECK(gpuFree(nullptr));
   CUcontext caller_context = nullptr;
   UCCL_CHECK(cuCtxGetCurrent(&caller_context) == CUDA_SUCCESS);
   CodecFixture codec;
+  auto* requested_sms = std::getenv("UCCL_DIETGPU_SM_USAGE");
+  if (requested_sms && std::atoi(requested_sms) > 0) {
+#if CUDA_VERSION >= 12040
+    require(dietgpu::GreenContextManager::instance().isActive(),
+            "requested SM context was not activated");
+#else
+    require(false, "SM context requires CUDA 12.4 or newer");
+#endif
+  }
   CUcontext after_init = nullptr;
   UCCL_CHECK(cuCtxGetCurrent(&after_init) == CUDA_SUCCESS);
   require(after_init == caller_context, "constructor changed caller context");
