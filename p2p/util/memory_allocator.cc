@@ -25,7 +25,7 @@ std::shared_ptr<RegMemBlock> MemoryAllocator::allocate(
   }
 
   // Create RegMemBlock with custom deleter
-  auto deleter = [this, type](RegMemBlock* block) {
+  auto deleter = [type](RegMemBlock* block) {
     if (block) {
       if (block->addr) deallocate_raw(block->addr, type);
       delete block;

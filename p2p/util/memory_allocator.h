@@ -22,5 +22,5 @@ class MemoryAllocator {
   void* allocate_gpu(size_t size);
 
   // Deallocate memory without RDMA deregistration
-  void deallocate_raw(void* addr, MemoryType type);
+  static void deallocate_raw(void* addr, MemoryType type);
 };
