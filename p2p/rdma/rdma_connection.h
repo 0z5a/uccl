@@ -140,6 +140,8 @@ class SendConnection : public RDMAConnection {
   // existing check_completion reports sender-local completion as before.
   CompressedWriteStatus check_compressed_completion(int64_t wr_id);
 
+  std::array<uint64_t, 5> compressed_counters() const;
+
   // ── Polling ────────────────────────────────────────────────────────────────
   void send_routine();
 
@@ -178,6 +180,10 @@ class SendConnection : public RDMAConnection {
   std::unordered_map<int64_t, PendingCompressed> pending_compressed_;
   std::atomic<size_t> pending_compressed_count_{0};
   std::atomic<int64_t> failed_compressed_wr_{-1};
+  std::atomic<uint64_t> compressed_submitted_{0};
+  std::atomic<uint64_t> compressed_ready_{0};
+  std::atomic<uint64_t> compressed_failed_{0};
+  std::atomic<uint64_t> compressed_archive_bytes_{0};
 
   // Per-chunk inflight byte counter for CC window checks.
   // Unlike tracker_->get_total_inflight_bytes() which only decreases when ALL

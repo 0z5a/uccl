@@ -1097,6 +1097,40 @@ bool Endpoint::write(uint64_t conn_id, uint64_t mr_id, void* src, size_t size,
   return true;
 }
 
+bool Endpoint::write_compressed_async(uint64_t conn_id, uint64_t mr_id,
+                                      void* src, size_t size,
+                                      FifoItem const& slot_item,
+                                      uint64_t* transfer_id) {
+  *transfer_id = 0;
+  auto* conn = get_conn(conn_id);
+  auto* mhandle = get_mhandle(mr_id);
+  auto* group = conn ? uccl_resolve_send_group(ep_, conn->uccl_conn_id_.peer_id)
+                     : nullptr;
+  if (!group || !mhandle || conn->is_local_) return false;
+  UcclRequest request{};
+  request.type = ReqWrite;
+  request.decoder_ready = true;
+  FifoItem destination = slot_item;
+  destination.size = size;
+  int rc = set_request_on_group(group, conn, mhandle, src, size, destination,
+                                &request);
+  if (rc == SendConnection::kPostError) return false;
+  auto* status = new TransferStatus();
+  status->poll_net_ureq = true;
+  status->ureq = request;
+  *transfer_id = reinterpret_cast<uint64_t>(status);
+  return true;
+}
+
+std::array<uint64_t, 5> Endpoint::compressed_counters(uint64_t conn_id) {
+  auto* conn = get_conn(conn_id);
+  auto* group = conn ? uccl_resolve_send_group(ep_, conn->uccl_conn_id_.peer_id)
+                     : nullptr;
+  if (!group)
+    throw std::invalid_argument("Compressed counters require RDMA connection");
+  return group->compressed_counters();
+}
+
 bool Endpoint::write_async(uint64_t conn_id, uint64_t mr_id, void* src,
                            size_t size, FifoItem const& slot_item,
                            uint64_t* transfer_id) {
@@ -2299,7 +2333,15 @@ bool Endpoint::start_passive_accept() {
 bool Endpoint::poll_async(uint64_t transfer_id, bool* is_done) {
   auto* status = reinterpret_cast<TransferStatus*>(transfer_id);
   if (status->poll_net_ureq && !status->done.load(std::memory_order_acquire)) {
-    if (uccl_poll_ureq_once(ep_, &status->ureq)) {
+    if (status->ureq.decoder_ready) {
+      uccl_drive_send(ep_);
+      auto* group = uccl_resolve_send_group(ep_, status->ureq.peer_id);
+      auto result = group->check_compressed_completion(status->ureq.engine_idx);
+      if (result != CompressedWriteStatus::kPending) {
+        status->success = result == CompressedWriteStatus::kReady;
+        status->done.store(true, std::memory_order_release);
+      }
+    } else if (uccl_poll_ureq_once(ep_, &status->ureq)) {
       status->done.store(true, std::memory_order_release);
     }
   }

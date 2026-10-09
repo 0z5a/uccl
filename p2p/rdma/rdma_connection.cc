@@ -234,6 +234,12 @@ int64_t SendConnection::post_write_or_read(
     }
   }
 
+  if (req->require_compression) {
+    UCCL_LOG(ERROR) << "Compressed write admission failed";
+    drain_failed_request(wr_id, 0);
+    return kPostError;
+  }
+
   // Lock-free channel selection + direct pointer.
   auto [channel_id, ch_ptr] = select_next_channel_round_robin_fast();
   if (unlikely(channel_id == 0 || ch_ptr == nullptr)) {
@@ -458,11 +464,17 @@ bool SendConnection::check_completion(int64_t wr_id) {
 CompressedWriteStatus SendConnection::check_compressed_completion(
     int64_t wr_id) {
   std::lock_guard<std::mutex> lock(pending_compressed_mu_);
-  if (failed_compressed_wr_.load(std::memory_order_acquire) >= 0)
-    return CompressedWriteStatus::kFailed;
   if (pending_compressed_.count(wr_id) || !tracker_->is_acknowledged(wr_id))
     return CompressedWriteStatus::kPending;
+  if (failed_compressed_wr_.load(std::memory_order_acquire) >= 0)
+    return CompressedWriteStatus::kFailed;
   return CompressedWriteStatus::kReady;
+}
+
+std::array<uint64_t, 5> SendConnection::compressed_counters() const {
+  return {compressed_submitted_.load(), compressed_ready_.load(),
+          compressed_failed_.load(), compressed_archive_bytes_.load(),
+          pending_compressed_count_.load()};
 }
 
 // ── SendConnection: Polling ──────────────────────────────────────────────────
@@ -866,6 +878,9 @@ int64_t SendConnection::compress_write_request_split_first(
     send_routine();
     std::this_thread::yield();
   }
+  compressed_submitted_.fetch_add(1, std::memory_order_relaxed);
+  compressed_archive_bytes_.fetch_add(compressed_size,
+                                      std::memory_order_relaxed);
   return wr_id;
 }
 
@@ -935,9 +950,12 @@ void SendConnection::poll_ack_ring() {
         continue;
       }
       if (status == CompressedWriteStatus::kFailed) {
+        compressed_failed_.fetch_add(1, std::memory_order_relaxed);
         failed_compressed_wr_.store(it->first, std::memory_order_release);
         UCCL_LOG(ERROR) << "Compressed write decode failed, wr_id="
                         << it->first;
+      } else {
+        compressed_ready_.fetch_add(1, std::memory_order_relaxed);
       }
       slots[ack_slot].value.store(0, std::memory_order_relaxed);
       ack_slots_->release(ack_slot);

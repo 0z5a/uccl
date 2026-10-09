@@ -856,6 +856,42 @@ NB_MODULE(p2p, m) {
           nb::arg("conn_id"), nb::arg("mr_id"), nb::arg("ptr"), nb::arg("size"),
           nb::arg("meta"))
       .def(
+          "write_compressed_async",
+          [](Endpoint& self, uint64_t conn_id, uint64_t mr_id, uint64_t ptr,
+             size_t size, nb::bytes meta_blob) {
+            if (meta_blob.size() != sizeof(FifoItem))
+              throw std::invalid_argument("meta must be exactly 64 bytes");
+            FifoItem item;
+            deserialize_fifo_item(meta_blob.c_str(), &item);
+            uint64_t transfer_id;
+            bool success;
+            {
+              nb::gil_scoped_release release;
+              InsidePythonGuard guard;
+              success = self.write_compressed_async(
+                  conn_id, mr_id, reinterpret_cast<void*>(ptr), size, item,
+                  &transfer_id);
+            }
+            return nb::make_tuple(success, transfer_id);
+          },
+          "Require compressed RDMA WRITE; poll_async completes after decoder "
+          "ACK.",
+          nb::arg("conn_id"), nb::arg("mr_id"), nb::arg("ptr"), nb::arg("size"),
+          nb::arg("meta"))
+      .def(
+          "compressed_counters",
+          [](Endpoint& self, uint64_t conn_id) {
+            auto values = self.compressed_counters(conn_id);
+            nb::dict out;
+            out["submitted"] = values[0];
+            out["ready"] = values[1];
+            out["failed"] = values[2];
+            out["archive_bytes"] = values[3];
+            out["inflight"] = values[4];
+            return out;
+          },
+          nb::arg("conn_id"))
+      .def(
           "writev",
           [](Endpoint& self, uint64_t conn_id, std::vector<uint64_t> mr_id_v,
              std::vector<uint64_t> ptr_v, std::vector<size_t> size_v,

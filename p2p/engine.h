@@ -13,6 +13,7 @@
 #include "util/shared_pool.h"
 #include "util/util.h"
 #include <infiniband/verbs.h>
+#include <array>
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
@@ -41,6 +42,7 @@ struct UcclRequest {
   enum ReqType type;
   uint32_t peer_id;
   uint32_t engine_idx;
+  bool decoder_ready = false;
 };
 
 struct Mhandle {
@@ -332,6 +334,12 @@ class Endpoint {
   /* Write data to the remote server asynchronously. */
   bool write_async(uint64_t conn_id, uint64_t mr_id, void* src, size_t size,
                    FifoItem const& slot_item, uint64_t* transfer_id);
+
+  bool write_compressed_async(uint64_t conn_id, uint64_t mr_id, void* src,
+                              size_t size, FifoItem const& slot_item,
+                              uint64_t* transfer_id);
+
+  std::array<uint64_t, 5> compressed_counters(uint64_t conn_id);
 
   /* Write a vector of data chunks. */
   bool writev(uint64_t conn_id, std::vector<uint64_t> const& mr_id_v,

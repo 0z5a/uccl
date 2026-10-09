@@ -494,6 +494,7 @@ struct RDMASendRequest {
   bool need_signaled;  // Whether to use IBV_SEND_SIGNALED flag
   SendType send_type = SendType::Send;
   CompressCtx compress_ctx;
+  bool require_compression = false;
   // Constructor
   RDMASendRequest(std::shared_ptr<RegMemBlock> local,
                   std::shared_ptr<RemoteMemInfo> remote,

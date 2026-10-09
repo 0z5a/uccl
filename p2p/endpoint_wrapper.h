@@ -67,6 +67,7 @@ static inline int set_request(std::shared_ptr<RDMAEndpoint> const& obj,
   bundle->req.remote_mem =
       std::shared_ptr<RemoteMemInfo>(bundle, &bundle->remote_mem_obj);
   bundle->req.compress_ctx = local_mh->compress_ctx;
+  bundle->req.require_compression = ureq->decoder_ready;
   bundle->req.to_peer_id = conn->uccl_conn_id_.peer_id;
   bundle->req.send_type =
       (ureq->type == ReqType::ReqRead) ? SendType::Read : SendType::Write;
@@ -78,7 +79,7 @@ static inline int set_request(std::shared_ptr<RDMAEndpoint> const& obj,
   if (wr_id == SendConnection::kPostError) return SendConnection::kPostError;
   ureq->engine_idx = wr_id;
   ureq->peer_id = conn->uccl_conn_id_.peer_id;
-  return ureq->engine_idx;
+  return 0;
 }
 
 // Same as set_request() but skips RDMAEndpoint::write_or_read() (which does a
@@ -105,6 +106,7 @@ static inline int set_request_on_group(SendConnection* send_group, Conn* conn,
   bundle->req.remote_mem =
       std::shared_ptr<RemoteMemInfo>(bundle, &bundle->remote_mem_obj);
   bundle->req.compress_ctx = local_mh->compress_ctx;
+  bundle->req.require_compression = ureq->decoder_ready;
   bundle->req.to_peer_id = conn->uccl_conn_id_.peer_id;
   bundle->req.send_type =
       (ureq->type == ReqType::ReqRead) ? SendType::Read : SendType::Write;
@@ -118,9 +120,9 @@ static inline int set_request_on_group(SendConnection* send_group, Conn* conn,
     if (wr_id == SendConnection::kPostError) return SendConnection::kPostError;
     if (wr_id < 0) std::this_thread::sleep_for(std::chrono::microseconds(10));
   }
-  ureq->engine_idx = static_cast<int>(wr_id);
+  ureq->engine_idx = static_cast<uint32_t>(wr_id);
   ureq->peer_id = conn->uccl_conn_id_.peer_id;
-  return ureq->engine_idx;
+  return 0;
 }
 
 // ── Dispatch functions ──────────────────────────────────────────────────────
