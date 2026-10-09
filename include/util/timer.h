@@ -69,6 +69,12 @@ class ChronoTimer {
 };
 
 static double measure_rdtsc_freq() {
+#if defined(__aarch64__)
+  uint64_t counter_hz;
+  asm volatile("mrs %0, cntfrq_el0" : "=r"(counter_hz));
+  UCCL_CHECK(counter_hz != 0) << "Invalid virtual counter frequency";
+  return static_cast<double>(counter_hz) / 1e9;
+#else
   ChronoTimer chrono_timer;
   const uint64_t rdtsc_start = rdtsc();
 
@@ -86,6 +92,7 @@ static double measure_rdtsc_freq() {
   UCCL_CHECK(freq_ghz >= 0.5 && freq_ghz <= 5.0) << "Invalid RDTSC frequency";
 
   return freq_ghz;
+#endif
 }
 
 static double freq_ghz = measure_rdtsc_freq();

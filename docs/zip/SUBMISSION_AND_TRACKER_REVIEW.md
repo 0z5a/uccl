@@ -60,7 +60,10 @@ also discarded `build_connect` failure and returned an apparently valid local
 connection. The candidate returns the assigned receiver peer ID, keeps the
 setup result signed and propagates failure to `Endpoint.connect` before storing
 the connection. Actual failure/timeout and successful multi-peer handshakes
-still require the Linux/CUDA/RDMA run.
+still require the Linux/CUDA/RDMA run. The complete source and the real
+serialization unit test now pass the local Linux build; see
+[build evidence](BUILD_VALIDATION.md).
 
 These checks do not complete the full model E2E requirement. The frozen
-`70213197` native prerequisite and the high-concurrency model runs remain pending.
+`78687754` native H100 prerequisite and the high-concurrency model runs remain
+pending. This minimal successor fixes a compilation error in `70213197`.

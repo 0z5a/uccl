@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <cassert>
+
 #include "dietgpu/ans/GpuANSCodec.h"
 #include "dietgpu/utils/StackDeviceMemory.h"
 
@@ -317,7 +319,7 @@ void floatCompressEncodeOneBatch(dietgpu::StackDeviceMemory& res,
                                  uint32_t* outSize_dev, cudaStream_t stream);
 uint32_t getUncompDataSizeFromByteSize(FloatType floatType, uint32_t datasize);
 
-inline size_t getElementCountFromBytes(FloatType ft, size_t bytes);
+size_t getElementCountFromBytes(FloatType ft, size_t bytes);
 
 inline bool isFloat8Type(FloatType ft) {
   return ft == FloatType::kFloat8E4M3FN || ft == FloatType::kFloat8E5M2;

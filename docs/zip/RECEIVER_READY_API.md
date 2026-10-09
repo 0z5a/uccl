@@ -40,7 +40,7 @@ error. The per-request completion token is independent of that ID.
 | Check | Result | Speedup |
 |---|---|---|
 | Ordinary raw completion interface | Source semantics preserved | N/A |
-| Explicit compressed admission and decoder-ready polling | Implemented; full build and hardware execution pending | Not measured |
+| Explicit compressed admission and decoder-ready polling | Full Linux/CUDA build and Python bindings pass; hardware execution pending | Not measured |
 | Decoder failure with other outstanding writes | Own ACK drain precedes terminal failure; device regression pending | N/A |
 | Model E2E | Still pending; this interface alone is not an E2E result | Not measured |
 
@@ -62,4 +62,5 @@ peak near 56 GiB, excluding runtime overhead. Root must approve that budget
 before launch. Lower C/Q cases come first; no stage is admitted from a guessed
 memory capacity. Large 64/256 MiB requests use smaller C/Q combinations that
 fit the same budget. Full RL and vLLM PD model tests still follow the protocol
-and barrier correctness gates.
+and barrier correctness gates. [Build evidence](BUILD_VALIDATION.md) is separate
+from those pending execution results.

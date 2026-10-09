@@ -108,12 +108,14 @@ combining it will require a supported fallback or an explicit admission error.
 | Concurrent tokens | 16 threads, 65,536 tokens, no repeats or zero/error-bit tokens | CPU PASS | N/A |
 | Contended ACK slot reuse | 16 threads, four slots, 2,048 reservations, exact ownership and stale token rejection | CPU PASS | N/A |
 | Host AddressSanitizer / UBSan / ThreadSanitizer | Same production pool/token checks | PASS | N/A |
-| Real handshake ABI | Production serialization, legacy extent, 64-byte token descriptor | Prepared; Linux execution pending | N/A |
-| Full CUDA/RDMA build and multi-peer transfer | Actual compressed data/control QPs, distinct peer destinations | Pending | Not measured |
+| Real handshake ABI | Production serialization, legacy extent, 64-byte token descriptor | Linux CPU PASS | N/A |
+| Full CUDA/RDMA build | DietGPU, Python extension, shared library and SM90 native test | Local Linux build PASS | N/A |
+| Multi-peer transfer | Actual compressed data/control QPs, distinct peer destinations | Pending | Not measured |
 | High-concurrency model E2E | RL weight refresh and vLLM PD KV through Zip | Pending | Not measured |
 
 CPU protocol tests do not establish GPU/NIC ordering or model E2E correctness.
-The native async-decoder prerequisite remains frozen at `70213197`; it does not
-contain or qualify this multi-peer candidate. Next qualification must measure
+The native async-decoder prerequisite is `78687754`, a minimal compilation fix
+to `70213197`; it does not contain or qualify this multi-peer candidate. See
+[build evidence](BUILD_VALIDATION.md). Next qualification must measure
 receiver-ready completion, exact destination bits and compressed/fallback counts
 at Q=1/2/4/8/16 before attributing an E2E speedup to this change.

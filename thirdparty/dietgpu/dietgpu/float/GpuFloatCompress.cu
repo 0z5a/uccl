@@ -340,7 +340,7 @@ void floatCompressEncodeOneBatch(dietgpu::StackDeviceMemory& res,
   CUDA_VERIFY(cudaStreamSynchronize(stream));
 }
 
-inline size_t getElementCountFromBytes(FloatType ft, size_t bytes) {
+size_t getElementCountFromBytes(FloatType ft, size_t bytes) {
   const size_t wordSize = getWordSizeFromFloatType(ft);
 
   UCCL_CHECK(bytes % wordSize == 0)
