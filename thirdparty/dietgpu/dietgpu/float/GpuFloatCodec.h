@@ -297,7 +297,7 @@ struct FloatCompressSplitContext {
   dietgpu::FloatType float_type;
   // ---- immutable per-batch inputs ----
   GpuMemoryReservation<uintptr_t> params_dev;  // [in, inSize, out]
-  uint32_t maxSize = 0;
+  uint32_t maxSize = 0;  // Input bytes, not float elements or ANS symbols.
 
   // ---- split outputs (RAII-managed, freed when context is destroyed) ----
   GpuMemoryReservation<uint8_t> toComp_dev;
@@ -320,6 +320,9 @@ void floatCompressEncodeOneBatch(dietgpu::StackDeviceMemory& res,
 uint32_t getUncompDataSizeFromByteSize(FloatType floatType, uint32_t datasize);
 
 size_t getElementCountFromBytes(FloatType ft, size_t bytes);
+
+// One ANS byte per FP16/BF16/FP32 value, or per pair of FP8 values.
+uint32_t getFloatSymbolCountFromBytes(FloatType ft, uint32_t bytes);
 
 inline bool isFloat8Type(FloatType ft) {
   return ft == FloatType::kFloat8E4M3FN || ft == FloatType::kFloat8E5M2;

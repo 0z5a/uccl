@@ -471,7 +471,6 @@ bool DietGPUCompressorBackend::compress_split_one_batch(
       dietgpu::roundDown(dietgpu::getUncompDataSizeFromByteSize(
                              compressConfig.floatType, ctx->maxSize),
                          ChunkSplitStrategy::kMessageChunkSizeKB);
-  GPU_RT_CHECK(gpuStreamSynchronize(stream_));
   req->local_mem = std::make_shared<RegMemBlock>(
       buffer_->addr, data_size, buffer_->mr_array, buffer_->type);
   return true;
@@ -496,7 +495,6 @@ uint32_t DietGPUCompressorBackend::compress_encode_one_batch(
 
   dietgpu::floatCompressEncodeOneBatch(*res_, compressConfig, *ctx,
                                        dev_compressed_size_, stream_);
-  GPU_RT_CHECK(gpuStreamSynchronize(stream_));
   // Get compressed size
   uint32_t compressedSize = 0;
   GPU_RT_CHECK(gpuMemcpy(&compressedSize, dev_compressed_size_,

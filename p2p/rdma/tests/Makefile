@@ -42,6 +42,7 @@ clean:
 	rm -f test_efa_endpoint test_efa_endpoint.o test_compression test_compression.o \
 		test_compressed_ack test_async_decompress async_decode_gate.o
 	rm -f test_zip_peer_regions test_zip_handshake test_packet_tracker_wrap
+	rm -f test_split_float
 
 # CPU protocol check and a standalone test of the production async decoder.
 # The GPU target needs CUDA and the bundled DietGPU library, with no Python,
@@ -69,3 +70,9 @@ test_async_decompress: test_async_decompress.cpp ../dietgpu_decompress.cc ../die
 
 async_decode_gate.o: async_decode_gate.cu async_decode_gate.h
 	$(CUDA_HOME)/bin/nvcc -std=c++17 -O2 -arch=sm_90 -c $< -o $@
+
+test_split_float: test_split_float.cpp ../dietgpu_decompress.h $(DIETGPU_FLOAT_DIR)/libdietgpu_float.so
+	$(CXX) -std=c++17 -O2 -DUSE_DIETGPU -I.. -I../../../include -I$(DIETGPU_ROOT) \
+		-I$(CUDA_HOME)/include $< -L$(CUDA_HOME)/lib64 -lcudart -lcuda \
+		-L$(DIETGPU_FLOAT_DIR) -ldietgpu_float \
+		-Wl,-rpath,$(abspath $(DIETGPU_FLOAT_DIR)) -o $@

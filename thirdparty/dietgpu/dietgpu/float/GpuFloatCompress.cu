@@ -221,14 +221,8 @@ void floatCompressSplitOneBatch(dietgpu::StackDeviceMemory& res,
   auto outProvider = BatchProviderPointer(out_dev);
 
   // ---- allocate split temporaries (stored as RAII in ctx) ----
-  // FP8 types pack two values into one uint16, so the effective element
-  // count (and therefore the compressed-row width) is half the raw byte size.
-  uint32_t effectiveMaxSize = ctx.maxSize;
-  if (isFloat8Type(config.floatType)) {
-    assert(effectiveMaxSize % 2 == 0);
-    effectiveMaxSize /= 2;
-  }
-  ctx.compRowStride = roundUp(effectiveMaxSize, sizeof(uint4));
+  auto maxSymbols = getFloatSymbolCountFromBytes(config.floatType, ctx.maxSize);
+  ctx.compRowStride = roundUp(maxSymbols, sizeof(uint4));
 
   ctx.toComp_dev = res.alloc<uint8_t>(stream, ctx.compRowStride);
 
@@ -271,6 +265,7 @@ void floatCompressEncodeOneBatch(dietgpu::StackDeviceMemory& res,
 
   auto inProviderANS = FloatANSInProvider<BatchProviderPointer>(
       ctx.toComp_dev.data(), ctx.compRowStride, inProvider);
+  auto maxSymbols = getFloatSymbolCountFromBytes(config.floatType, ctx.maxSize);
 
   // ---- ANS encode ----
   switch (config.floatType) {
@@ -281,7 +276,7 @@ void floatCompressEncodeOneBatch(dietgpu::StackDeviceMemory& res,
 
       runANSEncodeForType<FloatType::kFloat16>(
           res, config.ansConfig, 1, inProvider, inProviderANS,
-          ctx.histogram_dev.data(), ctx.maxSize, outProviderANS, outSize_dev,
+          ctx.histogram_dev.data(), maxSymbols, outProviderANS, outSize_dev,
           stream);
       break;
     }
@@ -293,7 +288,7 @@ void floatCompressEncodeOneBatch(dietgpu::StackDeviceMemory& res,
 
       runANSEncodeForType<FloatType::kBFloat16>(
           res, config.ansConfig, 1, inProvider, inProviderANS,
-          ctx.histogram_dev.data(), ctx.maxSize, outProviderANS, outSize_dev,
+          ctx.histogram_dev.data(), maxSymbols, outProviderANS, outSize_dev,
           stream);
       break;
     }
@@ -305,7 +300,7 @@ void floatCompressEncodeOneBatch(dietgpu::StackDeviceMemory& res,
 
       runANSEncodeForType<FloatType::kFloat32>(
           res, config.ansConfig, 1, inProvider, inProviderANS,
-          ctx.histogram_dev.data(), ctx.maxSize, outProviderANS, outSize_dev,
+          ctx.histogram_dev.data(), maxSymbols, outProviderANS, outSize_dev,
           stream);
       break;
     }
@@ -317,7 +312,7 @@ void floatCompressEncodeOneBatch(dietgpu::StackDeviceMemory& res,
 
       runANSEncodeForType<FloatType::kFloat8E4M3FN>(
           res, config.ansConfig, 1, inProvider, inProviderANS,
-          ctx.histogram_dev.data(), ctx.maxSize, outProviderANS, outSize_dev,
+          ctx.histogram_dev.data(), maxSymbols, outProviderANS, outSize_dev,
           stream);
       break;
     }
@@ -329,7 +324,7 @@ void floatCompressEncodeOneBatch(dietgpu::StackDeviceMemory& res,
 
       runANSEncodeForType<FloatType::kFloat8E5M2>(
           res, config.ansConfig, 1, inProvider, inProviderANS,
-          ctx.histogram_dev.data(), ctx.maxSize, outProviderANS, outSize_dev,
+          ctx.histogram_dev.data(), maxSymbols, outProviderANS, outSize_dev,
           stream);
       break;
     }
@@ -348,6 +343,15 @@ size_t getElementCountFromBytes(FloatType ft, size_t bytes) {
       << wordSize << ")";
 
   return bytes / wordSize;
+}
+
+uint32_t getFloatSymbolCountFromBytes(FloatType ft, uint32_t bytes) {
+  auto elements = static_cast<uint32_t>(getElementCountFromBytes(ft, bytes));
+  if (isFloat8Type(ft)) {
+    UCCL_CHECK(elements % 2 == 0);
+    return elements / 2;
+  }
+  return elements;
 }
 
 uint32_t getUncompDataSizeFromByteSize(FloatType floatType, uint32_t datasize) {
