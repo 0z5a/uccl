@@ -464,8 +464,7 @@ bool SendConnection::check_completion(int64_t wr_id) {
 CompressedWriteStatus SendConnection::check_compressed_completion(
     int64_t wr_id) {
   std::lock_guard<std::mutex> lock(pending_compressed_mu_);
-  if (pending_compressed_.count(wr_id) || !tracker_->is_acknowledged(wr_id))
-    return CompressedWriteStatus::kPending;
+  if (pending_compressed_.count(wr_id)) return CompressedWriteStatus::kPending;
   if (failed_compressed_wr_.load(std::memory_order_acquire) >= 0)
     return CompressedWriteStatus::kFailed;
   return CompressedWriteStatus::kReady;
@@ -810,7 +809,12 @@ int64_t SendConnection::compress_write_request_split_first(
   uint64_t slot_base = remote_decompress_buf_.addr + arena_offset;
 
   // Phase 1: split into compress_buffer, post to slot_base.
-  Compressor::get_instance().compress_split_one_batch(req);
+  if (!compressor.compress_split_one_batch(req)) {
+    decompress_arena_.release(arena_offset);
+    ack_slots_->release(ack_slot);
+    drain_failed_request(wr_id, 0);
+    return kPostError;
+  }
   uint32_t first_seg = req->local_mem->size;
   req->remote_mem = std::make_shared<RemoteMemInfo>(
       slot_base, arena_bytes, remote_decompress_buf_.rkey_array,
@@ -855,8 +859,12 @@ int64_t SendConnection::compress_write_request_split_first(
   // Phase 2: encode tail, post as a single chunk on one channel.
   // Mixing phase-2 chunks across QPs with phase 1 halves throughput;
   // one chunk lets the NIC's per-QP bandwidth arbitration rebalance.
-  uint32_t compressed_size =
-      Compressor::get_instance().compress_encode_one_batch(req);
+  uint32_t compressed_size = compressor.compress_encode_one_batch(req);
+  if (!compressed_size || compressed_size < first_seg ||
+      compressed_size > arena_bytes) {
+    drain_failed_request(wr_id, first_chunks);
+    return kPostError;
+  }
   uint32_t second_seg = req->local_mem->size;
   size_t second_chunks = second_seg > 0 ? 1 : 0;
 
@@ -878,6 +886,11 @@ int64_t SendConnection::compress_write_request_split_first(
     send_routine();
     std::this_thread::yield();
   }
+  {
+    std::lock_guard<std::mutex> lock(pending_compressed_mu_);
+    pending_compressed_.at(wr_id).data_completed = true;
+  }
+  maybe_push_compressed_meta(wr_id);
   compressed_submitted_.fetch_add(1, std::memory_order_relaxed);
   compressed_archive_bytes_.fetch_add(compressed_size,
                                       std::memory_order_relaxed);
@@ -970,16 +983,13 @@ void SendConnection::poll_ack_ring() {
 }
 
 void SendConnection::maybe_push_compressed_meta(int64_t wr_id) {
-  WriteReqMeta meta_to_push{};
-  uint32_t push_slot = 0;
-  {
-    std::lock_guard<std::mutex> lk(pending_compressed_mu_);
-    auto it = pending_compressed_.find(wr_id);
-    if (it == pending_compressed_.end() || it->second.meta_pushed) return;
-    if (!tracker_->is_acknowledged(wr_id)) return;
-    meta_to_push = it->second.meta;
-    push_slot = it->second.ack_slot;
-  }
+  std::lock_guard<std::mutex> lk(pending_compressed_mu_);
+  auto it = pending_compressed_.find(wr_id);
+  if (it == pending_compressed_.end() || it->second.meta_pushed ||
+      !it->second.data_completed)
+    return;
+  auto const& meta_to_push = it->second.meta;
+  uint32_t push_slot = it->second.ack_slot;
   UCCL_LOG(INFO, UCCL_RDMA)
       << "SendConnection::maybe_push_compressed_meta - pushing wr_id=" << wr_id
       << " slot=" << push_slot
@@ -990,9 +1000,7 @@ void SendConnection::maybe_push_compressed_meta(int64_t wr_id) {
   std::shared_lock<std::shared_mutex> lock(ctrl_channel_mutex_);
   if (ctrl_channel_ &&
       ctrl_channel_->push_write_meta(meta_to_push, push_slot)) {
-    std::lock_guard<std::mutex> lock(pending_compressed_mu_);
-    auto it = pending_compressed_.find(wr_id);
-    if (it != pending_compressed_.end()) it->second.meta_pushed = true;
+    it->second.meta_pushed = true;
   }
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <bitset>
+#include <mutex>
 #include <vector>
 
 class BitmapPacketTracker {
@@ -75,6 +76,7 @@ class AtomicBitmapPacketTrackerMultiAck {
 
   std::atomic<uint32_t> base_seq_num_;
   std::atomic<uint32_t> next_seq_num_;
+  std::mutex transition_mutex_;
 
  public:
   AtomicBitmapPacketTrackerMultiAck(uint32_t initial_seq = 0);

@@ -80,6 +80,8 @@ def main() -> None:
     if world < 2 or world % 2:
         raise ValueError("Require equal writer and receiver groups")
     peers = world // 2
+    if args.mode == "zip" and int(os.environ.get("UCCL_P2P_ZIP_MAX_PEERS", "4")) < peers:
+        raise ValueError("Zip peer capacity must cover the receiver group")
     endpoint = p2p.Endpoint(local_gpu_idx=torch.cuda.current_device())
     metadata: list[bytes] = [b""] * world
     dist.all_gather_object(metadata, bytes(endpoint.get_metadata()))

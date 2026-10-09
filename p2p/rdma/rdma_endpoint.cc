@@ -326,7 +326,11 @@ ConnID RDMAEndpoint::uccl_connect(int remote_gpuidx, std::string remote_ip,
   UCCL_LOG(INFO, UCCL_RDMA)
       << "remote_gpuidx: " << remote_gpuidx << ", remote_ip: " << remote_ip
       << ", remote_port: " << remote_port;
-  build_connect(current_send_peer_id);  // sync mode (default)
+  if (build_connect(current_send_peer_id) < 0) {
+    ConnID failed{};
+    failed.peer_id = UINT64_MAX;
+    return failed;
+  }
   ConnID conn_id;
   conn_id.context =
       reinterpret_cast<void*>(static_cast<intptr_t>(current_send_peer_id));
@@ -336,7 +340,7 @@ ConnID RDMAEndpoint::uccl_connect(int remote_gpuidx, std::string remote_ip,
 
 int RDMAEndpoint::build_connect(uint64_t peer_id, bool sync, int timeout_ms) {
   std::string const oob_con = build_oob_connect(peer_id);
-  uint64_t receved_peer_id =
+  int receved_peer_id =
       this->build_control_channel(oob_con, peer_id, sync, timeout_ms);
   if (receved_peer_id < 0) {
     return -1;
@@ -639,8 +643,9 @@ void RDMAEndpoint::process_meta(std::string const& input, std::string& output,
     // Create response (include our OOB port for potential future use)
     RemoteMemInfo ctrl_info(ctrl_mem);
     MetaInfoToExchange response(
-        INVALID_PEER_ID, meta.channel_id, recv_ctrl_channel->get_local_meta(),
-        nullptr, ChannelType::Control, gpu_index_, oob_server_->get_port());
+        static_cast<int32_t>(actual_peer_id), meta.channel_id,
+        recv_ctrl_channel->get_local_meta(), nullptr, ChannelType::Control,
+        gpu_index_, oob_server_->get_port());
     response.mem_meta = ctrl_info;
     if (region) {
       response.zip_protocol = kZipProtocol;
@@ -706,9 +711,9 @@ void RDMAEndpoint::process_meta(std::string const& input, std::string& output,
         std::make_shared<RDMADataChannel>(ctx_ptr, meta.channel_meta,
                                           meta.channel_id);
     // Create response (echo back the same data)
-    MetaInfoToExchange response(INVALID_PEER_ID, meta.channel_id,
-                                new_channel->get_local_meta(), nullptr,
-                                ChannelType::Data, gpu_index_);
+    MetaInfoToExchange response(static_cast<int32_t>(actual_peer_id),
+                                meta.channel_id, new_channel->get_local_meta(),
+                                nullptr, ChannelType::Data, gpu_index_);
     UCCL_LOG(INFO, UCCL_RDMA) << "response:::::::" << response;
     output = serialize(response);
     add_one_recv_channel(actual_peer_id, meta.channel_id, new_channel);

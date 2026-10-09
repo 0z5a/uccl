@@ -461,6 +461,8 @@ bool Endpoint::connect(std::string ip_addr, int remote_gpu_idx, int remote_port,
   }
   ConnID uccl_conn_id = uccl_conn_id_future.get();
 
+  if (uccl_conn_id.peer_id == UINT64_MAX) return false;
+
   // Store the connection ID.
   {
     std::unique_lock<std::shared_mutex> lock(conn_mu_);

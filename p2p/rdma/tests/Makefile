@@ -41,7 +41,7 @@ test_compression: test_compression.cpp ../compression.h ../../util/common.h ../.
 clean:
 	rm -f test_efa_endpoint test_efa_endpoint.o test_compression test_compression.o \
 		test_compressed_ack test_async_decompress async_decode_gate.o
-	rm -f test_zip_peer_regions test_zip_handshake
+	rm -f test_zip_peer_regions test_zip_handshake test_packet_tracker_wrap
 
 # CPU protocol check and a standalone test of the production async decoder.
 # The GPU target needs CUDA and the bundled DietGPU library, with no Python,
@@ -51,6 +51,9 @@ test_compressed_ack: test_compressed_ack.cpp ../compressed_ack.h
 
 test_zip_peer_regions: test_zip_peer_regions.cpp ../zip_region_pool.h ../zip_ack_slots.h ../compressed_ack.h
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -Werror -pthread -I.. $< -o $@
+
+test_packet_tracker_wrap: test_packet_tracker_wrap.cpp ../../util/seq_num.cc ../../util/seq_num.h
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -Werror -pthread -I../../util $< ../../util/seq_num.cc -o $@
 
 # Linux RDMA headers are required; this test opens no device or connection.
 test_zip_handshake: test_zip_handshake.cpp ../../util/common.cc ../../util/common.h

@@ -175,6 +175,7 @@ class SendConnection : public RDMAConnection {
     uint64_t arena_offset = 0;
     uint64_t arena_bytes = 0;
     bool meta_pushed = false;
+    bool data_completed = false;
   };
   std::mutex pending_compressed_mu_;
   std::unordered_map<int64_t, PendingCompressed> pending_compressed_;
