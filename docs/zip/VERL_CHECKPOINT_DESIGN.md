@@ -126,6 +126,55 @@ bytes, including CPU copies. After those pass, performance runs may disable
 `uccl_zip/payload_verification` so these modes cannot be mixed. Native counter
 deltas must match all compressed writes, failures must stay zero and inflight
 must drain to zero. `archive_bytes` counts codec output, not total network bytes.
+The returned metrics now also preserve actual `native_submitted`, `native_ready`,
+`native_failed` and `native_inflight` values for the run record.
+
+## Prepared model run
+
+`p2p/integrations/run_verl_zip_rl.sh` invokes the reviewed verl
+[`run_v1_separate_async.sh`](https://github.com/volcengine/verl/blob/5b3e1f86bd39aee07ae15b6bf515198b68052486/tests/special_e2e/run_v1_separate_async.sh)
+recipe with the real FSDP2 trainer, vLLM rollout and GSM8K reward path. It selects
+Qwen2.5-1.5B-Instruct, eight assigned H100 GPUs, training prompt batches 32/64,
+four responses per prompt, per-engine sequence limits 64/128, 64 MiB checkpoint
+buckets and depth 16. The default is six optimizer/checkpoint steps, with a
+minimum of three. These are requested workload settings, not measured achieved
+concurrency or a completed model test.
+
+Set `VERL_SOURCE_ROOT` to the clean pinned checkout; `MODEL_PATH`, `TRAIN_FILES`
+and `VAL_FILES` to the task-owned local assets; and `UCCL_RAY_NUM_CPUS` to the run
+controller's CPU budget. The runner accepts a mode, batch and new private output
+directory:
+
+```sh
+bash p2p/integrations/run_verl_zip_rl.sh raw 32 "$PRIVATE_RESULTS/raw-b32"
+bash p2p/integrations/run_verl_zip_rl.sh zip 32 "$PRIVATE_RESULTS/zip-b32"
+bash p2p/integrations/run_verl_zip_rl.sh raw 64 "$PRIVATE_RESULTS/raw-b64"
+bash p2p/integrations/run_verl_zip_rl.sh zip 64 "$PRIVATE_RESULTS/zip-b64"
+```
+
+The controller must first admit the GPU workload and pass the native/RDMA gates.
+Model/data preparation can overlap those gates in task-owned storage; remove
+the task's model files only after all its required runs finish. The runner uses
+a fresh local Ray instance and explicitly forwards UCCL settings, module paths
+and the private metric-file path to workers. It does not stop another Ray job.
+Each run records `trainer.stdout`, `trainer.stderr`, `metrics.jsonl` and its
+controller exit code privately. No training execution is implied by the runner's
+shell syntax or Hydra composition checks.
+
+The existing trainer records three different scopes:
+
+| Metric | Measured boundary when executed |
+|---|---|
+| `uccl_zip/transfer_seconds` | Source staging through all consumer credits |
+| `timing_s/update_weights` | Entire checkpoint manager call, including final server application and resume |
+| `timing_s/step` | Generation wait, reward/log-probability work, optimizer work and weight update |
+
+Correctness runs keep payload verification enabled. After they pass, fresh raw
+and Zip performance workers may use `VERIFY_PAYLOAD=false`; retain the verification
+flag in every report. Use at least five paired measurement windows and the planned
+stability run. Configured sequence limits do not prove the achieved concurrency;
+that still needs execution traces. This runner covers the first eight-H100 RL
+case. Larger allocations and actual vLLM PD KV transfer remain later gates.
 
 ## Validation and result table
 
@@ -142,6 +191,7 @@ it excludes Ray scheduling, CUDA, actual compression, RDMA and trained models.
 | Corrupted payload | Single-byte corruption; finalization must retain registrations | Host PASS | N/A |
 | Stale round credit | Old round received while a new transfer is active | Host PASS, original error reaches sender | N/A |
 | Consumer-credit ownership | Four consumers, depth 16, reverse completion and 8,192 generations | Four ledger tests PASS | N/A |
+| Prepared RL recipe | Raw/Zip × prompt batch 32/64, Ray worker environment | Hydra configuration composition PASS; shell syntax PASS | N/A |
 | Full native H100 decoder / memcheck | Prepared prerequisite | NOT_RUN | Not measured |
 | Actual compressed multi-peer RDMA | Prepared distributed stage | NOT_RUN | Not measured |
 | High-batch RL and vLLM PD model E2E | Full iteration / actual compressed KV transfer | NOT_RUN | Not measured |

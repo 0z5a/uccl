@@ -379,6 +379,11 @@ class UCCLZipCheckpointEngine(CheckpointEngine):
             "uccl_zip/raw_requests": float((sequence - compressed_buckets) * len(self.connections)),
             "uccl_zip/compressed_requests": float(expected),
             "uccl_zip/archive_bytes": float(sum(after[p]["archive_bytes"] - before[p]["archive_bytes"] for p in after)),
+            **{
+                f"uccl_zip/native_{name}": float(sum(after[p][name] - before[p][name] for p in after))
+                for name in ("submitted", "ready", "failed")
+            },
+            "uccl_zip/native_inflight": float(sum(after[p]["inflight"] for p in after)),
         }
 
     async def _receive_chunks(self, step: int | None) -> AsyncGenerator[tuple[TensorMeta, torch.Tensor], None]:

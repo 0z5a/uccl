@@ -246,6 +246,10 @@ class CheckpointControlTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(metrics["uccl_zip/compressed_requests"], 2 if mode == "zip" else 0)
             self.assertEqual(metrics["uccl_zip/raw_requests"], 6 if mode == "zip" else 8)
             self.assertEqual(metrics["uccl_zip/payload_verification"], 1)
+            self.assertEqual(metrics["uccl_zip/native_submitted"], metrics["uccl_zip/compressed_requests"])
+            self.assertEqual(metrics["uccl_zip/native_ready"], metrics["uccl_zip/compressed_requests"])
+            self.assertEqual(metrics["uccl_zip/native_failed"], 0)
+            self.assertEqual(metrics["uccl_zip/native_inflight"], 0)
             self.assertEqual(metrics["uccl_zip/logical_bytes"], 2 * sum(tensor.nbytes for _, tensor in weights))
             self.assertFalse(self.workers[0].credits.slots)
             for worker in self.workers:
