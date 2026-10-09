@@ -53,3 +53,7 @@ The existing nanobind stable-ABI macro redefinition warning remains.
 
 Raw logs and execution metadata remain private. New work stays on local
 branches; no new PR, remote push or main update is included in these results.
+
+The optional [verl checkpoint integration](VERL_CHECKPOINT_DESIGN.md) separately
+passes four host control/dataflow tests and four consumer-credit tests. These
+use a simulated P2P data plane and do not change the pending hardware/E2E rows.
