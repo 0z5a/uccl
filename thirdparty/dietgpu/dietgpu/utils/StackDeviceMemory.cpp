@@ -146,7 +146,7 @@ void* StackDeviceMemory::Stack::getAlloc(
     UCCL_CHECK_LE(head_, end_);
   }
 
-  maxSeenSize_ = std::max(maxSeenSize_, stackMemUsed + overflowSize_);
+  maxSeenSize_ = std::max(maxSeenSize_, getStackSizeUsed() + overflowSize_);
 
   return out;
 }
