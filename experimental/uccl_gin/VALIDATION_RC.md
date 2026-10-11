@@ -1,8 +1,8 @@
 # RC/IB qualification results
 
-Initial qualification: 2026-10-10. GPU guards, independent HT communicators and frozen-backup follow-ups: 2026-10-11.
+Initial qualification: 2026-10-10. GPU guards, independent HT communicators, fixed-arrival pressure and frozen-backup follow-ups: 2026-10-11.
 
-The independent execution task delivered a private candidate that passes the bounded GIN primitive, EP2 communication, and standalone transport Context lifecycle checks below. Its corrected closed-wave throughput is lower than the native NCCL reference at every measured payload size. Model E2E, large EP, and an optimization benefit remain unverified.
+The independent execution task delivered a private candidate that passes the bounded GIN primitive, EP2 communication, and standalone transport Context lifecycle checks below. Its corrected closed-wave throughput is lower than the native NCCL reference at every measured payload size. The later R6 fixed-arrival experiment passes correctness but none of its 12 I-cap comparisons meets the performance gate. Model E2E, large EP, and an optimization benefit remain unverified.
 
 These results apply to the frozen candidate generations identified below. This checkout imports the R6 runtime and portable EP fixture fixes. The private resource-collector harness remains in the execution delivery. The standalone Makefile also keeps EFA headers, libraries and rpath exclusive to `TRANSPORT=efa`; selection for `ib`, `efa` and invalid input was checked with dry runs. This document records evidence reviewed locally; it does not report a new execution by this checkout.
 
@@ -11,9 +11,10 @@ These results apply to the frozen candidate generations identified below. This c
 | Item | Identity |
 | --- | --- |
 | Base commit | `5e57d6540bd9e993fbbb1fa869dae36434f98564` |
-| Tracked diff SHA256 | `3b7f7daf48a1505ce85c009a179f596f028ff49c71a2f9ac5b45a520dc6205bb` |
+| Initial tracked diff SHA256 | `3b7f7daf48a1505ce85c009a179f596f028ff49c71a2f9ac5b45a520dc6205bb` |
 | Complete patch, including the new contract harness, SHA256 | `fae492a926499d82b62d78dd77002cfce144739c99b81cb87a6d1ce888b7c859` |
 | R6 complete candidate patch, including its private harness, SHA256 | `c271f8afad531a817cc79deb0ef1c38e079413c7c32466880d71ceec1e8838b4` |
+| R6 tracked production diff SHA256 | `a5df1a2d373cc25f711271168ea5cece11b16b5fdd6e9ec4734cb0816573419d` |
 | Contract harness SHA256 | `bb5c28c03b64794fd5d66cceb7184ad23813f3f15ed1c2a400751ddb0e3dde68` |
 | Initial delivery manifest SHA256 | `42d80f3d5d95ecc82f851a26e02437e795f16c3a38c064a1d1f2b5544be122d2` |
 | Initial run matrix SHA256 | `8cd2838a2aa9a82f4bbc102cdeb822a10f5c86b7db27f07f13f1c40cf51ce0ab` |
@@ -120,9 +121,7 @@ CPU and SM budgets were not equalized. These measurements describe this closed-w
 
 F/S concurrent versus application round-robin runs are exploratory cohort completion measurements, not per-operation p50/p99. The additional main-thread placement changes the CPU budget; it cannot support a scheduler benefit claim.
 
-## Remaining gates
-
-### Context startup fix awaiting qualification
+## Context startup repair and R6 qualification
 
 The later R5 arrival batch stopped after its second item: one PASS, one initialization failure (exit 134), and 48 NOT_RUN without retry. The failure was `Atomic buffer is not registered` during Context creation, before GPU admission; it is not an I4 payload-validation failure.
 
@@ -138,19 +137,65 @@ flowchart LR
 
 Patch applicability and source ordering were checked locally. The execution owner reports both CPU builds PASS with context.cpp SHA256 `44a8a1090baf3d86f642eac26419337c42a75c95e987956e24be87bd9ee8857a`, matching this checkout, and a new production diff SHA256 `a5df1a2d373cc25f711271168ea5cece11b16b5fdd6e9ec4734cb0816573419d`. Eight imported runtime/portable-fixture file blobs match the R6 canonical patch. The Makefile changes exclude the private collector target and restrict EFA SDK search paths to EFA mode; these build-selection changes have dry-run validation, not a new local CUDA build.
 
-The owner reports ten independent I4/full-payload startup runs plus the new 20-second reference PASS: 11 runs/22 rank-runs. In the reference, both ranks complete F128000/S16000 inside the window with final backlog and drain zero. It also reports 50/50 new cohort controllers PASS, covering 45 primary cells (five sessions, three loads, three I caps) and five additional full variants. CPU offline replay and session interval analysis are still pending here; these controller reports do not establish a formal statistical win. Earlier frozen source generations and successes remain retained. R5 is not a complete passing batch; its first successful case is corrected to load50-I1-s1 by an addendum, preserving the original archive.
+The owner's final collection receipts record ten independent I4/full-payload startup runs plus the new 20-second reference PASS: 11 runs/22 rank-runs. In the reference, both ranks complete F128000/S16000 inside the window with final backlog and drain zero. The new cohort has 50/50 controllers PASS, covering 45 primary cells (five sessions, three loads, three I caps) and five additional full variants. Its final offline evidence and statistics are audited below; correctness does not establish a performance win. Earlier frozen source generations and successes remain retained. R5 is not a complete passing batch; its first successful case is corrected to load50-I1-s1 by an addendum, preserving the original archive.
 
 The imported RC WRITE_VALUE support covers normal mode without chunked DMA-BUF. The existing software-ordering/fast-mode limitations and explicit chunked DMA-BUF rejection remain; the bounded tested path is not a qualification of those variants.
 
-### Unfinished scope
+## Fixed-arrival pressure — R6
+
+The two-rank plain-RC fixture concurrently drives two independent primitive Contexts: F sends 14,336-byte payloads and S sends 1 MiB payloads. Each Context has four allocated slots and a fixed registered window. Only the admission cap changes between I1/I2/I4; physical resources, eight CPU cores, two 256-thread GPU CTAs per rank and blocking host waits remain fixed. This measures that admission-cap change without introducing a shared or adaptive manager. It is not an HT same-group reentrancy or model batch-size experiment. Observed per-group admission peaks reach 2 and 4 in some I2/I4 sessions; other sessions stay below their cap.
+
+Payloads are prepared before arming the frozen GPU arrival schedule. Ready time precedes slot/credit admission. F latency ends when the sender observes credit issued after the peer GPU consumes and validates the payload, so it includes admission waiting. Source overwrite follows quiet; receiver-slot reuse follows consumer credit. The 50%/80%/95% offered loads are fractions of the qualified 800-frame/s reference. Every primary point contains five separate launches, 20,000 F and 2,500 S completions per launch: 100,000 F and 12,500 S per rank per point.
+
+The interval calculation keeps each complete session together and pairs session weights across variants. It exactly enumerates the 126 multinomial count vectors representing all 5^5 session-bootstrap draws, using nearest-rank pooled p99 and percentile 95% intervals. Ranks are reported separately. Messages and ranks are not extra independent repeats; five sessions limit interval coverage claims.
+
+The frozen instrumented gate requires at least 10% F p99 reduction, a positive lower bound for its paired interval, S and total goodput interval lower bounds no worse than −5%, and maximum observed S no-credit progress gap at most 10 ms. **All 12 comparisons fail this gate.** Speed ratio is I1 p99 / candidate p99; reduction is 100 × (1 − candidate p99 / I1 p99). Values above 1× or positive reduction alone do not qualify a benefit.
+
+| Rank | Load | I cap | I1 → candidate F p99 (µs) | p99 speed ratio | p99 reduction [95% paired interval] | Gate |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 50% | 2 | 55.996 → 62.448 | 0.897× | −11.52% [−13.65%, +22.49%] | FAIL |
+| 0 | 50% | 4 | 55.996 → 49.148 | 1.139× | +12.23% [−19.66%, +14.90%] | FAIL |
+| 0 | 80% | 2 | 46.987 → 56.645 | 0.829× | −20.55% [−38.91%, +8.01%] | FAIL |
+| 0 | 80% | 4 | 46.987 → 64.658 | 0.727× | −37.61% [−56.09%, −6.15%] | FAIL |
+| 0 | 95% | 2 | 55.157 → 64.563 | 0.854× | −17.05% [−58.98%, +21.85%] | FAIL |
+| 0 | 95% | 4 | 55.157 → 64.924 | 0.850× | −17.71% [−50.50%, −11.48%] | FAIL |
+| 1 | 50% | 2 | 61.180 → 47.744 | 1.281× | +21.96% [−16.07%, +30.00%] | FAIL |
+| 1 | 50% | 4 | 61.180 → 48.628 | 1.258× | +20.52% [−3.04%, +24.42%] | FAIL |
+| 1 | 80% | 2 | 60.510 → 63.690 | 0.950× | −5.26% [−26.31%, +28.36%] | FAIL |
+| 1 | 80% | 4 | 60.510 → 69.304 | 0.873× | −14.53% [−42.99%, +19.53%] | FAIL |
+| 1 | 95% | 2 | 62.383 → 57.159 | 1.091× | +8.37% [−41.44%, +30.63%] | FAIL |
+| 1 | 95% | 4 | 62.383 → 62.191 | 1.003× | +0.31% [−51.15%, +17.44%] | FAIL |
+
+All formal GPU summaries report zero payload errors, rejected requests, deadlines and unfinished requests, with normal drain. The minimum S completion fraction inside the offered window is 99.76%; goodput excludes completion after that window. Maximum S no-credit progress gap is 9.718 ms. S and total goodput interval lower bounds stay above −0.025% in all comparisons. These safeguards pass, while the latency benefit fails.
+
+Full trace adds one enqueue timestamp/store to latency mode. Its paired comparison at load95/I1 has wide intervals:
+
+| Rank | Latency → full F p99 (µs) | Full p99 change [95% paired interval] |
+| --- | --- | --- |
+| 0 | 55.157 → 48.077 | −12.84% [−25.57%, +15.55%] |
+| 1 | 62.383 → 48.322 | −22.54% [−33.49%, +17.42%] |
+
+Both intervals cross zero and include more than 5% additional latency. This does not bound lightweight measurement error to 5% or measure absolute trace overhead. Absolute overhead, CPU proxy/post clock segments and the full G2 page/queue ledger remain PARTIAL. There is no qualified shared/adaptive benefit.
+
+The owner's final collection receipts record 2,056 frozen files verified and 122 rank timelines replayed, including qualification and formal runs. The local audit independently verifies both archive hashes, all 100 formal raw GPU summaries and all four compressed statistical inputs. A separate standard-library implementation recomputes all 18 points, 12 paired comparisons and two trace pairs, matching the frozen statistics. The remote verification records show four matching copies: two archives at two independent locations. No new GPU execution or transfer was performed by this audit.
+
+| R6 evidence | SHA256 |
+| --- | --- |
+| Frozen statistical JSON | `ed13b9d09e52aace8dfbe4e736023de6a639d285d4588bbaa2bad293392c773c` |
+| Independent statistical audit receipt | `6a48bdfb8e79bb4d7b41ad53310343f8a2dff637cc497c5c97fbd9f137d01a52` |
+| Owner collection receipt, rank 0 | `fed1074337a97080ef218fc79ef0dfb818c6ac106bf002bdb45ac36895e523c4` |
+| Owner collection receipt, rank 1 | `d283d58884c6ca824b97a8c3ae596347b594b2038c1bffc73a01d4aca83c5f52` |
+
+## Remaining gates
 
 | Scope | Status |
 | --- | --- |
-| Formal arrival-inclusive latency and request ledger, 100000 operations/session | NOT_RUN |
+| Instrumented arrival-inclusive F latency, 100000 operations per rank/point across five sessions | PASS for bounded R6 correctness; performance gate 0/12 |
+| Absolute instrumentation overhead and complete arrival/CPU/page/queue ledger | PARTIAL |
 | HT same-group I greater than 1 | NOT_RUN |
 | Equal-budget scheduler/manager comparison and external contention | NOT_RUN |
 | Real expert computation, reference MoE and serving C_req128 | NOT_RUN |
 | EP8/16/32/64 and multiple real remote peers | NOT_RUN |
 | This task's Zip/DietGPU compression and H100 model E2E | NOT_RUN |
 
-D8 here counts standalone transport Contexts, not EP8. Independent I4 slots do not establish HT reentrancy. The earlier local C128 tensor test does not establish 128 simultaneous communication calls. The separate H100 execution queue remains withdrawn; these results do not resume it.
+D8 counts standalone Contexts in the primitive sweep and independent EP communicators in the HT sweep; each HT communicator remains EP2. It does not establish EP8. Independent I4 slots do not establish HT reentrancy. The earlier local C128 tensor test does not establish 128 simultaneous communication calls. The separate H100 execution queue remains withdrawn; these results do not resume it.
