@@ -4,7 +4,7 @@ Initial qualification: 2026-10-10. GPU guards, independent HT communicators and 
 
 The independent execution task delivered a private candidate that passes the bounded GIN primitive, EP2 communication, and standalone transport Context lifecycle checks below. Its corrected closed-wave throughput is lower than the native NCCL reference at every measured payload size. Model E2E, large EP, and an optimization benefit remain unverified.
 
-These results apply to the candidate patch identified below. The local production sources at the base commit have not received that patch. This document records evidence reviewed locally; it does not report a new execution by this checkout.
+These results apply to the frozen candidate patch identified below. This checkout has not imported the full candidate; a separate startup-order fix described below is present locally and awaits a new remote qualification. This document records evidence reviewed locally; it does not report a new execution by this checkout.
 
 ## Source and evidence identity
 
@@ -120,6 +120,24 @@ CPU and SM budgets were not equalized. These measurements describe this closed-w
 F/S concurrent versus application round-robin runs are exploratory cohort completion measurements, not per-operation p50/p99. The additional main-thread placement changes the CPU budget; it cannot support a scheduler benefit claim.
 
 ## Remaining gates
+
+### Context startup fix awaiting qualification
+
+The later R5 arrival batch stopped after its second item: one PASS, one initialization failure (exit 134), and 48 NOT_RUN without retry. The failure was `Atomic buffer is not registered` during Context creation, before GPU admission; it is not an I4 payload-validation failure.
+
+Source review confirms that lane 0 allocates the shared atomic buffer in its proxy constructor, while `Context::setup` previously assigned that address to the other proxies after `start_dual`. Their worker threads could already enter `Proxy::init_common` and attempt MR registration. The local fix moves the existing address assignment before thread creation, keeping the same allocation owner and protocol fields. Thread creation publishes those earlier writes to the worker entry as specified by the [C++ thread constructor synchronization rule](https://eel.is/c++draft/thread.thread.constr#7).
+
+```mermaid
+flowchart LR
+  A[Lane 0 allocates shared atomic buffer] --> B[Assign its address to every proxy]
+  B --> C[Start worker threads]
+  C --> D[Worker registers atomic MR]
+  D --> E[Worker begins proxy progress]
+```
+
+Patch applicability and source ordering were checked locally. CUDA compilation, repeated real startup and I4 full-payload validation of the new generation remain pending at the execution owner. The earlier frozen candidate hashes and successful run records are retained; they do not qualify this new generation. R5 is not a complete passing sample batch.
+
+### Unfinished scope
 
 | Scope | Status |
 | --- | --- |
