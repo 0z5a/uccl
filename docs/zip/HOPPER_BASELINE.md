@@ -119,3 +119,78 @@ transport matrix includes C128 and distinguishes RAW traffic below the default
 The earlier `b90b0321` build and 30 host geometry checks do not validate this
 new source. No new CUDA build, GPU correctness, memcheck, RDMA or application
 performance result is claimed here.
+
+## Fixed-budget concurrent codec fixture
+
+2026-10-11. The ordinary driver now accepts `--concurrency`, default 1.
+`--batch` counts members per codec request; `--bytes` and `--scratch-mib`
+remain totals across the whole wave. At concurrency 32 and batch 128 there
+are 32 requests with 128 members each, partitioning the fixed total payload
+into separate aligned member tensors and the fixed scratch allocation into
+disjoint, 256-byte-aligned views. Archives, outputs, status and decoded sizes are
+owned separately by each request. Each wave joins every request before those
+buffers can be reused. Single-request execution retains direct sampling.
+
+```mermaid
+flowchart LR
+  I[One frozen input and scratch budget] --> R[Aligned inputs and disjoint scratch views]
+  C[Coordinator start event] --> S[Independent request streams]
+  R --> S
+  S --> E[Per-request completion events]
+  E --> J[Coordinator joins all requests]
+  J --> T[Wave end event and retained sample]
+  J --> N[Next wave may reuse buffers]
+  T --> V[Untimed poisoned-output bitwise validation]
+```
+
+Stream dependencies follow the selected Torch binding's current-stream API
+and [PyTorch's stream/event implementation](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/cuda/streams.py).
+Start and completion events are initialized before timing and reused. The
+driver submits all requests before joining their completion events. It
+introduces no host or device synchronization between individual requests in a
+timed wave. Binding-internal waits remain unchanged; actual kernel overlap is
+unmeasured. The final timed event waits for the slowest request. Qualification
+before and after timing poisons outputs and validates all bytes, per-member
+status, decoded sizes and each partition's scratch peak. Scratch overflow
+rejects the run rather than silently accepting extra allocations.
+
+Schema 2 records nested member sizes, concurrency limit, requests per sample,
+the fixed scratch total and its partitions, and output/archive requested bytes.
+Archive padding and metadata can grow with request count; `tensor_reserved_bytes`
+includes them rather than claiming a fixed total device-memory allocation.
+Allocator/event overhead is outside that requested tensor-byte count. Actual
+simultaneous GPU activity remains unmeasured (`actual_peak_inflight: null`).
+Encode, decode and roundtrip samples are retained separately. A roundtrip
+request encodes and decodes on its own stream; its scratch remains owned through
+decode completion. Samples are complete codec-wave durations, not per-request
+or application p99. Roundtrip goodput counts original payload bytes once.
+
+The generator now creates one contiguous input from the fixed seed, then
+copies its partitions into aligned member tensors before timing. This preserves
+the raw ANS member-start alignment contract for ragged sizes. The temporary
+generation tensor is released before qualification; its allocation peak is
+outside the reported resident tensor-byte count. When comparing concurrency
+levels, the total input stays fixed
+but per-request sizes and total member count change. This fixture tests that
+work partitioning; it does not isolate a scheduler or kernel change. Use the
+new concurrency-1 path as the matching schema-2 baseline and retain every
+record from each admitted independent run:
+
+```bash
+for concurrency in 1 8 32; do
+  python thirdparty/dietgpu/dietgpu/benchmark.py \
+    --library build-hopper/lib/libdietgpu.so --codec both --dtype bf16 \
+    --bytes 8388608 67108864 --batch 128 --ragged \
+    --scratch-mib 384 --concurrency "$concurrency" --repeats 30
+done
+```
+
+These commands have not been launched; the separate H100 queue is withdrawn.
+
+| Comparison / check | Baseline | Concurrent fixture | Speed ratio / result |
+| --- | --- | --- | --- |
+| CPU sampling and ownership regressions | Three prior checks | Six checks, including slow-request join and buffer reuse | PASS; simulated streams |
+| Batch 128 with C1/8/32/64/128, equal/ragged | Fixed total payload | Same totals and aligned scratch partitions | PASS; host geometry only |
+| BF16 8/64 MiB, batch 128, C1 → C8/32 | NOT_RUN | NOT_RUN | Unmeasured |
+| Concurrent GPU bitwise/status/scratch validation | NOT_RUN | NOT_RUN | Unmeasured |
+| Continuous transport / application concurrency | NOT_RUN | NOT_RUN | Unmeasured |
