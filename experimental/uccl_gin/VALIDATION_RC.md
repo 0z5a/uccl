@@ -1,6 +1,6 @@
 # RC/IB qualification results
 
-Initial qualification: 2026-10-10. Bounded GPU guard and frozen-backup follow-up: 2026-10-11.
+Initial qualification: 2026-10-10. GPU guards, independent HT communicators and frozen-backup follow-ups: 2026-10-11.
 
 The independent execution task delivered a private candidate that passes the bounded GIN primitive, EP2 communication, and standalone transport Context lifecycle checks below. Its corrected closed-wave throughput is lower than the native NCCL reference at every measured payload size. Model E2E, large EP, and an optimization benefit remain unverified.
 
@@ -37,6 +37,7 @@ The initial local audit confirmed the 46,095-byte patch SHA256 and successful `g
 | Control-only and empty peer | Signal/credit without payload; one rank skips WRITE | PASS; no zero-length DMA claim |
 | Context lifecycle | D1/D2/D4/D8 independent standalone Contexts; survivors communicate after Context 0 destruction | PASS; final owned RDMA objects 0 |
 | Bounded Q10 GPU guards, 2026-10-11 | 9 invalid-parameter cases, trap and illegal-load controls, public zero-length no-op; 12 cases per rank | 24 raw result records checked; PASS for this case set |
+| Actual HT communicator lifecycle, 2026-10-11 | Independent NCCL EP communicators D1/D2/D4/D8, each I1; both backends and D2 serial controls | 12 runs/24 rank-runs PASS, including two earlier pilots |
 
 EP tests are communication fixtures without real expert MLP computation. The device memcheck run uses `--report-api-errors no` for expected NCCL architecture capability probes. This establishes zero reported device errors in that run, not absence of all CUDA API errors. The original API diagnostics and earlier device-invalid-access logs are retained.
 
@@ -55,6 +56,51 @@ The execution owner supplied verification records for three frozen post-Q10 arch
 | Updated delivery manifest | `9db761e91b97f522f82e390b404aceeb0ad9acf57c37e4cb8e02001054238e80` |
 | Updated run matrix | `904bbadf45e908a0832e9aa296df0dd1d612eae974b97775e19bf5fe0789a2f0` |
 | Remote backup verification index | `134668893f4aaf55b099b276adb2213bf5b93688add428e93b59a6949677e807` |
+
+## Independent HT communicators — 2026-10-11
+
+This separate fixture uses two ranks and one local rank per node, with a distinct NCCL communicator, EP group/window, handle and CUDA stream per group. The production source diff remains unchanged. The expert stage is a device copy; the GPU oracle validates group/epoch/rank/token identity, routing, all 7168 BF16 columns, unique token coverage and the expected combined output.
+
+| Workload | Runs / rank-runs | Calls per rank | Result |
+| --- | --- | --- | --- |
+| UCCL/native interleaved D1/D2/D4/D8; each group I1 | 8 / 16 | 32 total, fixed across D | PASS |
+| UCCL/native D2 sequential controls | 2 / 4 | 32 | PASS |
+| Earlier UCCL D1/D2 pilots | 2 / 4 | 8 | PASS |
+
+The controlled runs use T64, hidden 7168, experts 8 and top-k 2. Measured host admission peaks are D for concurrent submissions and 1 for the D2 sequential controls. These are application leases lasting until completion-event observation; GPU kernel concurrency is not measured.
+
+The measured batch drains before communicator 0 is destroyed. Every surviving group then completes three fresh calls before final destruction. All observed project RDMA objects and callback allocations finish at zero. The relation below describes the fixture and its checked lifecycle.
+
+```mermaid
+flowchart LR
+  R[Two-rank fixture] --> C0[NCCL communicator 0]
+  R --> CG[Other NCCL communicators when D exceeds 1]
+  C0 --> E0[EP group/window and handle/stream 0]
+  CG --> EG[Per-group EP window and handle/stream]
+  E0 --> V[Per-group dispatch, expert copy, combine and GPU oracle]
+  EG --> V
+  V --> Q[Observe completions and drain measured batch]
+  Q --> X[Destroy communicator 0]
+  X --> S[Three fresh calls per surviving group]
+  S --> Z[Destroy remaining groups]
+  Z --> F[Final observed objects and callback allocations zero]
+```
+
+The observed resource patterns differ across backends and resource classes. QP/CQ/MR object counts grow proportionally in this configuration; UCCL PD growth has an intercept while native PD count is constant. These are allocated object snapshots, not active WR occupancy. Logical MR lengths do not deduplicate physical pages, and callback accounting excludes NCCL/driver/host allocator pools. The complete G2 resource and queue ledger remains PARTIAL.
+
+Local audit verified all 519 archived files against their per-file hashes and existing raw mirrors, replayed 24 rank-run snapshots and 12 controller logs, and checked helper/binary/library identities in the retained records. The 16 resource-curve rows match the qualification summary. Both raw archives have matching verified copies at two independent remote locations, four recorded copies in total. This is a new frozen scope; it does not rewrite the earlier post-Q10 backup.
+
+| HT evidence | SHA256 |
+| --- | --- |
+| Qualification summary | `5b7ea7f647a57434254a4d31d3eb366f7e07fadcaa6f2e64001bb21a24e1f2e6` |
+| Resource curve | `baf15d0dccc8308c9df9eec6453bc211364477529c054a0bba9952a97fc42af9` |
+| HT fixture source | `bb60a3ce14ff81c2184523d5bf836d96404a196682ff2ea6764268d84d33f8b3` |
+| Fixture header | `c67a4e796a4bcc2e8329ffcf86be8a02205cb23da4c96f8f869751018e019dab` |
+| Raw archive A | `d5d7a89968452af14001c501ea5afda5df1f81d4eb601b5fac8942b348d13fcd` |
+| Raw archive B | `1631057be0f28a482a660fed469e7b1efd09a4df084eba7a2b327c7ca7284547` |
+| Remote verification index | `97cf7d173fb5ad2b6c95db6599c74669a8c657f50ec57d7b063abedc7eb00da6` |
+
+Closed-batch wall time includes producer/oracle/copy work, host waits and MPI barriers. Backend CPU placement and provider structures differ. This qualification establishes bounded communication and safe destruction; it establishes no formal arrival-inclusive p99, equal-budget speedup, shared-manager benefit, real expert computation or serving result.
 
 ## Corrected closed-wave throughput
 
@@ -78,7 +124,6 @@ F/S concurrent versus application round-robin runs are exploratory cohort comple
 | Scope | Status |
 | --- | --- |
 | Formal arrival-inclusive latency and request ledger, 100000 operations/session | NOT_RUN |
-| HT independent NCCL EP communicators D1/D2/D4/D8, each group I1 | IN_PROGRESS; no qualifying result yet |
 | HT same-group I greater than 1 | NOT_RUN |
 | Equal-budget scheduler/manager comparison and external contention | NOT_RUN |
 | Real expert computation, reference MoE and serving C_req128 | NOT_RUN |
