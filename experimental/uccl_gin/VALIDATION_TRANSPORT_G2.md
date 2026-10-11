@@ -50,7 +50,7 @@ and vendor syndrome; their opcode and byte length cannot be used for
 classification ([rdma-core contract](https://github.com/linux-rdma/rdma-core/blob/master/libibverbs/man/ibv_poll_cq.3)).
 
 ```mermaid
-flowchart LR
+flowchart TD
   A[Registered buffers and posted receive WRs] --> W[GPU data and signal commands]
   W --> S[Proxy posts SQ WRs]
   S --> C[CQ observation retires SQ WRs]
@@ -113,3 +113,40 @@ raw archive verification remain pending in this audit.
 The original r8c source/build/run identities and FAIL outcome remain intact.
 Neither generation establishes a speedup, physical-page identity, total pinned
 queue memory, model E2E or a shared-manager benefit.
+
+## r8e CPU correlation and independent small-record audit
+
+The owner's CPU replay correlates 6,016 GPU calls with payload WRITE and native
+signal/credit FAA WRs from the same eight GPU jobs. All 6,016 payload-to-signal
+pairs use the same QP; cross-QP coverage is NOT_EXERCISED. The earlier CPU
+analysis required different QPs and failed that assumption on both D1 token
+ranks. Those two FAIL records remain immutable. The r8e revision classifies
+the observed QPs and reports local WR order separately; no GPU rerun occurred.
+
+The replay checks source slot addresses and signal namespaces. Destination
+address checks require a known peer window; a fallback that establishes only
+local windows does not prove the peer destination. Existing local WR order
+and GPU payload validation do not qualify cross-QP or per-Context I greater
+than 1.
+
+Each rank/case has 96 local host/GPU clock brackets. Reported order intervals
+assume one stable local affine clock map between the calibration observations.
+CPU CQ observation time is distinct from NIC completion time; there is no
+cross-host clock subtraction. The owner reports all four conditional order
+counts as 6,016/6,016. These are conditional replay results, not a universal
+timestamp error or p99 performance qualification.
+
+The independent audit hashes all 267 collected small files, checks 96 stage
+ledgers, recomputes MR byte/page interval unions and requested allocation sums,
+checks unique windows and balanced resource/WR destruction, and independently
+recomputes the exact rational clock-slope bounds from 1,536 calibration
+brackets. All checks pass. It verifies the reported per-call proof counts but
+does not recompute those proofs from the complete raw event stream. Full raw
+replay, verified cross-node archives, physical-page identity and actual
+pinned/HBM occupancy remain pending.
+
+| Evidence | SHA256 |
+| --- | --- |
+| Small review index | `d29479f47a976fcce30a7e82ff6964f93c9deca203a5b252f64803d1e04f9f0e` |
+| r8e CPU analyzer | `82efa3d36ef1be0bdcf946a504f8e1b893deda67b9cd590aa654b609a12a74c2` |
+| Owner correlation/resource summary | `5453186226ce1e03005400f8ced54aed9c2283c8ec3e26a8d8a98466ac0172df` |
