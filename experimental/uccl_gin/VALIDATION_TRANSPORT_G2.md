@@ -5,8 +5,10 @@ of the RC transport. Its first D1 token probe completed payload validation,
 but failed diagnostic qualification. Subsequent D2/4/8 and bulk probes were
 stopped. The production transport and the [R6](VALIDATION_RC.md) and
 [R7b](VALIDATION_TRACE_R7B.md) results are unchanged.
+The corrected r8d generation subsequently records eight PASS controllers and
+16 PASS rank analyses; the separate outcomes are retained below.
 
-The fixture has two GPU ranks, one remote peer per Context, D independent
+The fixture has two GH200 GPU ranks, one remote peer per Context, D independent
 Contexts and at most one active request per Context. Each Context has four
 allocated payload slots and an 8 MiB send/receive window. D1/2/4/8 vary Context
 count; they do not establish HT same-group concurrency or model batch size.
@@ -76,7 +78,38 @@ against its manifest. It recomputes the device allocation sums and checks
 final resource/WR counts from the two small failure records. It does not replay
 the complete raw event stream or independently rerun the GPU oracle.
 
-The independent r8d correction is pending build and runtime evidence here.
-Keep the original source/build/run identities and FAIL outcome. Only a fresh
-qualification may admit the later probes; no speedup or complete physical-page,
-queue-memory, model E2E or shared-manager benefit is established by this record.
+## Corrected r8d cohort
+
+The new observer accounts for successful QP-to-ERROR transitions with empty SQs,
+matched receive flush completions and remaining receive WR cancellations.
+The analyzer checks the receive conservation equation and separate window and
+metadata allocations. Proxy affinity is applied and verified after all proxies
+are ready, keeping the eight-core CPU budget.
+
+| D Contexts | GPU calls per rank and payload case | Token case | 1 MiB case |
+| --- | --- | --- | --- |
+| 1 | 288 | PASS, two rank records | PASS, two rank records |
+| 2 | 320 | PASS, two rank records | PASS, two rank records |
+| 4 | 384 | PASS, two rank records | PASS, two rank records |
+| 8 | 512 | PASS, two rank records | PASS, two rank records |
+
+The local small-record audit verifies all eight planned D/payload combinations,
+zero controller exits, exactly two successful rank analyses per combination,
+empty reported error lists and the expected GPU call counts. The owner reports
+full GPU payload checks, balanced send and receive WR lifetimes, zero final
+resource counts and no forced atomic dependency bypass. Both CPU build records
+return success; 28 r8d diagnostic source hashes match their frozen manifest.
+Complete per-operation event replay, clock alignment, cross-QP timing and final
+raw archive verification remain pending in this audit.
+
+| Evidence | SHA256 |
+| --- | --- |
+| r8d diagnostic source manifest | `927a6304bccce66f77283496bc14cf5e33e68fd9ef88db8e30149e12043d3754` |
+| Eight-controller observation index | `5164b04e6dba5eadf8bc40b079b6cc041dae2d842e2cae4d6e0057e7c76573dd` |
+| CPU build observation records | `8d7463b418aae56c00b1e8b7348679e6d6ee917973698b10213a0c10b3667461` |
+| r8d GPU fixture | `5a09080f42110440cf15b9da1c75f84fd2a0d954d5d98d9deb054e81e68a53e6` |
+| r8d qualification analyzer | `f69c0945a2ef5cbfbed2905ba7b6b93dbc6e8a52e1d044d2895eaac964e77212` |
+
+The original r8c source/build/run identities and FAIL outcome remain intact.
+Neither generation establishes a speedup, physical-page identity, total pinned
+queue memory, model E2E or a shared-manager benefit.
