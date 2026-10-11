@@ -1777,15 +1777,10 @@ static void post_rdma_async_batched_normal_mode(
         for (size_t j = 0; j < kgroup; ++j) {
           size_t i = idxs[j];
           auto const& cmd = cmds_to_post[i];
-          if (get_base_cmd(cmd.cmd_type) == CmdType::WRITE_VALUE) {
-            // WRITE_VALUE's inline payload unions with req_lptr; this branch
-            // would decode it as a local offset. Only the EFA branch
-            // implements the host bounce slot.
-            fprintf(stderr,
-                    "[ERROR] WRITE_VALUE is only supported on the EFA "
-                    "normal-mode path\n");
-            std::abort();
-          }
+          bool const is_write_value =
+              get_base_cmd(cmd.cmd_type) == CmdType::WRITE_VALUE;
+          uint32_t const write_bytes =
+              is_write_value ? static_cast<uint32_t>(sizeof(int)) : cmd.bytes;
           ring_wrids.push_back(wrs_to_post[i]);
 
           // Remote address bounds check
@@ -1794,12 +1789,12 @@ static void post_rdma_async_batched_normal_mode(
           uint64_t remote_end = ctx->remote_addr + ctx->remote_len;
 
           if (remote_addr < ctx->remote_addr ||
-              remote_addr + cmd.bytes > remote_end) {
+              remote_addr + write_bytes > remote_end) {
             fprintf(
                 stderr,
                 "[ERROR] Remote write OOB: addr=0x%llx len=%u (base=0x%llx, "
                 "size=%zu), offset: 0x%llx\n",
-                (unsigned long long)remote_addr, cmd.bytes,
+                (unsigned long long)remote_addr, write_bytes,
                 (unsigned long long)ctx->remote_addr, (size_t)ctx->remote_len,
                 (unsigned long long)decode_write_offset(cmd.req_rptr, false));
             cudaError_t err = cudaDeviceSynchronize();
@@ -1810,11 +1805,33 @@ static void post_rdma_async_batched_normal_mode(
             std::abort();
           }
 
-          // Local SGE
-          uintptr_t laddr = decode_write_offset(cmd.req_lptr, false) +
-                            reinterpret_cast<uintptr_t>(ctx->mr->addr);
+          // The FIFO slot remains owned until its send CQE is retired.
+          // Use its registered host bounce slot for the inline value; req_lptr
+          // aliases cmd.value and must not be decoded as a GPU window offset.
+          uintptr_t laddr;
+          uint32_t lkey;
+          if (is_write_value) {
+            size_t const slot_idx = wrs_to_post[i] & kQueueMask;
+            size_t const bounce_idx = ring_idx_raw * kQueueSize + slot_idx;
+            if (!S.write_value_bounce_buf || !S.write_value_bounce_mr ||
+                bounce_idx >= S.write_value_bounce_count) {
+              fprintf(stderr, "[ERROR] RC WRITE_VALUE bounce slot missing/OOB\n");
+              std::abort();
+            }
+            S.write_value_bounce_buf[bounce_idx] = cmd.value;
+            laddr = reinterpret_cast<uintptr_t>(&S.write_value_bounce_buf[bounce_idx]);
+            lkey = S.write_value_bounce_mr->lkey;
+          } else {
+            laddr = decode_write_offset(cmd.req_lptr, false) +
+                    reinterpret_cast<uintptr_t>(ctx->mr->addr);
+            lkey = ctx->mr->lkey;
+          }
 
 #ifdef USE_DMABUF
+          if (is_write_value) {
+            fprintf(stderr, "[ERROR] RC WRITE_VALUE with chunked DMA-BUF is unsupported\n");
+            std::abort();
+          }
           // Split across chunk boundaries so each sub-WR stays within one
           // local MR chunk AND one remote MR chunk.  Individual MoE RDMA
           // transfers are typically tens to hundreds of KB, far smaller than
@@ -1846,8 +1863,8 @@ static void post_rdma_async_batched_normal_mode(
 #else
           ibv_sge sge{};
           sge.addr = laddr;
-          sge.length = static_cast<uint32_t>(cmd.bytes);
-          sge.lkey = ctx->mr->lkey;
+          sge.length = write_bytes;
+          sge.lkey = lkey;
           sges.push_back(sge);
 
           ibv_send_wr wr{};

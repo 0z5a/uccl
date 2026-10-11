@@ -1161,6 +1161,16 @@ ncclResult_t ncclEpGroupDestroy(
 
     CUDA_CHECK(cudaDeviceSynchronize());
 
+    // HT close is collective on this EP group. A locally finished rank must
+    // keep its IPC window and CPU receiver/proxy alive while peers drain their
+    // final work. This group-local rendezvous is outside invocation timing;
+    // it does not broaden quiet/flush or affect unrelated communicators.
+    if (ep_group->config.algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT &&
+        ep_group->nRanks > 1 && ep_group->ht_buffers.initialized) {
+        NCCL_CHECK_RESULT(ncclBarrier(ep_group->comm, stream, ep_group->ep_workspace));
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+    }
+
     // Clean up HT intranode resources
     if (ep_group->config.algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT &&
         ep_group->ht_buffers.initialized) {

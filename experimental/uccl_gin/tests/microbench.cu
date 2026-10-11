@@ -28,6 +28,7 @@
 // workload).
 // ===========================================================================
 
+#include <algorithm>
 #include <mpi.h>
 #include <nccl.h>
 #include <nccl_device.h>
@@ -77,6 +78,29 @@
       MPI_Abort(MPI_COMM_WORLD, 1);                            \
     }                                                          \
   } while (0)
+
+
+// D=1 paired-wave characterization, including start/end rendezvous overhead.
+// Taking the slowest local wall interval avoids averaging inverse latencies
+// and reports a complete wave rather than a rank's partially observed tail.
+static double summarize_closed_wave(double local_ms, size_t bytes, int iters,
+                                    int rank, int world, const char* backend) {
+  std::vector<double> durations(world);
+  MPI_Gather(&local_ms, 1, MPI_DOUBLE, durations.data(), 1, MPI_DOUBLE, 0,
+             MPI_COMM_WORLD);
+  if (rank != 0) return 0.0;
+  double maximum = *std::max_element(durations.begin(), durations.end());
+  double gbps = static_cast<double>(bytes) * iters / (maximum * 1e-3) / 1e9;
+  std::string times = "[";
+  for (int r = 0; r < world; ++r) {
+    if (r) times += ",";
+    times += std::to_string(durations[r]);
+  }
+  times += "]";
+  printf("WAVE_TIMING {\"backend\":\"%s\",\"bytes\":%zu,\"iters\":%d,\"per_rank_ms\":%s,\"max_ms\":%.9f,\"per_rank_GBps\":%.9f,\"start_end_barriers_included\":true}\n",
+         backend, bytes, iters, times.c_str(), maximum, gbps);
+  return gbps;
+}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -182,13 +206,16 @@ static double run_nccl_gin(ncclComm_t comm, struct ncclDevComm devComm,
   // path (apples-to-apples). The kernel streams `iters` puts then waitSignal()s
   // for `iters` inbound from the pair, so stream-sync == full-round completion
   // on this rank (matches UCCL's wait-for-peer-red_add completion).
-  MPI_Barrier(MPI_COMM_WORLD);
+  // Start before rendezvous: include any peer posting that races ahead
+  // of this rank's return from the MPI barrier.
   auto t0 = std::chrono::steady_clock::now();
+  MPI_Barrier(MPI_COMM_WORLD);
   nccl_gin_paired_kernel<<<NCCL_CTAS, NCCL_TPB, 0, stream>>>(
       sendwin, recvwin, bytes, peer, iters, devComm);
   CUDA_OK(cudaStreamSynchronize(stream));
-  auto t1 = std::chrono::steady_clock::now();
+  // Both directions must be complete before ending the paired wave.
   MPI_Barrier(MPI_COMM_WORLD);
+  auto t1 = std::chrono::steady_clock::now();
   return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
 #endif  // UCCL_GIN_WITH_NCCL_GIN
@@ -286,15 +313,18 @@ static double run_uccl_gin(uccl_gin::Context& c, size_t bytes, int peer,
   MPI_Barrier(MPI_COMM_WORLD);
 
   reset_slots();
-  MPI_Barrier(MPI_COMM_WORLD);
+  // Start before rendezvous: include any peer posting that races ahead
+  // of this rank's return from the MPI barrier.
   auto t0 = std::chrono::steady_clock::now();
+  MPI_Barrier(MPI_COMM_WORLD);
   uccl_gin_paired_kernel<<<1, 32, 0, stream>>>(c.resources(), peer, send_ptr,
                                                recv_ptr, (uint32_t)bytes, iters,
                                                counter_ptr, num_lanes);
   CUDA_OK(cudaStreamSynchronize(stream));
   wait_all();
-  auto t1 = std::chrono::steady_clock::now();
+  // Both directions must be complete before ending the paired wave.
   MPI_Barrier(MPI_COMM_WORLD);
+  auto t1 = std::chrono::steady_clock::now();
   return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
 
@@ -881,19 +911,13 @@ int main(int argc, char** argv) {
 #if UCCL_GIN_WITH_NCCL_GIN
       double ms = run_nccl_gin(comm, devComm, sendwin, recvwin, d_send, d_recv,
                                bytes, peer, args.iters, args.warmup, stream);
-      double per_rank = (double)bytes * args.iters / (ms * 1e-3) / 1e9;
-      MPI_Reduce(rank == 0 ? MPI_IN_PLACE : &per_rank, &per_rank, 1, MPI_DOUBLE,
-                 MPI_SUM, 0, MPI_COMM_WORLD);
-      nccl_gbps = per_rank / world;  // avg per-rank
+      nccl_gbps = summarize_closed_wave(ms, bytes, args.iters, rank, world, "NCCL");
 #endif
     }
     if (args.run_uccl) {
       double ms = run_uccl_gin(*uctx, bytes, peer, args.iters, args.warmup,
                                stream, max_bytes);
-      double per_rank = (double)bytes * args.iters / (ms * 1e-3) / 1e9;
-      MPI_Reduce(rank == 0 ? MPI_IN_PLACE : &per_rank, &per_rank, 1, MPI_DOUBLE,
-                 MPI_SUM, 0, MPI_COMM_WORLD);
-      uccl_gbps = per_rank / world;
+      uccl_gbps = summarize_closed_wave(ms, bytes, args.iters, rank, world, "UCCL");
     }
     if (rank == 0)
       printf("%-12zu %-18.2f %-18.2f\n", bytes, nccl_gbps, uccl_gbps);

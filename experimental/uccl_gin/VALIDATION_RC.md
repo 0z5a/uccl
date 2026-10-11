@@ -4,7 +4,7 @@ Initial qualification: 2026-10-10. GPU guards, independent HT communicators and 
 
 The independent execution task delivered a private candidate that passes the bounded GIN primitive, EP2 communication, and standalone transport Context lifecycle checks below. Its corrected closed-wave throughput is lower than the native NCCL reference at every measured payload size. Model E2E, large EP, and an optimization benefit remain unverified.
 
-These results apply to the frozen candidate patch identified below. This checkout has not imported the full candidate; a separate startup-order fix described below is present locally and awaits a new remote qualification. This document records evidence reviewed locally; it does not report a new execution by this checkout.
+These results apply to the frozen candidate generations identified below. This checkout imports the R6 runtime and portable EP fixture fixes. The private resource-collector harness remains in the execution delivery. The standalone Makefile also keeps EFA headers, libraries and rpath exclusive to `TRANSPORT=efa`; selection for `ib`, `efa` and invalid input was checked with dry runs. This document records evidence reviewed locally; it does not report a new execution by this checkout.
 
 ## Source and evidence identity
 
@@ -13,6 +13,7 @@ These results apply to the frozen candidate patch identified below. This checkou
 | Base commit | `5e57d6540bd9e993fbbb1fa869dae36434f98564` |
 | Tracked diff SHA256 | `3b7f7daf48a1505ce85c009a179f596f028ff49c71a2f9ac5b45a520dc6205bb` |
 | Complete patch, including the new contract harness, SHA256 | `fae492a926499d82b62d78dd77002cfce144739c99b81cb87a6d1ce888b7c859` |
+| R6 complete candidate patch, including its private harness, SHA256 | `c271f8afad531a817cc79deb0ef1c38e079413c7c32466880d71ceec1e8838b4` |
 | Contract harness SHA256 | `bb5c28c03b64794fd5d66cceb7184ad23813f3f15ed1c2a400751ddb0e3dde68` |
 | Initial delivery manifest SHA256 | `42d80f3d5d95ecc82f851a26e02437e795f16c3a38c064a1d1f2b5544be122d2` |
 | Initial run matrix SHA256 | `8cd2838a2aa9a82f4bbc102cdeb822a10f5c86b7db27f07f13f1c40cf51ce0ab` |
@@ -135,7 +136,11 @@ flowchart LR
   D --> E[Worker begins proxy progress]
 ```
 
-Patch applicability and source ordering were checked locally. CUDA compilation, repeated real startup and I4 full-payload validation of the new generation remain pending at the execution owner. The earlier frozen candidate hashes and successful run records are retained; they do not qualify this new generation. R5 is not a complete passing sample batch.
+Patch applicability and source ordering were checked locally. The execution owner reports both CPU builds PASS with context.cpp SHA256 `44a8a1090baf3d86f642eac26419337c42a75c95e987956e24be87bd9ee8857a`, matching this checkout, and a new production diff SHA256 `a5df1a2d373cc25f711271168ea5cece11b16b5fdd6e9ec4734cb0816573419d`. Eight imported runtime/portable-fixture file blobs match the R6 canonical patch. The Makefile changes exclude the private collector target and restrict EFA SDK search paths to EFA mode; these build-selection changes have dry-run validation, not a new local CUDA build.
+
+The owner reports ten independent I4/full-payload startup runs plus the new 20-second reference PASS: 11 runs/22 rank-runs. In the reference, both ranks complete F128000/S16000 inside the window with final backlog and drain zero. It also reports 50/50 new cohort controllers PASS, covering 45 primary cells (five sessions, three loads, three I caps) and five additional full variants. CPU offline replay and session interval analysis are still pending here; these controller reports do not establish a formal statistical win. Earlier frozen source generations and successes remain retained. R5 is not a complete passing batch; its first successful case is corrected to load50-I1-s1 by an addendum, preserving the original archive.
+
+The imported RC WRITE_VALUE support covers normal mode without chunked DMA-BUF. The existing software-ordering/fast-mode limitations and explicit chunked DMA-BUF rejection remain; the bounded tested path is not a qualification of those variants.
 
 ### Unfinished scope
 

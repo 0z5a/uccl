@@ -8,11 +8,18 @@ fix cooperative completion and typed signals, add single-rank HT validation and
 make the build work outside an NCCL source checkout. The imported Python ctypes
 wrapper is omitted; this integration builds the native C/CUDA library.
 
+Further local correctness fixes handle unaligned S2D maps with the existing
+barrier protocol, decode globally packed expert bitmaps, drain an HT group
+collectively before releasing its window, and correct receive counts and
+validation/cleanup in the native EP fixtures.
+
 `NCCL_EP_USE_UCCL_GIN=ON` selects UCCL for HT rail operations; intra-node work
 retains NCCL/CUDA primitives. The host adapter bootstraps over the EP NCCL
 communicator and registers the existing GIN payload window with UCCL. It does not
 require MPI_COMM_WORLD to match an EP subgroup. Only contiguous, equal-size node
 rank groups are supported. The 13-bit atomic byte-offset protocol bounds the
 indexed signal range; unsupported topologies return ncclInvalidUsage at setup.
-Distributed RDMA execution still needs a suitable testbed. Native local fixtures
-check kernel behavior with test completions and cannot qualify network E2E.
+Bounded RC/IB, EP2 and independent HT communicator execution is recorded in
+[VALIDATION_RC.md](../../experimental/uccl_gin/VALIDATION_RC.md). Native local
+fixtures check kernel behavior with test completions and cannot qualify network
+E2E. Model/serving execution and larger physical EP remain unverified.
