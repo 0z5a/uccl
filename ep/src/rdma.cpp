@@ -46,6 +46,11 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+static int ep_gpu_mr_ro_flag() {
+  char const* e = std::getenv("UCCL_EP_GPU_MR_RO");
+  return (e && e[0] == '1') ? IBV_ACCESS_RELAXED_ORDERING : 0;
+}
+
 #ifdef USE_DMABUF
 // ---------------------------------------------------------------------------
 // DMA-BUF based GPU memory registration (avoids nvidia_peermem dependency)
@@ -675,8 +680,11 @@ void per_thread_rdma_init(ProxyCtx& S, void* gpu_buf, size_t bytes, int rank,
   }
   uint64_t iova = (uintptr_t)gpu_buf;
 #ifndef EFA
+  // UCCL_EP_GPU_MR_RO=1: PCIe relaxed ordering on the IB GPU MR (iteration 3/4
+  // on GH200: the missing flag causes the 128 KB-4 MB cliff). Tails are native
+  // atomics, which cannot pass earlier relaxed writes, so ordering holds.
   int access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
-                     IBV_ACCESS_REMOTE_ATOMIC;
+                     IBV_ACCESS_REMOTE_ATOMIC | ep_gpu_mr_ro_flag();
 #else
   int access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
                      IBV_ACCESS_RELAXED_ORDERING;
@@ -902,7 +910,7 @@ bool can_register_gpu_memory_for_rdma(int gpu_idx, size_t bytes) {
 
 #ifndef EFA
   int const access = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
-                     IBV_ACCESS_REMOTE_ATOMIC;
+                     IBV_ACCESS_REMOTE_ATOMIC | ep_gpu_mr_ro_flag();
 #else
   int const access = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
                      IBV_ACCESS_RELAXED_ORDERING;
