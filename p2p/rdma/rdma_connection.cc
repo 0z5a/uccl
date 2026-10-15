@@ -993,18 +993,18 @@ void RecvConnection::handle_compressed_write_arrival(WriteReqMeta const& m) {
   RegMemBlock out(reinterpret_cast<void*>(m.user_remote_addr),
                   m.total_uncomp_size, MemoryType::GPU);
 
-  // Ack immediately: meta arrival implies data is already in
-  // decompress_buffer (sender posts meta only after all chunk WCs). wr_id+1
-  // avoids writing the zero sentinel that poll_ack_ring uses to mean "not yet
-  // acked".
-  ctrl_channel_->post_ack_write(
-      remote_ack_ring_.addr + m.ack_slot * sizeof(AckSlot),
-      remote_ack_ring_.get_rkey_by_context_id(0), m.ack_slot,
-      static_cast<uint64_t>(m.wr_id) + 1);
-
+  // Ack only after the decompress kernel has consumed the compressed bytes:
+  // the ack lets the sender release this DecompressArena range, and a later
+  // write may then reuse it. Acking on meta arrival let that RDMA overwrite
+  // input the kernel was still reading. wr_id+1 avoids writing the zero
+  // sentinel that poll_ack_ring uses to mean "not yet acked".
+  auto* ack = new AsyncAckCtx{m.wr_id, m.ack_slot,
+                              remote_ack_ring_.addr + m.ack_slot * sizeof(AckSlot),
+                              remote_ack_ring_.get_rkey_by_context_id(0),
+                              ctrl_channel_};
   Compressor::get_instance().decompress_async(
       in, out, static_cast<FloatType>(m.float_type),
-      /*on_done=*/nullptr, /*user_data=*/nullptr);
+      /*on_done=*/&RecvConnection::post_ack_host_fn, /*user_data=*/ack);
 }
 
 void RecvConnection::post_ack_host_fn(void* user_data) {
