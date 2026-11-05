@@ -6,7 +6,6 @@ import csv
 from io import StringIO
 from pathlib import Path
 import re
-from statistics import median
 
 import matplotlib
 
@@ -18,7 +17,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "benchmarks/data"
-PALE, LIGHT, MEDIUM, BLUE, NAVY = "#d8e8f5", "#a8c9e5", "#729dc6", "#3973ac", "#173e6c"
+PALE, LIGHT, MEDIUM, NAVY = "#d8e8f5", "#a8c9e5", "#729dc6", "#173e6c"
 INK, MUTED, GRID = "#19324d", "#61758b", "#e4edf5"
 
 
@@ -308,106 +307,6 @@ def alltoall(preview):
     )
 
 
-def multinode(preview):
-    rows = read_csv("allreduce_two_node.csv")
-    backends = [
-        ("nccl218", "NCCL 2.18.3", PALE),
-        ("nccl228", "NCCL 2.28.7", LIGHT),
-        ("tccl", "TCCL", MEDIUM),
-        ("uccl_lite", "UCCL Lite · hierarchical GDR", NAVY),
-    ]
-    fig, axes = figure(
-        columns=3,
-        title="Two-node AllReduce",
-        subtitle="2 nodes × 4 NVIDIA L4  /  float32  /  two network rails",
-    )
-    for ax, sizes, bandwidth, title in (
-        (axes[0, 0], [1 << n for n in (10, 14, 16)], False, "Small-message latency ↓"),
-        (axes[0, 1], [1 << n for n in (18, 20)], False, "Intermediate latency ↓"),
-        (
-            axes[0, 2],
-            [1 << n for n in (25, 26, 28, 30)],
-            True,
-            "Large-message bandwidth ↑",
-        ),
-    ):
-        bars(
-            ax,
-            [size_label(s) for s in sizes],
-            collective_series(rows, sizes, backends, bandwidth),
-            title,
-            "Latency (µs)" if not bandwidth else "Bus bandwidth (GB/s)",
-        )
-    save(
-        fig,
-        "multinode",
-        [(b[1], b[2]) for b in backends],
-        "Three-run medians and min–max whiskers; slowest of eight ranks. UCCL Lite selects piece size / pipeline distance per size.\n"
-        "Independent zero-based axes keep the NCCL 2.28.7 intermediate-size spike visible without obscuring small-message latency.",
-        preview,
-    )
-
-    selected = {
-        r["backend"]: float(r["bus_bw_gbs"]) for r in rows if int(r["bytes"]) == 1 << 30
-    }
-    ring_runs = []
-    for index in (1, 2, 3):
-        records = [
-            line.split()
-            for line in (DATA / f"tccl_ring_run{index}.txt").read_text().splitlines()
-            if line.strip() and not line.startswith("#")
-        ]
-        assert len(records) == 1 and int(records[0][0]) == 1 << 30
-        ring_runs.append(float(records[0][4]))
-    fig, axes = figure(
-        columns=1,
-        title="Two-node transport comparison at 1 GiB",
-        subtitle="2 nodes × 4 NVIDIA L4  /  AllReduce bus bandwidth  /  higher is better",
-    )
-    labels = [
-        "NCCL\n2.18.3",
-        "NCCL\n2.28.7",
-        "TCCL\nreference",
-        "UCCL Lite\nCPU router",
-        "UCCL Lite\nhierarchical GDR",
-        "UCCL Lite\nglobal ring",
-    ]
-    values = [
-        selected[k] for k in ("nccl218", "nccl228", "tccl", "cpu_router", "uccl_lite")
-    ] + [median(ring_runs)]
-    ax = axes[0, 0]
-    bars(
-        ax,
-        labels,
-        [("Bus bandwidth", NAVY, values)],
-        "",
-        "Bus bandwidth (GB/s)",
-        ylim=23,
-    )
-    for bar, color, value in zip(
-        ax.patches, [PALE, LIGHT, MEDIUM, BLUE, NAVY, NAVY], values
-    ):
-        bar.set_facecolor(color)
-        ax.annotate(
-            f"{value:.2f}",
-            (bar.get_x() + bar.get_width() / 2, value),
-            xytext=(0, 5),
-            textcoords="offset points",
-            ha="center",
-            fontsize=11,
-            color=INK,
-            fontweight="bold",
-        )
-    save(
-        fig,
-        "multinode-transports",
-        [],
-        "Three-run medians. CPU router: local GPU P2P, no GPU RDMA. Global ring: host-staged sender, GPU RDMA receiver.\n"
-        "The global-ring runs are a separate matched 1 GiB experiment; no unmeasured sweep points are inferred.",
-        preview,
-    )
-
-
 def dense(preview):
     text = (DATA / "dense_fusion.txt").read_text()
     pattern = r"^(\S+)\s+(AG|RS)\s+\((\d+),(\d+),(\d+)\)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)$"
@@ -538,97 +437,6 @@ def ep_moe(preview):
     )
 
 
-def tp_moe(preview):
-    rows = read_csv("tp_moe_prefill.csv")
-    fig, axes = figure(
-        title="Tensor-parallel MoE · complete layer",
-        subtitle="4 × NVIDIA L4  /  TP=4, EP=1, BF16  /  speedup over tuned vLLM + NCCL ↑",
-    )
-    legend = [
-        ("CUTLASS + NCCL · unfused", PALE),
-        ("UCCL Lite · whole-stripe", LIGHT),
-        ("UCCL Lite · shard-ready", NAVY),
-    ]
-    for ax, shape in zip(axes[0], ("qwen", "deepseek")):
-        selected = sorted(
-            (r for r in rows if r["shape"] == shape), key=lambda r: int(r["tokens"])
-        )
-        series = [
-            (
-                label,
-                color,
-                [float(r["vllm_nccl_ms"]) / float(r[field]) for r in selected],
-            )
-            for (label, color), field in zip(
-                legend, ("cutlass_nccl_unsplit_ms", "previous_fused_ms", "fused_ms")
-            )
-        ]
-        bars(
-            ax,
-            [token_label(int(r["tokens"])) for r in selected],
-            series,
-            ("Qwen" if shape == "qwen" else "DeepSeek") + " shape",
-            "Speedup (×)",
-            ylim=1.35,
-            speedup=True,
-            annotate=True,
-        )
-        ax.set_xlabel("Tokens per rank (k = 1,024)")
-    save(
-        fig,
-        "tp-moe",
-        legend,
-        "Dashed line: tuned vLLM + NCCL = 1×. Ratios of three-seed median latencies; 15 baseline configurations. Includes router, plan, shared experts.\n"
-        "Historical layer microbenchmarks, not serving gains. Host benchmark integration is not included in this subtree.",
-        preview,
-    )
-
-    rows = read_csv("tp_moe_decode.csv")
-    fig, axes = figure(
-        title="Tensor-parallel MoE · direct decode",
-        subtitle="4 × NVIDIA L4  /  complete layer, CUDA Graph timing  /  speedup over tuned vLLM + NCCL ↑",
-    )
-    legend = [("UCCL Lite · grouped", LIGHT), ("UCCL Lite · direct decode", NAVY)]
-    for ax, shape in zip(axes[0], ("qwen", "deepseek")):
-        series = []
-        for (label, color), variant in zip(legend, ("fused-c512", "fused-decode")):
-            selected = sorted(
-                (r for r in rows if r["shape"] == shape and r["variant"] == variant),
-                key=lambda r: int(r["tokens"]),
-            )
-            assert [int(r["tokens"]) for r in selected] == [1, 2, 4, 8, 16, 32]
-            series.append(
-                (
-                    label,
-                    color,
-                    [float(r["speedup"]) for r in selected],
-                    (
-                        [float(r["min_seed_speedup"]) for r in selected],
-                        [float(r["max_seed_speedup"]) for r in selected],
-                    ),
-                )
-            )
-        bars(
-            ax,
-            ["1", "2", "4", "8", "16", "32"],
-            series,
-            ("Qwen" if shape == "qwen" else "DeepSeek") + " shape",
-            "Speedup (×)",
-            ylim=1.4,
-            speedup=True,
-            annotate=True,
-        )
-        ax.set_xlabel("Tokens per invocation")
-    save(
-        fig,
-        "tp-moe-decode",
-        legend,
-        "Dashed line: graph-tuned vLLM + NCCL = 1×. Two-seed summaries; whiskers are paired seed ranges, not confidence intervals.\n"
-        "Measured fixed-policy decode range: Qwen 1–4 tokens; DeepSeek 1 token. Wider batches are shown to expose regressions.",
-        preview,
-    )
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -657,10 +465,8 @@ def main():
         allreduce,
         primitive_collectives,
         alltoall,
-        multinode,
         dense,
         ep_moe,
-        tp_moe,
     ):
         render(args.preview)
 

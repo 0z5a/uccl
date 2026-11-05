@@ -36,12 +36,14 @@ committed data. Local Markdown links and the staged file inventory are checked
 before publication. Generated binaries and validation logs stay in ignored
 `build/` storage.
 
-## Figure expansion
+## README figures
 
-The README now includes ten blue bar figures generated from committed
+The README includes six blue bar figures generated from committed
 CSV/text measurements. Generation checks for missing series, non-finite or
 nonpositive values, and invalid error ranges. The dense figure selects the
-current comparison block; TP-MoE adds retained prefill/decode summary data.
+current comparison block. TP-MoE, direct-decode, and two-node result figures
+have been removed from the README and generator; their source records and
+kernel implementations are retained.
 All bar axes start at zero and the plotted small-batch regressions are retained.
 PNG previews were visually checked for layout; SVG and PDF exports use the
 same plots. This is a

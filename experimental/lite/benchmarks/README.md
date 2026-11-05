@@ -64,7 +64,6 @@ fusion uses the later "Current full comparison" block, not the superseded
 exploratory numbers. Flux latencies are normalized to the same cuBLAS+NCCL
 baseline as UCCL Lite, while retaining the different-harness caveat. The EP-MoE
 panels show their full available token ranges, which differ between the two logs.
-The global-ring result is plotted only at its recorded 1 GiB measurement.
 
 ## Regenerate all README figures
 
@@ -73,10 +72,11 @@ python3 scripts/plot_results.py
 ```
 
 Requires Matplotlib and NumPy. The script reads the committed CSV/text data and
-regenerates ten SVGs under `docs/assets/`: four-GPU AllReduce, eight-GPU
+regenerates six SVGs under `docs/assets/`: four-GPU AllReduce, eight-GPU
 standalone AllGather and ReduceScatter (each showing both placements), All-to-All,
-two-node AllReduce, two-node transport comparison, dense fusion, EP-MoE,
-TP-MoE, and direct decode. It performs no GPU work and runs no benchmarks.
+dense fusion, and EP-MoE. It performs no GPU work and runs no benchmarks.
+Historical TP-MoE and two-node records remain archived above but are not part of
+the README results gallery or figure generation.
 Use `python3 scripts/plot_results.py --preview` to also export PNG and PDF copies
 under ignored `build/figures/` for inspection or reuse in a technical report.
 For fresh measurements, use the commands in [build.md](../docs/build.md), keep

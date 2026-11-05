@@ -32,8 +32,6 @@ are intentionally outside its scope.
 | **CPU-router module** | Optional BF16 AR/AG/RS backend; NUMA memory, channels, CPU executor, packet pipeline | Historical 8-L4 AG/RS: **5.25 / 5.59 GB/s** at 1 GiB; local selection is measurement-gated |
 | **Dense fusion** | AllGather + GEMM, GEMM + ReduceScatter, GEMM + AllReduce | **1.47× / 1.24× / 1.30×** over cuBLAS + NCCL at the large reference shapes |
 | **Expert-parallel MoE** | Ragged dispatch, grouped GEMM, activation, down projection, combine | **1.39–1.52×** full-layer speedup at large token counts |
-| **Tensor-parallel MoE** | Reusable down/combine/AllReduce and direct-decode device kernels | **1.10–1.14×** Qwen prefill layer; direct decode wins at selected tiny batches |
-| **Two-node AllReduce** | Hierarchical GDR, host routing, TCCL-style global ring | **19.21 GB/s** at 1 GiB for the host-staged global ring |
 
 These are historical measurements on the documented L4 testbed, not portable
 performance guarantees. Fusion can lose on small shapes. Collective summaries
@@ -218,54 +216,6 @@ large token counts. Full-layer small-batch regressions are retained.
 These BF16 DeepSeek-shaped EP=4 benchmarks exclude routing-plan construction
 from timing. The full layer includes dispatch, both projections, SwiGLU,
 weighted reduction, and combine; it is not a full-model serving measurement.
-
-### Tensor-parallel MoE
-
-![Complete TP-MoE layer speedup bars for Qwen and DeepSeek, including small-batch regressions](docs/assets/tp-moe.svg)
-
-These historical **complete-layer** TP=4 / EP=1 measurements include router
-projection, GPU plan construction, shared experts, both GEMMs, activation,
-combination, and AllReduce. Against tuned vLLM + NCCL, Qwen prefill reaches
-**1.10–1.14×** with shard readiness; DeepSeek reaches **1.06–1.07×** with
-whole-stripe readiness. Both schedules are plotted rather than selecting a
-winner per point. Shard readiness is not a universal improvement.
-
-![Direct-decode and grouped TP-MoE speedup bars at 1–32 tokens](docs/assets/tp-moe-decode.svg)
-
-The direct decode kernel improves Qwen at **1–4 tokens** and DeepSeek at
-**one token** under the measured fixed dispatch policy. The wider 1–32-token
-sweep shows why it is not enabled for every batch. Whiskers show paired seed
-ranges, not confidence intervals.
-
-Only the reusable TP-MoE device headers are included here. The original host
-benchmark/framework integration remains outside this subtree; these retained
-results are not claims of a new serving integration or a fresh GPU rerun.
-[Timing scope, seeds, and data](benchmarks/README.md)
-
-### Two nodes, several transport choices
-
-![Two-node AllReduce grouped bars for latency and bus bandwidth](docs/assets/multinode.svg)
-
-The hierarchical GDR path beats both tested NCCL versions from **32 MiB**
-upward; small messages still favor NCCL. The separate 1 GiB transport comparison
-also includes the pinned-host CPU router and the newer global-ring reproduction:
-
-![Two-node 1 GiB AllReduce transport comparison in blue bars](docs/assets/multinode-transports.svg)
-
-| Path | Requires local GPU P2P | Requires GPU RDMA | 1 GiB bus bandwidth |
-| :--- | :---: | :---: | ---: |
-| UCCL Lite TCCL-style global ring, host-staged sender | Yes | Yes, receive side | **19.21 GB/s** |
-| UCCL Lite hierarchical GPUDirect | Yes | Yes | **17.80 GB/s** |
-| UCCL Lite pinned-host CPU router | Yes | No | **15.93 GB/s** |
-| UCCL Lite strict host-only fallback | No | No | **5.06 GB/s** |
-| TCCL reference, specialized global ring | Uses host transport | Yes, receive side | **19.64 GB/s** |
-
-The global-ring reproduction is within 2.2% of TCCL. Host staging here means
-the sender uses host memory; it does **not** eliminate the receiver's RDMA
-requirement. Under a strict no-P2P/no-GDR constraint, the current host-only
-fallback is much slower than TCCL or NCCL 2.28.7. Small multi-node messages
-favor NCCL over the hierarchical and global-ring paths.
-[Transport details and experimental limitations](docs/multinode.md)
 
 ## Source map
 
