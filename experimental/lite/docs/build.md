@@ -14,7 +14,7 @@ the rest of UCCL. Use `make help` for the target list.
 | cuBLAS | GEMM baselines and dense fusion | Toolkit library, including grouped GEMM API |
 | CUTLASS | Grouped fusion kernels | 4.5.0, using its 2.x grouped-GEMM interfaces |
 | Open MPI + UCX | Two-node benchmarks | Open MPI 4.1.7rc1 on the measured host |
-| Python + Matplotlib | Figure regeneration only | No Python dependency for CUDA executables |
+| Python + Matplotlib + NumPy | Figure regeneration only | No Python dependency for CUDA executables |
 
 The single-node reference library was an earlier local MSCCL++ build; its exact
 revision was not recorded. Do not interpret the IB revision as a fully pinned

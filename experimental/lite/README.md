@@ -28,11 +28,11 @@ are intentionally outside its scope.
 | **All-to-All** | Collision-free peer schedules on SMs and copy engines | **74.47 GB/s** aggregate at 256 MiB/rank |
 | **Dense fusion** | AllGather + GEMM, GEMM + ReduceScatter, GEMM + AllReduce | **1.47× / 1.24× / 1.30×** over cuBLAS + NCCL at the large reference shapes |
 | **Expert-parallel MoE** | Ragged dispatch, grouped GEMM, activation, down projection, combine | **1.39–1.52×** full-layer speedup at large token counts |
-| **Tensor-parallel MoE** | Reusable down/combine/AllReduce and direct-decode device kernels | Kernel headers; host integration is caller-owned |
+| **Tensor-parallel MoE** | Reusable down/combine/AllReduce and direct-decode device kernels | **1.10–1.14×** Qwen prefill layer; direct decode wins at selected tiny batches |
 | **Two-node AllReduce** | Hierarchical GDR, host routing, TCCL-style global ring | **19.21 GB/s** at 1 GiB for the host-staged global ring |
 
 These are historical measurements on the documented L4 testbed, not portable
-performance guarantees. Fusion can lose on small shapes. Collective curves
+performance guarantees. Fusion can lose on small shapes. Collective summaries
 select the fastest correct configuration per size; the executables expose
 those variants rather than a universal automatic selector.
 
@@ -103,10 +103,79 @@ latency is 6.08 µs versus 17.29/19.54 µs for the two NCCL versions. At 1 GiB,
 bus bandwidth is 20.13 GB/s versus 17.01/18.49 GB/s. Some mid-size differences
 are below 1% and should be treated as ties.
 
-The figure uses three-run medians and min–max bands. UCCL Lite selects the
-fastest correct variant per size. [Data and measurement scope](benchmarks/README.md)
+The grouped bars show representative sizes, including the 32 KiB and 1–4 MiB
+exceptions. Whiskers show three-run min–max ranges around median latency or
+bandwidth. UCCL Lite selects the fastest correct variant per size.
+[Full data and measurement scope](benchmarks/README.md)
+
+### Single-node All-to-All
+
+![All-to-All latency and aggregate bandwidth, grouped blue bars](docs/assets/alltoall.svg)
+
+The scheduled peer transfers reach **74.47 GB/s aggregate** at 256 MiB/rank,
+with **1.17–4.20×** speedup over the tested default NCCL transport across the
+recorded sweep. NCCL uses host staging on this testbed. Aggregate bandwidth
+counts all nonlocal traffic and is distinct from AllReduce bus bandwidth.
+
+### Dense fusion
+
+![Dense AllGather-GEMM, GEMM-ReduceScatter, and GEMM-AllReduce speedup bars across eight shapes](docs/assets/dense-fusion.svg)
+
+Each panel compares no-overlap UCCL Lite, fused UCCL Lite, and Flux where
+available against the **same cuBLAS + NCCL latency**. The dashed line is 1×;
+bars below it are slower than that baseline. At the large reference shapes,
+fusion reaches **1.47× / 1.24× / 1.30×** for the three operations.
+
+All eight recorded shapes are shown, including small-shape regressions. Flux
+uses a separate harness, so differences of roughly 1–2% should be treated as
+ties. There is no corresponding Flux GEMM+AllReduce result.
+[Shapes and design](docs/fusion.md)
+
+### Expert-parallel MoE
+
+![Expert-parallel MoE dispatch-GEMM and full-layer speedup bars](docs/assets/moe-fusion.svg)
+
+The lighter bars separate collective replacement and GEMM choice from the
+dark-blue fused path. Against NCCL All-to-All-v + grouped cuBLAS, fusion reaches
+**1.48–1.61×** for dispatch + GEMM and **1.39–1.52×** for the full layer at
+large token counts. Full-layer small-batch regressions are retained.
+
+These BF16 DeepSeek-shaped EP=4 benchmarks exclude routing-plan construction
+from timing. The full layer includes dispatch, both projections, SwiGLU,
+weighted reduction, and combine; it is not a full-model serving measurement.
+
+### Tensor-parallel MoE
+
+![Complete TP-MoE layer speedup bars for Qwen and DeepSeek, including small-batch regressions](docs/assets/tp-moe.svg)
+
+These historical **complete-layer** TP=4 / EP=1 measurements include router
+projection, GPU plan construction, shared experts, both GEMMs, activation,
+combination, and AllReduce. Against tuned vLLM + NCCL, Qwen prefill reaches
+**1.10–1.14×** with shard readiness; DeepSeek reaches **1.06–1.07×** with
+whole-stripe readiness. Both schedules are plotted rather than selecting a
+winner per point. Shard readiness is not a universal improvement.
+
+![Direct-decode and grouped TP-MoE speedup bars at 1–32 tokens](docs/assets/tp-moe-decode.svg)
+
+The direct decode kernel improves Qwen at **1–4 tokens** and DeepSeek at
+**one token** under the measured fixed dispatch policy. The wider 1–32-token
+sweep shows why it is not enabled for every batch. Whiskers show paired seed
+ranges, not confidence intervals.
+
+Only the reusable TP-MoE device headers are included here. The original host
+benchmark/framework integration remains outside this subtree; these retained
+results are not claims of a new serving integration or a fresh GPU rerun.
+[Timing scope, seeds, and data](benchmarks/README.md)
 
 ### Two nodes, several transport choices
+
+![Two-node AllReduce grouped bars for latency and bus bandwidth](docs/assets/multinode.svg)
+
+The hierarchical GDR path beats both tested NCCL versions from **32 MiB**
+upward; small messages still favor NCCL. The separate 1 GiB transport comparison
+also includes the pinned-host CPU router and the newer global-ring reproduction:
+
+![Two-node 1 GiB AllReduce transport comparison in blue bars](docs/assets/multinode-transports.svg)
 
 | Path | Requires local GPU P2P | Requires GPU RDMA | 1 GiB bus bandwidth |
 | :--- | :---: | :---: | ---: |

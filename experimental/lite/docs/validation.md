@@ -31,10 +31,22 @@ The checked commands are in [build.md](build.md). The DeepSeek prefill check is:
 ```
 
 The new source follows the parent repository's clang-format 14 configuration.
-The launcher is checked with `bash -n`; the figure is regenerated from the
-committed CSV. Local Markdown links and the staged file inventory are checked
+The launcher is checked with `bash -n`; figures are regenerated from the
+committed data. Local Markdown links and the staged file inventory are checked
 before publication. Generated binaries and validation logs stay in ignored
 `build/` storage.
+
+## Figure expansion
+
+The README now includes eight blue bar figures generated from committed
+CSV/text measurements. Generation checks for missing series, non-finite or
+nonpositive values, and invalid error ranges. The dense figure selects the
+current comparison block; TP-MoE adds retained prefill/decode summary data.
+All bar axes start at zero and the plotted small-batch regressions are retained.
+PNG previews were visually checked for layout; SVG and PDF exports use the
+same plots. This is a
+documentation/visualization update; no kernels changed and no GPU benchmarks
+were rerun for it.
 
 ## What this validation does not establish
 

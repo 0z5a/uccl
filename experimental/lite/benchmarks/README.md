@@ -1,6 +1,7 @@
 # Reference measurements
 
-These files retain a compact measurement record for the standalone kernels.
+These files retain a compact measurement record for the kernels, including
+historical TP-MoE layer measurements whose host harness is not shipped here.
 They were collected before the UCCL Lite reorganization. Labels were normalized
 to the new project name; numerical values were not changed. Migration-time
 validation is recorded separately in [validation.md](../docs/validation.md).
@@ -27,6 +28,8 @@ validation is recorded separately in [validation.md](../docs/validation.md).
 | [dense_fusion.txt](data/dense_fusion.txt) | September dense shape sweeps, including NCCL, no-overlap, fusion, and Flux controls. Later blocks supersede earlier exploratory blocks. |
 | [moe_dispatch.txt](data/moe_dispatch.txt) | Dispatch + GEMM; grouped cuBLAS baseline, settled/interleaved variants. Routing-plan construction excluded. |
 | [moe_layer.txt](data/moe_layer.txt) | Dispatch through combine. Twelve rounds × four iterations, min per variant after settling; not the three-run-median protocol used for the collective plots. |
+| [tp_moe_prefill.csv](data/tp_moe_prefill.csv) | Complete TP=4 / EP=1 BF16 MoE layer, Qwen and DeepSeek shapes. Medians of three seed-run medians (1801/1901/2001); five rotating rounds × ten graph replays, slowest rank. Baseline searches 15 vLLM configurations. `previous_fused_ms` is whole-stripe readiness; `fused_ms` is shard readiness. |
+| [tp_moe_decode.csv](data/tp_moe_decode.csv) | Complete TP-MoE layer at 1/2/4/8/16/32 tokens. Seeds 3201/3301; ten warmups, five rotating rounds × twenty graph replays; baseline tuned in graph mode. `fused-c512` is grouped fusion; `fused-decode` is direct decode. Ranges are paired seed ranges, not confidence intervals. |
 | `tccl_ring_run{1,2,3}.txt` | October 13: final 1 GiB host-staged MSCCL++ global-ring runs, eight channels/eight slots, zero relative error. |
 | [cutlass_gemm_probe.txt](data/cutlass_gemm_probe.txt), [mma_gemm_occupancy.txt](data/mma_gemm_occupancy.txt) | Diagnostic compute experiments referenced by source comments. |
 
@@ -39,13 +42,39 @@ fusion speedups are specific to those workloads; small cases can regress. The
 L4 power limit changes clocks under sustained compute, so variant interleaving
 and thermal settling matter. Cross-binary Flux comparisons have weaker controls.
 
-## Regenerate the README figure
+TP-MoE timings charge router projection, top-k, GPU routing plan, shared
+experts, both routed projections, activation, combination, and AllReduce.
+Weights and hidden states are synthetic. These CSVs preserve existing layer
+measurements, not application throughput results. Importing the data does not
+import the application-side benchmark or imply a fresh validation of the headers.
+
+## Figure conventions
+
+The README uses grouped bars with a consistent blue palette: dark navy for the
+primary UCCL Lite path, lighter blues for reference or intermediate variants.
+All bar axes start at zero. Speedup panels show a dashed 1× baseline and preserve
+regressions. Only existing measurements are plotted; no missing series are
+interpolated and no uncertainty is invented.
+
+The AllReduce and All-to-All figures select representative message sizes to
+keep bars legible. The full numerical sweeps remain in the data files. Dense
+fusion uses the later "Current full comparison" block, not the superseded
+exploratory numbers. Flux latencies are normalized to the same cuBLAS+NCCL
+baseline as UCCL Lite, while retaining the different-harness caveat. The EP-MoE
+panels show their full available token ranges, which differ between the two logs.
+The global-ring result is plotted only at its recorded 1 GiB measurement.
+
+## Regenerate all README figures
 
 ```bash
 python3 scripts/plot_results.py
 ```
 
-Requires Matplotlib. The script reads the committed CSV and writes
-`docs/assets/allreduce.svg`. It performs no GPU work and runs no benchmarks.
+Requires Matplotlib and NumPy. The script reads the committed CSV/text data and
+regenerates eight SVGs under `docs/assets/`: single-node AllReduce, All-to-All,
+two-node AllReduce, two-node transport comparison, dense fusion, EP-MoE,
+TP-MoE, and direct decode. It performs no GPU work and runs no benchmarks.
+Use `python3 scripts/plot_results.py --preview` to also export PNG and PDF copies
+under ignored `build/figures/` for inspection or reuse in a technical report.
 For fresh measurements, use the commands in [build.md](../docs/build.md), keep
 correctness enabled, and save the complete run configuration with each result.

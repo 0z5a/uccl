@@ -1,103 +1,613 @@
 #!/usr/bin/env python3
-"""Render the four-L4 AllReduce reference figure from the committed summary."""
+"""Render UCCL Lite reference results as reproducible blue grouped bar charts."""
 
+import argparse
 import csv
 from io import StringIO
 from pathlib import Path
+import re
+from statistics import median
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.ticker import FixedLocator, FuncFormatter
+from matplotlib.patches import Patch
+from matplotlib.ticker import MultipleLocator
+import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-SERIES = (
-    ("nccl218", "NCCL 2.18.3", "#94a3b8", "s"),
-    ("nccl228", "NCCL 2.28.7", "#d97706", "D"),
-    ("tccl_kernel", "TCCL", "#0f766e", "^"),
-    ("uccl_lite_main", "UCCL Lite", "#2563eb", "o"),
-)
+DATA = ROOT / "benchmarks/data"
+PALE, LIGHT, MEDIUM, BLUE, NAVY = "#d8e8f5", "#a8c9e5", "#729dc6", "#3973ac", "#173e6c"
+INK, MUTED, GRID = "#19324d", "#61758b", "#e4edf5"
 
 
-def size_label(value, _position=None):
+def read_csv(name):
+    with (DATA / name).open() as source:
+        return list(csv.DictReader(source))
+
+
+def size_label(value):
     for divisor, unit in ((1 << 30, "GiB"), (1 << 20, "MiB"), (1 << 10, "KiB")):
         if value >= divisor:
             return f"{value / divisor:g} {unit}"
     return f"{value:g} B"
 
 
+def token_label(value):
+    return f"{value // 1024}k" if value >= 1024 else str(value)
+
+
+def figure(rows=1, columns=2, title="", subtitle=""):
+    fig, axes = plt.subplots(
+        rows, columns, figsize=(13.2, 2.95 * rows + 2.0), squeeze=False
+    )
+    fig.suptitle(title, x=0.065, y=0.98, ha="left", fontsize=18, fontweight="bold")
+    fig.text(
+        0.065,
+        0.98 - 0.25 / fig.get_figheight(),
+        subtitle,
+        fontsize=10,
+        color=MUTED,
+        va="top",
+    )
+    fig.subplots_adjust(
+        left=0.065,
+        right=0.985,
+        top=1 - 1.2 / fig.get_figheight(),
+        bottom=1.08 / fig.get_figheight(),
+        hspace=0.65,
+        wspace=0.22,
+    )
+    return fig, axes
+
+
+def bars(ax, labels, series, title, ylabel, ylim=None, speedup=False, annotate=False):
+    """Series: (label, color, values[, (low_values, high_values)]). Axes start at zero."""
+    positions = np.arange(len(labels))
+    width = 0.8 / len(series)
+    for index, item in enumerate(series):
+        label, color, raw = item[:3]
+        values = np.asarray(raw, dtype=float)
+        if (
+            len(values) != len(labels)
+            or not np.all(np.isfinite(values))
+            or np.any(values <= 0)
+        ):
+            raise ValueError(f"Invalid data in {title}: {label}")
+        errors = None
+        if len(item) == 4:
+            low, high = map(np.asarray, item[3])
+            errors = np.array([values - low, high - values])
+            if np.any(errors < -1e-8):
+                raise ValueError(f"Invalid range in {title}: {label}")
+            errors = np.maximum(errors, 0)
+        group = ax.bar(
+            positions + (index - (len(series) - 1) / 2) * width,
+            values,
+            width=width * 0.91,
+            label=label,
+            color=color,
+            edgecolor="white",
+            linewidth=0.4,
+            yerr=errors,
+            error_kw={"ecolor": MUTED, "capsize": 2, "elinewidth": 0.7},
+        )
+        if annotate and index == len(series) - 1:
+            for bar, value in zip(group, values):
+                ax.annotate(
+                    f"{value:.2f}×" if speedup else f"{value:.1f}",
+                    (bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                    xytext=(0, 7),
+                    textcoords="offset points",
+                    ha="center",
+                    fontsize=8.5,
+                    color=NAVY,
+                    fontweight="bold",
+                )
+    ax.set_xticks(positions, labels)
+    ax.set_title(title, loc="left", fontsize=11, fontweight="bold", pad=12)
+    ax.set_ylabel(ylabel)
+    ax.set_ylim(0, ylim)
+    ax.grid(axis="y", color=GRID, linewidth=0.7)
+    ax.set_axisbelow(True)
+    ax.tick_params(axis="both", length=0, pad=6)
+    if speedup:
+        ax.axhline(1, color=MUTED, linestyle=(0, (4, 3)), linewidth=1)
+        ax.yaxis.set_major_locator(MultipleLocator(0.25))
+
+
+def save(fig, name, legend, footer, preview):
+    if legend:
+        handles = [Patch(facecolor=color, label=label) for label, color in legend]
+        fig.legend(
+            handles=handles,
+            loc="upper center",
+            ncol=min(4, len(handles)),
+            bbox_to_anchor=(0.52, 1 - 0.57 / fig.get_figheight()),
+            frameon=False,
+            fontsize=9.5,
+            handlelength=1.5,
+            columnspacing=2,
+        )
+    fig.text(0.065, 0.02, footer, fontsize=8.5, color=MUTED, va="bottom")
+    output = ROOT / f"docs/assets/{name}.svg"
+    svg = StringIO()
+    fig.savefig(svg, format="svg", metadata={"Date": None})
+    output.write_text(
+        "\n".join(line.rstrip() for line in svg.getvalue().splitlines()) + "\n"
+    )
+    if preview:
+        folder = ROOT / "build/figures"
+        folder.mkdir(parents=True, exist_ok=True)
+        fig.savefig(folder / f"{name}.png", dpi=140)
+        fig.savefig(
+            folder / f"{name}.pdf", metadata={"CreationDate": None, "ModDate": None}
+        )
+    plt.close(fig)
+    print(output.relative_to(ROOT))
+
+
+def collective_series(rows, sizes, backends, bandwidth=False):
+    lookup = {(int(row["bytes"]), row["backend"]): row for row in rows}
+    series = []
+    for backend, label, color in backends:
+        selected = [lookup[size, backend] for size in sizes]
+        values = [
+            float(row["bus_bw_gbs" if bandwidth else "median_us"]) for row in selected
+        ]
+        if bandwidth:
+            lows = [
+                v * float(r["median_us"]) / float(r["max_us"])
+                for v, r in zip(values, selected)
+            ]
+            highs = [
+                v * float(r["median_us"]) / float(r["min_us"])
+                for v, r in zip(values, selected)
+            ]
+        else:
+            lows = [float(row["min_us"]) for row in selected]
+            highs = [float(row["max_us"]) for row in selected]
+        series.append((label, color, values, (lows, highs)))
+    return series
+
+
+def allreduce(preview):
+    backends = [
+        ("nccl218", "NCCL 2.18.3", PALE),
+        ("nccl228", "NCCL 2.28.7", LIGHT),
+        ("tccl_kernel", "TCCL", MEDIUM),
+        ("uccl_lite_main", "UCCL Lite", NAVY),
+    ]
+    rows = read_csv("allreduce_single_node.csv")
+    fig, axes = figure(
+        title="Single-node AllReduce",
+        subtitle="4 × NVIDIA L4  /  float32  /  representative message sizes",
+    )
+    for ax, sizes, bandwidth, title, ylabel in (
+        (
+            axes[0, 0],
+            [1 << n for n in (10, 14, 15, 17, 18)],
+            False,
+            "Latency ↓",
+            "Latency (µs)",
+        ),
+        (
+            axes[0, 1],
+            [1 << n for n in (20, 21, 22, 26, 30)],
+            True,
+            "Bus bandwidth ↑",
+            "Bus bandwidth (GB/s)",
+        ),
+    ):
+        bars(
+            ax,
+            [size_label(s) for s in sizes],
+            collective_series(rows, sizes, backends, bandwidth),
+            title,
+            ylabel,
+        )
+    save(
+        fig,
+        "allreduce",
+        [(b[1], b[2]) for b in backends],
+        "Three-run medians; whiskers show min–max. UCCL Lite selects the fastest correct variant per size.\n"
+        "The 32 KiB and 1–4 MiB groups retain sizes where a reference implementation wins.",
+        preview,
+    )
+
+
+def alltoall(preview):
+    rows = {
+        int(r["size_bytes"]): r
+        for r in read_csv("collectives.csv")
+        if r["collective"] == "alltoall"
+    }
+    fig, axes = figure(
+        title="Single-node All-to-All",
+        subtitle="4 × NVIDIA L4  /  float32  /  out-of-place transfers",
+    )
+    legend = [("NCCL 2.28.7 (default transport)", LIGHT), ("UCCL Lite", NAVY)]
+    for ax, sizes, bandwidth in (
+        (axes[0, 0], [1 << n for n in (10, 14, 16, 17, 18)], False),
+        (axes[0, 1], [1 << n for n in (20, 22, 25, 28)], True),
+    ):
+        series = []
+        for (label, color), field in zip(legend, ("nccl_us", "uccl_lite_us")):
+            values = [
+                (
+                    3 * size / float(rows[size][field]) / 1000
+                    if bandwidth
+                    else float(rows[size][field])
+                )
+                for size in sizes
+            ]
+            series.append((label, color, values))
+        bars(
+            ax,
+            [size_label(s) for s in sizes],
+            series,
+            "Aggregate bandwidth ↑" if bandwidth else "Latency ↓",
+            "Aggregate bandwidth (GB/s)" if bandwidth else "Latency (µs)",
+            annotate=True,
+        )
+    save(
+        fig,
+        "alltoall",
+        legend,
+        "Best recorded UCCL Lite variant per size; no repeat ranges are available in this summary.\n"
+        "NCCL defaults to host staging on this testbed. Aggregate bandwidth = 3 × bytes per rank / latency.",
+        preview,
+    )
+
+
+def multinode(preview):
+    rows = read_csv("allreduce_two_node.csv")
+    backends = [
+        ("nccl218", "NCCL 2.18.3", PALE),
+        ("nccl228", "NCCL 2.28.7", LIGHT),
+        ("tccl", "TCCL", MEDIUM),
+        ("uccl_lite", "UCCL Lite · hierarchical GDR", NAVY),
+    ]
+    fig, axes = figure(
+        columns=3,
+        title="Two-node AllReduce",
+        subtitle="2 nodes × 4 NVIDIA L4  /  float32  /  two network rails",
+    )
+    for ax, sizes, bandwidth, title in (
+        (axes[0, 0], [1 << n for n in (10, 14, 16)], False, "Small-message latency ↓"),
+        (axes[0, 1], [1 << n for n in (18, 20)], False, "Intermediate latency ↓"),
+        (
+            axes[0, 2],
+            [1 << n for n in (25, 26, 28, 30)],
+            True,
+            "Large-message bandwidth ↑",
+        ),
+    ):
+        bars(
+            ax,
+            [size_label(s) for s in sizes],
+            collective_series(rows, sizes, backends, bandwidth),
+            title,
+            "Latency (µs)" if not bandwidth else "Bus bandwidth (GB/s)",
+        )
+    save(
+        fig,
+        "multinode",
+        [(b[1], b[2]) for b in backends],
+        "Three-run medians and min–max whiskers; slowest of eight ranks. UCCL Lite selects piece size / pipeline distance per size.\n"
+        "Independent zero-based axes keep the NCCL 2.28.7 intermediate-size spike visible without obscuring small-message latency.",
+        preview,
+    )
+
+    selected = {
+        r["backend"]: float(r["bus_bw_gbs"]) for r in rows if int(r["bytes"]) == 1 << 30
+    }
+    ring_runs = []
+    for index in (1, 2, 3):
+        records = [
+            line.split()
+            for line in (DATA / f"tccl_ring_run{index}.txt").read_text().splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+        assert len(records) == 1 and int(records[0][0]) == 1 << 30
+        ring_runs.append(float(records[0][4]))
+    fig, axes = figure(
+        columns=1,
+        title="Two-node transport comparison at 1 GiB",
+        subtitle="2 nodes × 4 NVIDIA L4  /  AllReduce bus bandwidth  /  higher is better",
+    )
+    labels = [
+        "NCCL\n2.18.3",
+        "NCCL\n2.28.7",
+        "TCCL\nreference",
+        "UCCL Lite\nCPU router",
+        "UCCL Lite\nhierarchical GDR",
+        "UCCL Lite\nglobal ring",
+    ]
+    values = [
+        selected[k] for k in ("nccl218", "nccl228", "tccl", "cpu_router", "uccl_lite")
+    ] + [median(ring_runs)]
+    ax = axes[0, 0]
+    bars(
+        ax,
+        labels,
+        [("Bus bandwidth", NAVY, values)],
+        "",
+        "Bus bandwidth (GB/s)",
+        ylim=23,
+    )
+    for bar, color, value in zip(
+        ax.patches, [PALE, LIGHT, MEDIUM, BLUE, NAVY, NAVY], values
+    ):
+        bar.set_facecolor(color)
+        ax.annotate(
+            f"{value:.2f}",
+            (bar.get_x() + bar.get_width() / 2, value),
+            xytext=(0, 5),
+            textcoords="offset points",
+            ha="center",
+            fontsize=11,
+            color=INK,
+            fontweight="bold",
+        )
+    save(
+        fig,
+        "multinode-transports",
+        [],
+        "Three-run medians. CPU router: local GPU P2P, no GPU RDMA. Global ring: host-staged sender, GPU RDMA receiver.\n"
+        "The global-ring runs are a separate matched 1 GiB experiment; no unmeasured sweep points are inferred.",
+        preview,
+    )
+
+
+def dense(preview):
+    text = (DATA / "dense_fusion.txt").read_text()
+    pattern = r"^(\S+)\s+(AG|RS)\s+\((\d+),(\d+),(\d+)\)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)$"
+    records = {operation: [] for operation in ("AG", "RS", "AR")}
+    for match in re.finditer(pattern, text, re.MULTILINE):
+        model, operation, m, n, k, base, unfused, fused, flux = match.groups()
+        records[operation].append(
+            (model, int(m), *map(float, (base, unfused, fused, flux)))
+        )
+    pattern_ar = r"^(\S+)\s+\((\d+),\d+,\d+\)\s+\d+\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+[\d.]+x\s+[\d.]+x$"
+    for match in re.finditer(pattern_ar, text, re.MULTILINE):
+        model, m, base, unfused, fused = match.groups()
+        records["AR"].append((model, int(m), *map(float, (base, unfused, fused))))
+    fig, axes = figure(
+        rows=3,
+        columns=1,
+        title="Dense communication–GEMM fusion",
+        subtitle="4 × NVIDIA L4  /  FP16  /  speedup over the same cuBLAS + NCCL baseline ↑",
+    )
+    legend = [
+        ("UCCL Lite · no overlap", LIGHT),
+        ("Flux fused", MEDIUM),
+        ("UCCL Lite · fused", NAVY),
+    ]
+    models = {
+        "Llama-3.1-8B": "Llama 8B",
+        "Llama-3.1-70B": "Llama 70B",
+        "Qwen2.5-32B": "Qwen 32B",
+        "Flux-reference": "Reference",
+    }
+    for ax, operation, title in zip(
+        axes[:, 0],
+        ("AG", "RS", "AR"),
+        ("AllGather + GEMM", "GEMM + ReduceScatter", "GEMM + AllReduce"),
+    ):
+        points = records[operation]
+        assert len(points) == 8, (operation, len(points))
+        labels = [f"{models[p[0]]}\nM={p[1]:,}" for p in points]
+        series = [(legend[0][0], LIGHT, [p[2] / p[3] for p in points])]
+        if operation != "AR":
+            series.append((legend[1][0], MEDIUM, [p[2] / p[5] for p in points]))
+        series.append((legend[2][0], NAVY, [p[2] / p[4] for p in points]))
+        bars(
+            ax,
+            labels,
+            series,
+            title,
+            "Speedup (×)",
+            ylim=1.65,
+            speedup=True,
+            annotate=True,
+        )
+    save(
+        fig,
+        "dense-fusion",
+        legend,
+        "Dashed line: cuBLAS + NCCL = 1×. Three-run median latencies; ratios computed from the current comparison block.\n"
+        "Flux uses a different harness (1–2% differences are ties); no Flux GEMM + AllReduce result is available. Small-shape losses are retained.",
+        preview,
+    )
+
+
+def moe_rows(name):
+    points = {}
+    for line in (DATA / name).read_text().splitlines():
+        fields = line.split()
+        if fields and fields[0].isdigit():
+            points[int(fields[0]), fields[3]] = float(fields[4])
+    return points
+
+
+def ep_moe(preview):
+    fig, axes = figure(
+        rows=2,
+        columns=1,
+        title="Expert-parallel MoE fusion",
+        subtitle="4 × NVIDIA L4  /  DeepSeek-V2-Lite shape  /  EP=4, BF16  /  speedup ↑",
+    )
+    legend = [
+        ("UCCL Lite + grouped cuBLAS", PALE),
+        ("UCCL Lite + CUTLASS · unfused", LIGHT),
+        ("UCCL Lite · fused", NAVY),
+    ]
+    for ax, name, baseline, collective, fused, title in (
+        (
+            axes[0, 0],
+            "moe_dispatch.txt",
+            "nccl+cublas-grp",
+            "ours+cublas-grp",
+            "fused-cutlass-gather",
+            "Dispatch + gate/up GEMM",
+        ),
+        (
+            axes[1, 0],
+            "moe_layer.txt",
+            "nccl+cublas",
+            "ours+cublas",
+            "fused",
+            "Full layer: dispatch → GEMMs / SwiGLU → combine",
+        ),
+    ):
+        points = moe_rows(name)
+        sizes = sorted(size for size, variant in points if variant == fused)
+        series = [
+            (label, color, [points[s, baseline] / points[s, variant] for s in sizes])
+            for (label, color), variant in zip(
+                legend, (collective, "ours+cutlass", fused)
+            )
+        ]
+        bars(
+            ax,
+            [token_label(s) for s in sizes],
+            series,
+            title,
+            "Speedup (×)",
+            ylim=1.85,
+            speedup=True,
+            annotate=True,
+        )
+        ax.set_xlabel("Tokens per rank (k = 1,024)")
+    save(
+        fig,
+        "moe-fusion",
+        legend,
+        "Dashed line: NCCL All-to-All-v + grouped cuBLAS = 1×. Routing-plan construction is excluded.\n"
+        "Settled, interleaved timing; min over rounds. The two panels have different recorded token ranges. Full-layer small-batch regressions are shown.",
+        preview,
+    )
+
+
+def tp_moe(preview):
+    rows = read_csv("tp_moe_prefill.csv")
+    fig, axes = figure(
+        title="Tensor-parallel MoE · complete layer",
+        subtitle="4 × NVIDIA L4  /  TP=4, EP=1, BF16  /  speedup over tuned vLLM + NCCL ↑",
+    )
+    legend = [
+        ("CUTLASS + NCCL · unfused", PALE),
+        ("UCCL Lite · whole-stripe", LIGHT),
+        ("UCCL Lite · shard-ready", NAVY),
+    ]
+    for ax, shape in zip(axes[0], ("qwen", "deepseek")):
+        selected = sorted(
+            (r for r in rows if r["shape"] == shape), key=lambda r: int(r["tokens"])
+        )
+        series = [
+            (
+                label,
+                color,
+                [float(r["vllm_nccl_ms"]) / float(r[field]) for r in selected],
+            )
+            for (label, color), field in zip(
+                legend, ("cutlass_nccl_unsplit_ms", "previous_fused_ms", "fused_ms")
+            )
+        ]
+        bars(
+            ax,
+            [token_label(int(r["tokens"])) for r in selected],
+            series,
+            ("Qwen" if shape == "qwen" else "DeepSeek") + " shape",
+            "Speedup (×)",
+            ylim=1.35,
+            speedup=True,
+            annotate=True,
+        )
+        ax.set_xlabel("Tokens per rank (k = 1,024)")
+    save(
+        fig,
+        "tp-moe",
+        legend,
+        "Dashed line: tuned vLLM + NCCL = 1×. Ratios of three-seed median latencies; 15 baseline configurations. Includes router, plan, shared experts.\n"
+        "Historical layer microbenchmarks, not serving gains. Host benchmark integration is not included in this subtree.",
+        preview,
+    )
+
+    rows = read_csv("tp_moe_decode.csv")
+    fig, axes = figure(
+        title="Tensor-parallel MoE · direct decode",
+        subtitle="4 × NVIDIA L4  /  complete layer, CUDA Graph timing  /  speedup over tuned vLLM + NCCL ↑",
+    )
+    legend = [("UCCL Lite · grouped", LIGHT), ("UCCL Lite · direct decode", NAVY)]
+    for ax, shape in zip(axes[0], ("qwen", "deepseek")):
+        series = []
+        for (label, color), variant in zip(legend, ("fused-c512", "fused-decode")):
+            selected = sorted(
+                (r for r in rows if r["shape"] == shape and r["variant"] == variant),
+                key=lambda r: int(r["tokens"]),
+            )
+            assert [int(r["tokens"]) for r in selected] == [1, 2, 4, 8, 16, 32]
+            series.append(
+                (
+                    label,
+                    color,
+                    [float(r["speedup"]) for r in selected],
+                    (
+                        [float(r["min_seed_speedup"]) for r in selected],
+                        [float(r["max_seed_speedup"]) for r in selected],
+                    ),
+                )
+            )
+        bars(
+            ax,
+            ["1", "2", "4", "8", "16", "32"],
+            series,
+            ("Qwen" if shape == "qwen" else "DeepSeek") + " shape",
+            "Speedup (×)",
+            ylim=1.4,
+            speedup=True,
+            annotate=True,
+        )
+        ax.set_xlabel("Tokens per invocation")
+    save(
+        fig,
+        "tp-moe-decode",
+        legend,
+        "Dashed line: graph-tuned vLLM + NCCL = 1×. Two-seed summaries; whiskers are paired seed ranges, not confidence intervals.\n"
+        "Measured fixed-policy decode range: Qwen 1–4 tokens; DeepSeek 1 token. Wider batches are shown to expose regressions.",
+        preview,
+    )
+
+
 def main():
-    with (ROOT / "benchmarks/data/allreduce_single_node.csv").open() as source:
-        rows = list(csv.DictReader(source))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Also export PNG/PDF copies to ignored build/figures/.",
+    )
+    args = parser.parse_args()
     plt.rcParams.update(
         {
             "font.family": "DejaVu Sans",
             "font.size": 10,
             "axes.spines.top": False,
             "axes.spines.right": False,
-            "axes.edgecolor": "#cbd5e1",
-            "axes.labelcolor": "#334155",
-            "text.color": "#0f172a",
-            "xtick.color": "#475569",
-            "ytick.color": "#475569",
+            "axes.spines.left": False,
+            "axes.edgecolor": GRID,
+            "axes.labelcolor": MUTED,
+            "text.color": INK,
+            "xtick.color": MUTED,
+            "ytick.color": MUTED,
             "svg.fonttype": "none",
-            "svg.hashsalt": "uccl-lite-allreduce",
+            "svg.hashsalt": "uccl-lite-bars",
         }
     )
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
-    for backend, label, color, marker in SERIES:
-        points = sorted(
-            (row for row in rows if row["backend"] == backend),
-            key=lambda row: int(row["bytes"]),
-        )
-        if not points:
-            raise ValueError(f"Missing series: {backend}")
-        for ax, bandwidth in zip(axes, (False, True)):
-            selected = [
-                row for row in points
-                if (int(row["bytes"]) >= 1 << 20 if bandwidth else int(row["bytes"]) <= 1 << 20)
-            ]
-            sizes = [int(row["bytes"]) for row in selected]
-            if bandwidth:
-                values = [float(row["bus_bw_gbs"]) for row in selected]
-                lows = [int(row["bytes"]) * 1.5 / float(row["max_us"]) / 1000 for row in selected]
-                highs = [int(row["bytes"]) * 1.5 / float(row["min_us"]) / 1000 for row in selected]
-            else:
-                values = [float(row["median_us"]) for row in selected]
-                lows = [float(row["min_us"]) for row in selected]
-                highs = [float(row["max_us"]) for row in selected]
-            ax.plot(sizes, values, label=label, color=color, marker=marker,
-                    markersize=4, linewidth=2)
-            ax.fill_between(sizes, lows, highs, color=color, alpha=0.12, linewidth=0)
-    axes[0].set_title("Small messages · lower is better", loc="left", fontweight="bold")
-    axes[0].set_ylabel("Latency (µs)")
-    axes[0].set_yscale("log")
-    axes[0].xaxis.set_major_locator(FixedLocator([1 << n for n in (10, 14, 18, 20)]))
-    axes[1].set_title("Large messages · higher is better", loc="left", fontweight="bold")
-    axes[1].set_ylabel("AllReduce bus bandwidth (GB/s)")
-    axes[1].set_ylim(bottom=0)
-    axes[1].xaxis.set_major_locator(FixedLocator([1 << n for n in (20, 24, 28, 30)]))
-    for ax in axes:
-        ax.set_xscale("log", base=2)
-        ax.xaxis.set_major_formatter(FuncFormatter(size_label))
-        ax.set_xlabel("Message size per rank")
-        ax.grid(axis="y", color="#e2e8f0", linewidth=0.7)
-        ax.set_axisbelow(True)
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=4, frameon=False,
-               bbox_to_anchor=(0.5, 0.96))
-    fig.text(0.5, 0.02, "4 × NVIDIA L4 · float32 · three-run medians and min–max bands · best correct UCCL Lite variant per size",
-             ha="center", fontsize=9, color="#64748b")
-    fig.subplots_adjust(left=0.07, right=0.98, bottom=0.19, top=0.79, wspace=0.25)
-    output = ROOT / "docs/assets/allreduce.svg"
-    output.parent.mkdir(parents=True, exist_ok=True)
-    svg = StringIO()
-    fig.savefig(svg, format="svg", metadata={"Date": None})
-    # Matplotlib leaves spaces at SVG path-line endings; normalize for Git.
-    output.write_text("\n".join(line.rstrip() for line in svg.getvalue().splitlines()) + "\n")
-    plt.close(fig)
-    print(output.relative_to(ROOT))
+    for render in (allreduce, alltoall, multinode, dense, ep_moe, tp_moe):
+        render(args.preview)
 
 
 if __name__ == "__main__":
