@@ -6,6 +6,10 @@ They were collected before the UCCL Lite reorganization. Labels were normalized
 to the new project name; numerical values were not changed. Migration-time
 validation is recorded separately in [validation.md](../docs/validation.md).
 
+The ongoing [ThunderEP comparison](../docs/thunderep-comparison.md) specifies a
+separate no-P2P diagnostic and the remaining matched-evaluation requirements.
+It does not reinterpret these historical figures as head-to-head results.
+
 ## Testbed and interpretation
 
 - Four NVIDIA L4 GPUs per node, PCIe Gen4, no NVLink; dual Xeon Silver 4410Y.
@@ -21,6 +25,7 @@ validation is recorded separately in [validation.md](../docs/validation.md).
 
 | File | Scope and method |
 | --- | --- |
+| [thunderep_local_4l4_summary.csv](data/thunderep_local_4l4_summary.csv), [AG raw samples](data/thunderep_local_4l4_ag_samples.csv), [RS raw samples](data/thunderep_local_4l4_rs_samples.csv), [provenance](data/thunderep_local_4l4_provenance.json) | November 5: local four-L4 no-P2P BF16 AG/RS against NCCL 2.30.7; 21 sizes, five paired repetitions of twenty calls, all checked. Eager timing, not ThunderEP or end-to-end execution. Not used in the historical README gallery. |
 | [allreduce_single_node.csv](data/allreduce_single_node.csv) | October 12: 1 KiB–1 GiB, 5 warmups, 10 timed iterations, three runs. NCCL 2.18.3/2.28.7 and TCCL use nccl-tests 2.13.8; UCCL Lite uses its native harness. Fastest correct UCCL Lite variant per size. TCCL uses the corrected 2+2 NUMA map and kernel-only pathfinder policy. |
 | [allreduce_two_node.csv](data/allreduce_two_node.csv) | October 12: three runs, slowest of eight ranks. Hierarchical UCCL Lite selects among 12 piece/distance configurations. CPU router uses 1 MiB pieces. Includes TCCL and an explicit memcpy staging control. |
 | [cpu_router_4l4_calibration.csv](data/cpu_router_4l4_calibration.csv), [cpu_router_4l4_selection.csv](data/cpu_router_4l4_selection.csv) | New four-L4 BF16 adaptive-module validation against NCCL 2.28.7: three paired repetitions, 5 warmups / 10 iterations, 1–8 MiB AR/AG/RS. All 12 automatic decisions retain the fallback with no router initialization. These are integration calibration results, not the historical peak-throughput sweeps. |

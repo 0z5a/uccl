@@ -46,7 +46,7 @@ struct Config {
   int gpus = 4, warmup = 3, iterations = 10, repeats = 3;
   size_t begin = 1024, end = 1 << 20;
   bool inPlace = false;
-  std::string operation = "all", profile, reference, calibrate;
+  std::string operation = "all", profile, reference, calibrate, samples;
   RouterMode mode = RouterMode::Auto;
 };
 struct Buffers {
@@ -115,7 +115,9 @@ TimingRange summarize(std::vector<double> samples) {
           samples.back()};
 }
 double run(CollectiveDispatcher& dispatch, CollectiveCall const& call,
-           Buffers& buffers, int iterations, bool timed) {
+           Buffers& buffers, int iterations, bool timed,
+           std::ostream* samples = nullptr, char const* backend = "",
+           int repeat = -1) {
   std::vector<double> latencies;
   int ranks = int(call.ports.size());
   size_t inputCount =
@@ -158,7 +160,14 @@ double run(CollectiveDispatcher& dispatch, CollectiveCall const& call,
           cudaEventElapsedTime(&ms, buffers.start[rank], buffers.stop[rank]));
       worst = std::max(worst, double(ms) * 1000);
     }
-    if (timed) latencies.push_back(worst);
+    if (timed) {
+      latencies.push_back(worst);
+      if (samples)
+        *samples << collectiveName(call.collective) << ','
+                 << call.workload().bytes << ',' << call.inPlace << ','
+                 << backend << ',' << repeat << ',' << iteration << ',' << worst
+                 << '\n';
+    }
   }
   return timed ? summarize(latencies).median : 0;
 }
@@ -193,6 +202,8 @@ int main(int argc, char** argv) {
         cfg.reference = next();
       else if (arg == "--calibrate")
         cfg.calibrate = next();
+      else if (arg == "--samples")
+        cfg.samples = next();
       else if (arg == "--in-place")
         cfg.inPlace = true;
       else if (arg == "--warmup")
@@ -208,6 +219,7 @@ int main(int argc, char** argv) {
             "all|allreduce|allgather|reducescatter\n"
             "  --backend auto|off|force  --begin BYTES --end BYTES --in-place\n"
             "  --reference CSV  --profile FILE  --calibrate NEW_FILE\n"
+            "  --samples NEW_CSV (checked per-invocation timing records)\n"
             "  --warmup N --iterations N --repeats N (at least 3)\n"
             "Auto keeps NCCL unless matching validated evidence shows a stable "
             "gain.\n"
@@ -228,6 +240,20 @@ int main(int argc, char** argv) {
     if (!cfg.calibrate.empty() && std::filesystem::exists(cfg.calibrate))
       throw std::invalid_argument(
           "calibration output exists; choose a new file");
+    std::ofstream sampleOutput;
+    if (!cfg.samples.empty()) {
+      if (std::filesystem::exists(cfg.samples) ||
+          (!cfg.calibrate.empty() &&
+           std::filesystem::absolute(cfg.samples).lexically_normal() ==
+               std::filesystem::absolute(cfg.calibrate).lexically_normal()))
+        throw std::invalid_argument(
+            "sample output must be a new, distinct file");
+      sampleOutput.exceptions(std::ios::failbit | std::ios::badbit);
+      sampleOutput.open(cfg.samples);
+      sampleOutput.precision(10);
+      sampleOutput << "collective,bytes,in_place,backend,repeat,iteration,"
+                      "slowest_rank_us\n";
+    }
     auto topology = inspectTopology(cfg.devices);
     int ncclVersion;
     ncclCheck(ncclGetVersion(&ncclVersion));
@@ -288,6 +314,7 @@ int main(int argc, char** argv) {
           "# GPUs=%zu dtype=BF16 fallback=%s; no hidden calibration; checks "
           "outside timed region\n",
           cfg.devices.size(), policy.fallbackIdentity.c_str());
+      std::printf("# topology=%s\n", topology.identity.c_str());
       std::puts(
           "collective,bytes,in_place,backend,median_us,min_us,max_us,speedup,"
           "dispatcher_router_initialized");
@@ -303,17 +330,19 @@ int main(int argc, char** argv) {
             run(*baseline, call, buffers, cfg.warmup, false);
             run(*router, call, buffers, cfg.warmup, false);
             std::vector<double> cpuSamples, baselineSamples;
+            auto measure = [&](CollectiveDispatcher& dispatcher,
+                               char const* backend, int repeat) {
+              return run(dispatcher, call, buffers, cfg.iterations, true,
+                         cfg.samples.empty() ? nullptr : &sampleOutput, backend,
+                         repeat);
+            };
             for (int repeat = 0; repeat < cfg.repeats; ++repeat) {
               if (repeat % 2 == 0) {
-                baselineSamples.push_back(
-                    run(*baseline, call, buffers, cfg.iterations, true));
-                cpuSamples.push_back(
-                    run(*router, call, buffers, cfg.iterations, true));
+                baselineSamples.push_back(measure(*baseline, "nccl", repeat));
+                cpuSamples.push_back(measure(*router, "cpu-router", repeat));
               } else {
-                cpuSamples.push_back(
-                    run(*router, call, buffers, cfg.iterations, true));
-                baselineSamples.push_back(
-                    run(*baseline, call, buffers, cfg.iterations, true));
+                cpuSamples.push_back(measure(*router, "cpu-router", repeat));
+                baselineSamples.push_back(measure(*baseline, "nccl", repeat));
               }
             }
             Measurement m{router->topology().identity,
@@ -345,7 +374,9 @@ int main(int argc, char** argv) {
             std::vector<double> samples;
             for (int repeat = 0; repeat < cfg.repeats; ++repeat)
               samples.push_back(
-                  run(selected, call, buffers, cfg.iterations, true));
+                  run(selected, call, buffers, cfg.iterations, true,
+                      cfg.samples.empty() ? nullptr : &sampleOutput,
+                      decision.cpuRouter ? "cpu-router" : "nccl", repeat));
             auto t = summarize(samples);
             std::printf("%s,%zu,%d,%s,%.3f,%.3f,%.3f,%.4f,%d\n",
                         collectiveName(op), bytes, cfg.inPlace,
@@ -356,6 +387,7 @@ int main(int argc, char** argv) {
         }
     }
     if (!calibrated.empty()) saveRouterProfile(cfg.calibrate, calibrated);
+    if (sampleOutput.is_open()) sampleOutput.close();
     for (auto comm : comms) ncclCheck(ncclCommDestroy(comm));
     std::puts("# correctness: PASS (every invocation, all ranks)");
   } catch (std::exception const& e) {

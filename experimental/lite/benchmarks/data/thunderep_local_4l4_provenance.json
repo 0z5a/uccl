@@ -1,0 +1,69 @@
+{
+  "status": "complete_local_diagnostic",
+  "date_utc": "2026-11-05",
+  "paper_url": "https://arxiv.org/pdf/2609.40093",
+  "paper_setup_reproduced": false,
+  "thunderep_executed": false,
+  "end_to_end_executed": false,
+  "system": {
+    "gpus": "4 x NVIDIA L4, 23034 MiB each",
+    "cpu": "2 x Intel Xeon Silver 4410Y",
+    "gpu_numa_groups": [[0, 1], [2, 3]],
+    "permitted_logical_cpus": "0-47",
+    "inherited_cuda_visible_devices": null,
+    "inherited_ld_library_path": null,
+    "cuda": "12.9",
+    "driver": "595.58.03",
+    "nccl": "2.30.7",
+    "nccl_commit": "73cf112295c33aee2b895f329f592f2a9b4b0f97",
+    "nccl_architecture_flags": "-gencode=arch=compute_89,code=sm_89",
+    "nccl_function_filter": null
+  },
+  "method": {
+    "gpus": 4,
+    "dtype": "bf16",
+    "in_place": false,
+    "full_array_bytes": {"begin": 1024, "end": 1073741824, "factor": 2},
+    "operations": ["allgather", "reducescatter"],
+    "backends": ["nccl", "cpu-router"],
+    "warmup_per_backend_per_size": 5,
+    "paired_repetitions": 5,
+    "measured_calls_per_repetition": 20,
+    "backend_order": "NCCL first on even-numbered repetitions; router first on odd",
+    "samples": "slowest-rank CUDA-event microseconds per checked invocation",
+    "summary": "arithmetic mean of the five per-run arithmetic means",
+    "bounds": "min/max of per-run means; not confidence intervals",
+    "timing_mode": "eager; includes host submission gaps; no CUDA Graph capture",
+    "excluded_from_timing": ["initialization", "input fill", "verification"],
+    "process_model": "one process owns four GPUs; both candidates coexist; no restart between repetitions",
+    "correctness": "all ranks, every invocation; 8400 timed calls passed",
+    "router_policy": "forced for measurement, no change to default auto selection",
+    "router_options": "existing defaults; 23 workers per NUMA node, 512-KiB packets, 128-KiB minimum, 64 transport CTAs, 256 threads/CTA",
+    "algorithm_bandwidth": "full_array_bytes / mean_us / 1000",
+    "nccl_bus_bandwidth": "algorithm_bandwidth * (ranks - 1) / ranks",
+    "bandwidth_units": "decimal GB/s"
+  },
+  "environment": {
+    "NCCL_P2P_DISABLE": "1",
+    "NCCL_IB_DISABLE": "1",
+    "NCCL_NET_GDR_LEVEL": "LOC",
+    "NCCL_DEBUG": "INFO",
+    "other_nccl_overrides": "removed from child environment",
+    "verified_nccl_channels": ["SHM/direct"]
+  },
+  "source_base_commit": "9cf25a8d3edf40d6641d542d5fa1246aa8017326",
+  "source_sha256": {
+    "benchmarks/cpu_router/collectives_bench.cu": "6a6ea2d8a35bab9b0e9f32a71cd069e1babdfbc136fc721d0b41888020b8244a",
+    "scripts/compare_thunderep.py": "6251abd173bdeba2e43cb5f15c0451eb3eb2b3b56f205a3ab0d72e7476d09839"
+  },
+  "binary_sha256": "416d440be0ee050ccae5db3071bd1f83e6f8209d0e7b47f282e4ecf230ff41d3",
+  "data_sha256": {
+    "thunderep_local_4l4_ag_samples.csv": "0650e726b39352b0c1aa009ca4196e1920119b8a927049dc52612a314c07bf5b",
+    "thunderep_local_4l4_rs_samples.csv": "3c32f90437a247491f1c9f68b6c06412c3c8cb12dcf698988a068c8da9a10e26",
+    "thunderep_local_4l4_summary.csv": "a20c68c451fcc294e0b7b72cdce2a27abe81c3b1c69b5c8af5033f250bd99baa"
+  },
+  "archive_normalization": "summary CSV line endings changed from CRLF to LF; all numerical text unchanged",
+  "original_summary_sha256": "acf6caca2d5434e4d77cd7af33d8c22788e6158bf2c3f7054af231dc45540fe4",
+  "local_full_manifest_and_logs": "build/thunderep-local-001/",
+  "command": "python3 scripts/compare_thunderep.py --binary build/thunderep-nccl23007/uccl_lite_collectives --output build/thunderep-local-001"
+}
