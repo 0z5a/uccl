@@ -217,6 +217,53 @@ def allreduce(preview):
     )
 
 
+def primitive_collectives(preview):
+    """Historical eight-GPU CPU-router data, separate from the four-GPU kernels."""
+    rows = read_csv("primitives_8l4.csv")
+    assert len(rows) == 576
+    backends = [
+        ("nccl_tccl", "NCCL 2.18.3 (TCCL runtime)", PALE),
+        ("nccl", "NCCL 2.27.5", LIGHT),
+        ("tccl", "TCCL", MEDIUM),
+        ("kernel", "CPU-router SM · historical", NAVY),
+    ]
+    for collective, name, title in (
+        ("all_gather", "allgather", "AllGather"),
+        ("reduce_scatter", "reducescatter", "ReduceScatter"),
+    ):
+        fig, axes = figure(
+            rows=2,
+            title=f"Standalone {title} · eight-GPU primitives",
+            subtitle="Single node  /  8 × NVIDIA L4  /  BF16  /  no GPU peer access  /  historical CPU-router branch",
+        )
+        for row_index, mode in enumerate(("in_place", "out_of_place")):
+            selected = [
+                r for r in rows if r["collective"] == collective and r["mode"] == mode
+            ]
+            assert len(selected) == 96
+            placement = "In-place" if mode == "in_place" else "Out-of-place"
+            for column, sizes, bandwidth, metric in (
+                (0, [1 << n for n in (10, 14, 17, 20)], False, "Latency ↓"),
+                (1, [1 << n for n in (22, 24, 26, 30)], True, "Bus bandwidth ↑"),
+            ):
+                bars(
+                    axes[row_index, column],
+                    [size_label(s) for s in sizes],
+                    collective_series(selected, sizes, backends, bandwidth),
+                    f"{placement} · {metric}",
+                    "Bus bandwidth (GB/s)" if bandwidth else "Latency (µs)",
+                )
+        extent = "complete output" if collective == "all_gather" else "complete input"
+        save(
+            fig,
+            name,
+            [(b[1], b[2]) for b in backends],
+            "Same-session three-run medians and min–max whiskers; identical per-collective nccl-tests binaries. No per-size backend selection.\n"
+            f"Size = {extent} per rank; bus bandwidth = algorithm bandwidth × 7/8. CPU-router runtime is not included in this subtree.",
+            preview,
+        )
+
+
 def alltoall(preview):
     rows = {
         int(r["size_bytes"]): r
@@ -606,7 +653,15 @@ def main():
             "svg.hashsalt": "uccl-lite-bars",
         }
     )
-    for render in (allreduce, alltoall, multinode, dense, ep_moe, tp_moe):
+    for render in (
+        allreduce,
+        primitive_collectives,
+        alltoall,
+        multinode,
+        dense,
+        ep_moe,
+        tp_moe,
+    ):
         render(args.preview)
 
 

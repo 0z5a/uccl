@@ -26,6 +26,7 @@ are intentionally outside its scope.
 | :--- | :--- | :--- |
 | **AllReduce** | LL packets, NUMA hierarchy, copy-engine ring | **6.08 µs** at 1 KiB; **20.13 GB/s** bus bandwidth at 1 GiB |
 | **All-to-All** | Collision-free peer schedules on SMs and copy engines | **74.47 GB/s** aggregate at 256 MiB/rank |
+| **AllGather / ReduceScatter reference results** | Archived eight-GPU CPU-router primitive experiments; runtime not included here | **5.25 / 5.59 GB/s** bus bandwidth at 1 GiB, BF16, in-place |
 | **Dense fusion** | AllGather + GEMM, GEMM + ReduceScatter, GEMM + AllReduce | **1.47× / 1.24× / 1.30×** over cuBLAS + NCCL at the large reference shapes |
 | **Expert-parallel MoE** | Ragged dispatch, grouped GEMM, activation, down projection, combine | **1.39–1.52×** full-layer speedup at large token counts |
 | **Tensor-parallel MoE** | Reusable down/combine/AllReduce and direct-decode device kernels | **1.10–1.14×** Qwen prefill layer; direct decode wins at selected tiny batches |
@@ -116,6 +117,29 @@ The scheduled peer transfers reach **74.47 GB/s aggregate** at 256 MiB/rank,
 with **1.17–4.20×** speedup over the tested default NCCL transport across the
 recorded sweep. NCCL uses host staging on this testbed. Aggregate bandwidth
 counts all nonlocal traffic and is distinct from AllReduce bus bandwidth.
+
+### Standalone AllGather and ReduceScatter — eight-GPU primitives
+
+The independent AllGather and ReduceScatter results come from a separate
+CPU-router implementation on **one node with eight L4 GPUs, BF16, and no GPU
+peer access**. They were recorded on October 12 after the ReduceScatter packet
+scheduling fix. This runtime has not been migrated into this subtree; the data
+is retained as a historical primitive-collective comparison. It is a different
+configuration from the four-GPU float32 benchmarks above.
+
+![Standalone AllGather latency and bandwidth for in-place and out-of-place on eight L4 GPUs](docs/assets/allgather.svg)
+
+![Standalone ReduceScatter latency and bandwidth for in-place and out-of-place on eight L4 GPUs](docs/assets/reducescatter.svg)
+
+At 1 GiB in-place, the CPU-router SM path reaches **5.25 GB/s for AllGather**
+and **5.59 GB/s for ReduceScatter**, versus **5.04 / 4.86 GB/s** for NCCL
+2.27.5. Both placements are shown, with three-run median bars and min–max
+whiskers. The NCCL 2.18.3 baseline uses the TCCL runtime with its default NCCL
+algorithms; it is not the independent NCCL build used in the four-GPU plots.
+
+AllGather size is the complete output per rank; ReduceScatter size is the
+complete input per rank. Neither figure includes GEMM. The full 128 B–1 GiB
+sweep and exact provenance are described in [primitive results](docs/primitive-collectives.md).
 
 ### Dense fusion
 

@@ -38,7 +38,7 @@ before publication. Generated binaries and validation logs stay in ignored
 
 ## Figure expansion
 
-The README now includes eight blue bar figures generated from committed
+The README now includes ten blue bar figures generated from committed
 CSV/text measurements. Generation checks for missing series, non-finite or
 nonpositive values, and invalid error ranges. The dense figure selects the
 current comparison block; TP-MoE adds retained prefill/decode summary data.
@@ -47,6 +47,12 @@ PNG previews were visually checked for layout; SVG and PDF exports use the
 same plots. This is a
 documentation/visualization update; no kernels changed and no GPU benchmarks
 were rerun for it.
+
+Standalone AllGather and ReduceScatter figures additionally use the complete
+matched eight-L4 BF16 CPU-router summary from source revision `9d088c9`.
+The CSV checksum, dimensions, bandwidth normalization, and both placements were
+checked. Its separate runtime is not included or validated by the current build;
+see [primitive results](primitive-collectives.md).
 
 ## What this validation does not establish
 
