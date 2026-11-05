@@ -1,0 +1,13 @@
+# Third-party notices
+
+UCCL Lite uses MSCCL++, CUDA, NCCL, and CUTLASS as external dependencies. Their
+API names and licenses remain those of their respective upstream projects.
+
+`include/uccl_lite/cutlass_gated_grouped.h` adapts the operator body from
+CUTLASS 4.5.0's `include/cutlass/gemm/kernel/gemm_grouped.h`, adding arrival
+gating, an optional dispatcher, and output-readiness hooks. The upstream
+copyright notice and BSD-3-Clause terms are reproduced in that header.
+
+The global-ring benchmark reproduces a topology-specific TCCL schedule using
+MSCCL++ primitives; the TCCL runtime is not vendored here. TCCL measurements in
+the benchmark tables refer to the external reference implementation.

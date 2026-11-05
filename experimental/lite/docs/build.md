@@ -1,0 +1,117 @@
+# Building and running UCCL Lite
+
+Run all commands from `experimental/lite/`. The Makefile builds independent
+benchmarks and writes only to `build/`; it does not install libraries or modify
+the rest of UCCL. Use `make help` for the target list.
+
+## Dependencies
+
+| Dependency | Used by | Tested configuration |
+| --- | --- | --- |
+| CUDA toolkit | All CUDA sources | CUDA 12.9, L4 / `sm_89` |
+| MSCCL++ | Collectives and fusion | Commit `52f659d` for the IB experiments; see compatibility note below |
+| NCCL | Fusion reference baselines | 2.28.7; comparisons also include 2.18.3 |
+| cuBLAS | GEMM baselines and dense fusion | Toolkit library, including grouped GEMM API |
+| CUTLASS | Grouped fusion kernels | 4.5.0, using its 2.x grouped-GEMM interfaces |
+| Open MPI + UCX | Two-node benchmarks | Open MPI 4.1.7rc1 on the measured host |
+| Python + Matplotlib | Figure regeneration only | No Python dependency for CUDA executables |
+
+The single-node reference library was an earlier local MSCCL++ build; its exact
+revision was not recorded. Do not interpret the IB revision as a fully pinned
+single-node environment. Build and validate against the headers and library from
+the same MSCCL++ checkout. Generated MSCCL++ headers are under its build tree.
+
+The ordinary kernels compile as C++20. CUTLASS-heavy targets compile as C++17
+because the measured CUDA 12.9 compiler had a frontend failure with C++20.
+
+## Build targets
+
+```bash
+# Required paths can be supplied on every make invocation.
+make -j2 single-node MSCCLPP_HOME=/path/to/mscclpp
+make -j2 fusion MSCCLPP_HOME=/path/to/mscclpp \
+  CUTLASS_HOME=/path/to/cutlass NCCL_HOME=/path/to/nccl/build
+make -j2 probes CUTLASS_HOME=/path/to/cutlass
+make headers MSCCLPP_HOME=/path/to/mscclpp CUTLASS_HOME=/path/to/cutlass
+```
+
+`make all` builds single-node collectives, fusion, probes, and the reusable-header
+compile check. Multi-node targets are separate. Individual target names are
+`allreduce`, `alltoall`, `dense_fusion`, `fused_moe`, `fused_moe_layer`,
+`fused_moe_layer_qwen`, `gemm_probe`, `mma_gemm_probe`, `mma_peak_probe`,
+`moe_overlap_probe`, and `cutlass_gemm_probe`. Executables have an `uccl_lite_`
+prefix, for example `build/uccl_lite_dense_fusion`.
+
+Override `CUDA_HOME`, `NVCC`, `CUDA_ARCH`, `MSCCLPP_BUILD`, and
+`EXTRA_NVCC_FLAGS` as needed. Changing compiler flags or dependency paths does
+not invalidate existing Make outputs automatically; use `make -B <target>`
+when changing those settings. Start with `-j2`: CUTLASS template compilation
+uses substantial host memory.
+
+## Single-node correctness runs
+
+Use an idle four-GPU host, verify NUMA order with `nvidia-smi topo -m`, and
+ensure CUDA peer access is available. The executables fork four ranks before
+CUDA initialization; **do not launch them with mpirun or torchrun**.
+
+```bash
+./build/uccl_lite_allreduce -b 1024 -e 16777216 -w 2 -n 3
+./build/uccl_lite_alltoall -b 1024 -e 1048576 -w 2 -n 3
+
+./build/uccl_lite_dense_fusion \
+  --ag-m 128 --ag-n 1024 --ag-k 512 \
+  --rs-m 128 --rs-n 512 --rs-k 1024 -w 2 -n 3
+
+./build/uccl_lite_fused_moe -b 8 -e 8 -w 1 -n 1 -r 1 -S 0
+./build/uccl_lite_fused_moe_layer -b 8 -e 8 -w 1 -n 1 -r 1 -S 0 -c 2
+```
+
+For collectives, `-b/-e` are bytes. For MoE, they are tokens per rank. Common
+flags are `-w` warmups, `-n` iterations, and `-c` correctness checking. MoE's
+`-r` is measurement rounds and `-S` is settling time in milliseconds. Use
+`-c 2` for the full-layer independent reference check. Keep checking enabled
+when porting; some harnesses print an error metric without returning failure,
+so inspect `maxrelerr`, `badrow`, and `bad` in the output as well as exit codes.
+
+## Two-node build
+
+The tested layout has four L4 GPUs and two HCAs per node. The same executable
+and shared-library paths must exist on both hosts.
+
+Build MSCCL++ with IB and GDRCopy enabled for GDR paths. The tested adapter
+requires `host-no-atomic` signaling and a loaded `gdrdrv`; RDMA-atomic signaling
+returned remote-access errors on that host. Host-staged global-ring mode also
+needs [the mapped-host fix](../patches/mscclpp-host-memory-registration.patch).
+Review/apply it to the external dependency before rebuilding that library.
+
+```bash
+cmake -S /path/to/mscclpp -B /path/to/mscclpp/build-ib \
+  -DMSCCLPP_USE_IB=ON -DMSCCLPP_USE_GDRCOPY=ON \
+  -DGDRCOPY_ROOT_DIR=/path/to/gdrcopy/install \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=89
+cmake --build /path/to/mscclpp/build-ib -j2
+
+make -j2 multinode MSCCLPP_HOME=/path/to/mscclpp \
+  MSCCLPP_IB_BUILD=/path/to/mscclpp/build-ib MPICXX=/path/to/mpicxx
+```
+
+`host_allreduce` depends only on CUDA and MPI and can be built separately without
+MSCCL++. The default `multinode_cpu_router` requires local MSCCL++ CUDA IPC but
+does not register GPU memory with the NIC; its optional direct-receive mode does.
+
+```bash
+export HOSTS=node0:4,node1:4
+export MPIRUN=/path/to/mpirun
+export SOCKET_IFNAME=your_network_interface
+export HCA_DEVICES=mlx5_0,mlx5_1
+
+bash scripts/run_multinode.sh multinode_allreduce -b 1024 -e 67108864 -c 1
+bash scripts/run_multinode.sh multinode_cpu_router -k 1048576 -c 1
+bash scripts/run_multinode.sh tccl_ring_allreduce -C 8 -H 1 -S 8 -c 1
+bash scripts/run_multinode.sh host_allreduce -k 4194304 -c 1
+```
+
+The launcher uses eight MPI ranks and four ranks per node. It uses TCP/shared
+memory for MPI bootstrap when MSCCL++ owns the IB data path, and UCX for the
+host-router paths. Set `BUILD_DIR` if executables live outside the default
+directory. See [multi-node design](multinode.md) for tuning and constraints.

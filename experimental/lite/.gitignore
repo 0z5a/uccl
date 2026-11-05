@@ -1,2 +1,4 @@
-ip.txt
-lite-collective/.tmp/**
+/build/
+__pycache__/
+*.pyc
+!/benchmarks/data/*.csv

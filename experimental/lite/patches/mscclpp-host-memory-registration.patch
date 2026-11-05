@@ -1,0 +1,22 @@
+diff --git a/src/core/gpu_utils.cc b/src/core/gpu_utils.cc
+index 0db7dc7..3f9b5f8 100644
+--- a/src/core/gpu_utils.cc
++++ b/src/core/gpu_utils.cc
+@@ -93,6 +93,17 @@ std::shared_ptr<GpuStreamPool> gpuStreamPool() {
+ namespace detail {
+ 
+ int gpuIdFromAddress(void* ptr) {
++  CUmemorytype memoryType;
++  auto typeRes = cuPointerGetAttribute(&memoryType, CU_POINTER_ATTRIBUTE_MEMORY_TYPE,
++                                       reinterpret_cast<CUdeviceptr>(ptr));
++  if (typeRes == CUDA_ERROR_INVALID_VALUE || memoryType == CU_MEMORYTYPE_HOST) {
++    // Plain and CUDA-registered host allocations are verbs-registerable host
++    // memory, even when they also have a device mapping.  Querying only
++    // DEVICE_ORDINAL misclassifies mapped host pointers as GPU allocations and
++    // incorrectly sends them through the DMA-BUF registration path.
++    return -1;
++  }
++  MSCCLPP_CUTHROW(typeRes);
+   int deviceId;
+   auto res = cuPointerGetAttribute(&deviceId, CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL, reinterpret_cast<CUdeviceptr>(ptr));
+   if (res == CUDA_ERROR_INVALID_VALUE) {
