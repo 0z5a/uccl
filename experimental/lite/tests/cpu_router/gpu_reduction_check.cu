@@ -20,12 +20,15 @@ int main(int argc, char** argv) {
   try {
     int ranks = 4;
     bool interleaveScatter = false;
+    bool gpuProgress = false;
     size_t packetBytes = 512UL << 10, customElements = 0;
     for (int i = 1; i < argc; ++i) {
       if (std::string(argv[i]) == "--gpus" && i + 1 < argc)
         ranks = std::stoi(argv[++i]);
       else if (std::string(argv[i]) == "--interleave-scatter")
         interleaveScatter = true;
+      else if (std::string(argv[i]) == "--gpu-progress")
+        gpuProgress = true;
       else if (std::string(argv[i]) == "--packet-bytes" && i + 1 < argc)
         packetBytes = std::stoull(argv[++i]);
       else if (std::string(argv[i]) == "--elements" && i + 1 < argc) {
@@ -56,6 +59,7 @@ int main(int argc, char** argv) {
       options.maxTensorBytes = maxCount * 2;
       options.reduction = ReductionPlacement::Gpu;
       options.interleaveScatter = interleaveScatter;
+      options.gpuProgress = gpuProgress;
       options.packetBytes = packetBytes;
       CpuRouter router(options);
       std::mt19937 rng(260940093);

@@ -51,6 +51,7 @@ int main(int argc, char** argv) {
   try {
     bool small = false;
     bool gpuReduce = false;
+    bool gpuProgress = false;
     bool interleaveScatter = false;
     int delayRank = -1;
     size_t packetBytes = 512UL << 10;
@@ -69,7 +70,10 @@ int main(int argc, char** argv) {
         small = true;
       else if (arg == "--gpu-reduce")
         gpuReduce = true;
-      else if (arg == "--interleave-scatter") {
+      else if (arg == "--gpu-progress") {
+        gpuReduce = true;
+        gpuProgress = true;
+      } else if (arg == "--interleave-scatter") {
         gpuReduce = true;
         interleaveScatter = true;
       } else if (arg == "--delay-rank" && i + 1 < argc)
@@ -88,6 +92,7 @@ int main(int argc, char** argv) {
       throw std::invalid_argument("invalid rank count");
     uccl_lite::cpu_router::CpuRouterOptions options;
     options.interleaveScatter = interleaveScatter;
+    options.gpuProgress = gpuProgress;
     options.packetBytes = packetBytes;
     if (gpuReduce)
       options.reduction = uccl_lite::cpu_router::ReductionPlacement::Gpu;

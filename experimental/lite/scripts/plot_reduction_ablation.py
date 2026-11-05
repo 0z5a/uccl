@@ -20,8 +20,8 @@ VARIANTS = (
 )
 
 
-def load(variant, backend, operation):
-    with (DATA / f"{variant}_{operation}_samples.csv").open() as handle:
+def load(variant, backend, operation, data=DATA):
+    with (data / f"{variant}_{operation}_samples.csv").open() as handle:
         rows = list(csv.DictReader(handle))
     sizes = [1 << n for n in range(10, 31)]
     summary = summarize(rows, operation, sizes, 5, 20, 4, backend)
@@ -54,10 +54,20 @@ def load(variant, backend, operation):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--preview", action="store_true")
+    parser.add_argument("--gpu-progress", action="store_true")
     args = parser.parse_args()
-    provenance = json.loads((DATA / "ablation_provenance.json").read_text())
+    data = style.ROOT / "benchmarks/data/gpu-progress" if args.gpu_progress else DATA
+    variants = (
+        (
+            ("control", "CPU packet handoff", "cpu-router-gpu-striped", style.LIGHT),
+            ("candidate", "GPU packet handoff", "gpu-progress-striped", style.NAVY),
+        )
+        if args.gpu_progress
+        else VARIANTS
+    )
+    provenance = json.loads((data / "ablation_provenance.json").read_text())
     for name, digest in provenance["data_sha256"].items():
-        if hashlib.sha256((DATA / name).read_bytes()).hexdigest() != digest:
+        if hashlib.sha256((data / name).read_bytes()).hexdigest() != digest:
             raise ValueError(f"Archived data checksum mismatch: {name}")
     style.plt.rcParams.update(
         {
@@ -77,15 +87,25 @@ def main():
     )
     fig, axes = style.figure(
         rows=2,
-        title="No-P2P collectives · reduction-placement ablation",
-        subtitle="4 × NVIDIA L4  /  BF16  /  eager calls  /  default vs fixed 8 MiB variants  /  not ThunderEP execution",
+        title=(
+            "No-P2P collectives · GPU progress ablation"
+            if args.gpu_progress
+            else "No-P2P collectives · reduction-placement ablation"
+        ),
+        subtitle=(
+            "4 × NVIDIA L4  /  BF16  /  eager calls  /  fixed 8 MiB packets  /  not ThunderEP execution"
+            if args.gpu_progress
+            else "4 × NVIDIA L4  /  BF16  /  eager calls  /  default vs fixed 8 MiB variants  /  not ThunderEP execution"
+        ),
     )
     for row, operation in enumerate(("allgather", "reducescatter")):
-        records = {v: load(v, backend, operation) for v, _, backend, _ in VARIANTS}
+        records = {
+            v: load(v, backend, operation, data) for v, _, backend, _ in variants
+        }
         for col, exponents in enumerate((range(10, 21), range(21, 31))):
             sizes = [1 << n for n in exponents]
             series = []
-            for variant, label, _, color in VARIANTS:
+            for variant, label, _, color in variants:
                 values, ranges = records[variant]
                 series.append(
                     (
@@ -120,11 +140,19 @@ def main():
     (style.ROOT / "build/figures/experiments").mkdir(parents=True, exist_ok=True)
     style.save(
         fig,
-        "experiments/reduction-placement",
-        [(label, color) for _, label, _, color in VARIANTS],
+        (
+            "experiments/gpu-progress"
+            if args.gpu_progress
+            else "experiments/reduction-placement"
+        ),
+        [(label, color) for _, label, _, color in variants],
         "Dashed line: each configuration's paired NCCL 2.30.7 = 1×. Five-run means; whiskers: min–max paired run ratios, not confidence intervals.\n"
-        "All 21 sizes retained. One executable; separate paired sweeps, no per-size best-variant selection. AllGather changes only with packet geometry.\n"
-        "Includes eager host-submission gaps. Different hardware, precision scope, and timing harness from the paper; no model-level performance claim.",
+        + (
+            "All 21 sizes retained. Same executable and GPU arithmetic; only the progress engine changes. GPU progress creates no packet-routing CPU workers.\n"
+            if args.gpu_progress
+            else "All 21 sizes retained. One executable; separate paired sweeps, no per-size best-variant selection. AllGather changes only with packet geometry.\n"
+        )
+        + "Includes eager host-submission gaps. Different hardware, precision scope, and timing harness from the paper; no model-level performance claim.",
         args.preview,
     )
 

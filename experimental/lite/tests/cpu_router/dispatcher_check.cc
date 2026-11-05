@@ -126,7 +126,19 @@ int main() {
                 !striped.routerInitialized(),
             "striped placement requires its own measurements and stays "
             "uninitialized");
+    gpu.gpuProgress = true;
+    gpu.reduction = cpu_router::ReductionPlacement::Gpu;
+    CollectiveDispatcher direct(t, autoPolicy, callback, gpu);
+    require(direct.topology().identity != striped.topology().identity &&
+                !direct.prepare(call).cpuRouter && !direct.routerInitialized(),
+            "GPU progress needs separate evidence and remains uninitialized on "
+            "fallback");
+    gpu.interleaveScatter = false;
     gpu.reduction = cpu_router::ReductionPlacement::Cpu;
+    rejects([&] { CollectiveDispatcher invalid(t, autoPolicy, callback, gpu); },
+            "GPU progress cannot bypass CPU arithmetic");
+    gpu.gpuProgress = false;
+    gpu.interleaveScatter = true;
     rejects([&] { CollectiveDispatcher invalid(t, autoPolicy, callback, gpu); },
             "interleaved scatter cannot silently use CPU reduction");
     gpu.reduction = static_cast<cpu_router::ReductionPlacement>(99);

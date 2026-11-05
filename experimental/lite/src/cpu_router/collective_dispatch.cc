@@ -141,6 +141,9 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
   if (options_.interleaveScatter &&
       options_.reduction != cpu_router::ReductionPlacement::Gpu)
     throw std::invalid_argument("interleaved scatter requires GPU reduction");
+  if (options_.gpuProgress &&
+      options_.reduction != cpu_router::ReductionPlacement::Gpu)
+    throw std::invalid_argument("GPU progress requires GPU reduction");
   topology_.referenceRouterOptions =
       options_.reduction == cpu_router::ReductionPlacement::Cpu &&
       options_.packetBytes == (512UL << 10) &&
@@ -165,6 +168,7 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
   if (options_.reduction != cpu_router::ReductionPlacement::Cpu)
     key << ";reduction=gpu-v1";
   if (options_.interleaveScatter) key << ";scatter=interleaved-v2";
+  if (options_.gpuProgress) key << ";progress=gpu-v1";
   for (int cpu : options_.workerCpus) key << ";worker=" << cpu;
   for (int node : options_.numaNodes) key << ";numa=" << node;
   topology_.identity += key.str();

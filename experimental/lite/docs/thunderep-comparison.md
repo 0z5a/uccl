@@ -1,5 +1,8 @@
 # ThunderEP comparison — in progress
 
+The latest [NCCL measurements and ThunderEP reference comparison](baseline-comparison.md)
+summarize the current handoff, including all results and the missing head-to-head inputs.
+
 **No result currently establishes that UCCL Lite outperforms ThunderEP.**
 Our historical four-L4 fusion speedups are not comparable to its model-level
 results. The goal is a matched evaluation, followed by architectural changes

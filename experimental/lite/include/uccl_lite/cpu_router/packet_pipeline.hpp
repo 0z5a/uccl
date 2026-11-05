@@ -183,6 +183,10 @@ struct PacketPipelineOptions {
   // Keeps all destination PCIe links active; source/destination layout at the
   // public API is unchanged. Not compatible with flat producer-event stripes.
   bool interleaveScatter = false;
+  // GPU reduction only. GPU leaders observe upload/reader generations directly;
+  // no CPU packet-routing executor is created. Host command publication
+  // remains.
+  bool gpuProgress = false;
 };
 
 // One process, 1..kMaxRanks ports in arbitrary device/NUMA order. All GPU

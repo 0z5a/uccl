@@ -5,3 +5,5 @@ __pycache__/
 !/benchmarks/data/*_provenance.json
 !/benchmarks/data/reduction-placement/*.csv
 !/benchmarks/data/reduction-placement/*_provenance.json
+!/benchmarks/data/gpu-progress/*.csv
+!/benchmarks/data/gpu-progress/*_provenance.json

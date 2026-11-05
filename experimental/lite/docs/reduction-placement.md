@@ -198,13 +198,11 @@ are not reused. Compute Sanitizer is not installed on this host.
 
 ## Remaining work toward the comparison goal
 
-CPU routing workers still participate in every packet's readiness/credit handoff,
-even in the GPU arithmetic modes. The next controlled experiment should separate
-this progress cost from data movement: let a bounded number of GPU threads
-observe source-ready and reader-credit generations directly, keeping the shared
-host buffers immutable until every reader has acknowledged them. Masked calls,
-mixed operations, delayed ranks and replay wrap must preserve ownership. This
-is a proposed experiment, not implemented or assumed to be faster.
+The opt-in GPU packet-progress experiment is now implemented and measured in
+[the baseline comparison](baseline-comparison.md). It removes CPU packet-routing
+workers while preserving input-bank ownership across masks and replay. It does
+not produce a general ReduceScatter win over NCCL. The results above retain the
+earlier CPU-progress configurations and are not rewritten as new measurements.
 
 Also unresolved are NUMA-local CPU partials with destination-GPU merging,
 sender-level compute readiness, and no-P2P MoE overlap using the paper's unchanged

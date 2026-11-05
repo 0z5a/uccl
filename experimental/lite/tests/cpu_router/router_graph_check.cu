@@ -29,6 +29,7 @@ int main(int argc, char** argv) {
   try {
     bool large = false;
     bool gpuReduce = false;
+    bool gpuProgress = false;
     bool interleaveScatter = false;
     size_t packetBytes = 512UL << 10;
     size_t contributionElements = 64;
@@ -52,7 +53,10 @@ int main(int argc, char** argv) {
         large = true;
       else if (arg == "--gpu-reduce")
         gpuReduce = true;
-      else if (arg == "--interleave-scatter") {
+      else if (arg == "--gpu-progress") {
+        gpuReduce = true;
+        gpuProgress = true;
+      } else if (arg == "--interleave-scatter") {
         gpuReduce = true;
         interleaveScatter = true;
       } else if (arg == "--c-api")
@@ -78,6 +82,7 @@ int main(int argc, char** argv) {
     size_t extent = std::max<size_t>(1024, contributionElements * ranks);
     uccl_lite::cpu_router::CpuRouterOptions options;
     options.interleaveScatter = interleaveScatter;
+    options.gpuProgress = gpuProgress;
     options.packetBytes = packetBytes;
     if (gpuReduce && capi)
       throw std::invalid_argument(

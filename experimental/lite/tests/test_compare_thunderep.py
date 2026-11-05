@@ -45,6 +45,17 @@ class SummaryTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.summary(rows)
 
+    def test_progress_backend_requires_explicit_identity(self):
+        for backend in ("gpu-progress-flat", "gpu-progress-striped"):
+            rows = [
+                {**r, "backend": backend} if r["backend"] == "cpu-router" else r
+                for r in self.rows
+            ]
+            result = comparison.summarize(rows, "allgather", [1024], 5, 2, 4, backend)
+            self.assertEqual(result[1]["speedup_vs_local_nccl"], 2)
+            with self.assertRaises(ValueError):
+                self.summary(rows)
+
     def test_reduce_scatter_name(self):
         rows = [{**row, "collective": "reduce_scatter"} for row in self.rows]
         result = comparison.summarize(rows, "reducescatter", [1024], 5, 2, 4)

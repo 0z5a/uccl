@@ -50,6 +50,7 @@ struct Config {
   size_t packetBytes = 512UL << 10;
   bool inPlace = false;
   bool gpuReduce = false;
+  bool gpuProgress = false;
   bool interleaveScatter = false;
   std::string operation = "all", profile, reference, calibrate, samples;
   RouterMode mode = RouterMode::Auto;
@@ -215,7 +216,10 @@ int main(int argc, char** argv) {
         cfg.inPlace = true;
       else if (arg == "--gpu-reduce")
         cfg.gpuReduce = true;
-      else if (arg == "--interleave-scatter") {
+      else if (arg == "--gpu-progress") {
+        cfg.gpuReduce = true;
+        cfg.gpuProgress = true;
+      } else if (arg == "--interleave-scatter") {
         cfg.gpuReduce = true;
         cfg.interleaveScatter = true;
       } else if (arg == "--warmup")
@@ -233,6 +237,8 @@ int main(int argc, char** argv) {
             "  --reference CSV  --profile FILE  --calibrate NEW_FILE\n"
             "  --samples NEW_CSV (checked per-invocation timing records)\n"
             "  --gpu-reduce (experimental destination-GPU Sum arithmetic)\n"
+            "  --gpu-progress (GPU upload/credit handoff; implies GPU "
+            "reduction)\n"
             "  --interleave-scatter (GPU reduction with all-destination packet "
             "stripes)\n"
             "  --packet-bytes BYTES (upper bound; default 524288, minimum "
@@ -320,9 +326,13 @@ int main(int argc, char** argv) {
       options.reduction = cfg.gpuReduce ? cpu_router::ReductionPlacement::Gpu
                                         : cpu_router::ReductionPlacement::Cpu;
       options.interleaveScatter = cfg.interleaveScatter;
+      options.gpuProgress = cfg.gpuProgress;
       char const* routerName = cfg.interleaveScatter ? "cpu-router-gpu-striped"
                                : cfg.gpuReduce       ? "cpu-router-gpu-reduce"
                                                      : "cpu-router";
+      if (cfg.gpuProgress)
+        routerName = cfg.interleaveScatter ? "gpu-progress-striped"
+                                           : "gpu-progress-flat";
       CollectiveDispatcher selected(topology, policy, fallback, options);
       BackendPolicy forced = policy, off = policy;
       forced.mode = RouterMode::Force;

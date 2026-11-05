@@ -79,6 +79,7 @@ struct alignas(16) Transport {
   uint16_t const* results[kSlots];
   Flags* flags;
   Flags* readerFlags;
+  Flags* peerFlags[kMaxRanks];
   GridState* grid;
   PacketProgram plan;
   size_t packetElements;
@@ -88,6 +89,7 @@ struct alignas(16) Transport {
   bool profile;
   bool gpuReduce;
   bool interleaveScatter;
+  bool gpuProgress;
   int producerBlocks;
   int consumerBlocks;
   uint32_t initialPhase[2];
@@ -311,12 +313,23 @@ __device__ void runTransport(Transport const& p, size_t firstTile,
     for (size_t tile = firstTile; tile < endTile; ++tile) {
       int slot = tile & 1;
       uint32_t old = tile >= 2 ? p.firstSequence + tile - 2 : p.previous[slot];
+      if (p.gpuProgress && block == 0) {
+        // All ranks acknowledge every generation, including masked/non-reading
+        // ranks. This makes slot reuse independent of the preceding operation's
+        // destination mask. One lane polls each rank; the rest never poll PCIe.
+        if (old && threadIdx.x < p.plan.ranks)
+          while (acquireSys(&p.readerFlags->readers[slot][threadIdx.x].value) <
+                 old)
+            __nanosleep(64);
+        __syncthreads();
+      }
       if (threadIdx.x == 0) {
         if (block == 0) {
-          DevicePacketOwnership{{&p.flags->uploaded[slot][p.rank]},
-                                {&p.flags->released[slot][p.rank]},
-                                p.readerFlags->readers[slot]}
-              .acquire(old);
+          if (!p.gpuProgress)
+            DevicePacketOwnership{{&p.flags->uploaded[slot][p.rank]},
+                                  {&p.flags->released[slot][p.rank]},
+                                  p.readerFlags->readers[slot]}
+                .acquire(old);
           waitGemm(p, tile);
           releaseGpu(&state->ready, p.firstSequence + tile);
         } else
@@ -338,11 +351,22 @@ __device__ void runTransport(Transport const& p, size_t firstTile,
   for (size_t tile = firstTile; tile < endTile; ++tile) {
     int slot = tile & 1;
     uint32_t seq = p.firstSequence + tile;
+    if (p.gpuProgress && block == 0) {
+      if (threadIdx.x < p.plan.ranks && (p.plan.sources & (1U << threadIdx.x)))
+        while (
+            acquireSys(
+                &p.peerFlags[threadIdx.x]->uploaded[slot][threadIdx.x].value) <
+            seq)
+          __nanosleep(64);
+      // Collect every polling lane's system acquire before the CTA leader
+      // releases GPU-local readiness to the other consumer CTAs.
+      __syncthreads();
+    }
     if (threadIdx.x == 0) {
       if (block == 0) {
         bool hasResult = p.plan.layout != PacketLayout::Scatter ||
                          reductionRoute(p, tile).elements;
-        if (hasResult)
+        if (hasResult && !p.gpuProgress)
           while (acquireSys(&p.flags->routed[slot][p.rank].value) < seq)
             __nanosleep(64);
         releaseGpu(&state->ready, seq);
@@ -414,8 +438,10 @@ __device__ void runTransport(Transport const& p, size_t firstTile,
     if (block == 0 && threadIdx.x == 0) {
       if (p.gathered) releaseGpu(p.gathered, uint32_t(tile + 1));
       releaseSys(&p.flags->consumed[slot][p.rank].value, seq);
-      if ((p.plan.transform == PacketTransform::Copy || p.gpuReduce) &&
-          (p.plan.destinations & (1U << p.rank)))
+      if (p.gpuProgress)
+        releaseSys(&p.readerFlags->readers[slot][p.rank].value, seq);
+      else if ((p.plan.transform == PacketTransform::Copy || p.gpuReduce) &&
+               (p.plan.destinations & (1U << p.rank)))
         DevicePacketOwnership{{&p.flags->routed[slot][p.rank]},
                               {&p.flags->released[slot][p.rank]},
                               p.readerFlags->readers[slot]}
@@ -933,6 +959,7 @@ struct PacketPipeline::Impl {
   std::array<cudaStream_t, kMaxRanks> streams{};
   std::array<Flags*, kMaxRanks> mappedFlags{};
   std::array<Flags*, kMaxRanks> mappedReaderFlags{};
+  std::array<std::array<Flags*, kMaxRanks>, kMaxRanks> mappedPeerFlags{};
   std::array<std::array<uint16_t*, kMaxRanks>, 2> mappedInputs{},
       mappedOutputs{};
   uint16_t* mappedSources[kMaxRanks][kSlots][kMaxRanks]{};
@@ -979,6 +1006,8 @@ struct PacketPipeline::Impl {
     if (options.interleaveScatter &&
         options.reduction != ReductionPlacement::Gpu)
       throw std::invalid_argument("interleaved scatter requires GPU reduction");
+    if (options.gpuProgress && options.reduction != ReductionPlacement::Gpu)
+      throw std::invalid_argument("GPU progress requires GPU reduction");
     if (!options.maxTensorBytes || options.packetBytes < 16 ||
         options.packetBytes % 16 || options.minPacketBytes < 16 ||
         options.minPacketBytes > options.packetBytes ||
@@ -1184,6 +1213,11 @@ struct PacketPipeline::Impl {
       CUDA(cudaHostGetDevicePointer(
           reinterpret_cast<void**>(&mappedReaderFlags[rank]),
           flagMemory[0].data(), 0));
+      if (options.gpuProgress)
+        for (int owner = 0; owner < ranks; ++owner)
+          CUDA(cudaHostGetDevicePointer(
+              reinterpret_cast<void**>(&mappedPeerFlags[rank][owner]),
+              flagMemory[rankGroup[owner]].data(), 0));
       for (int slot = 0; slot < 2; ++slot) {
         CUDA(cudaHostGetDevicePointer(
             reinterpret_cast<void**>(&mappedInputs[slot][rank]),
@@ -1211,7 +1245,11 @@ struct PacketPipeline::Impl {
                  "generational ownership; ranks=%d NUMA_groups=%d\n",
                  options.backend == TransportBackend::Dma ? "dma" : "kernel",
                  ranks, nodes);
-    executor = std::make_unique<CpuExecutor>(options.workerCpus);
+    if (!options.gpuProgress)
+      executor = std::make_unique<CpuExecutor>(options.workerCpus);
+    std::fprintf(stderr, "# packet_progress=%s routing_cpu_workers=%zu\n",
+                 options.gpuProgress ? "gpu" : "cpu",
+                 options.gpuProgress ? size_t(0) : options.workerCpus.size());
     std::fprintf(stderr,
                  "# CPU-router BF16: packet=%zu slots=2 blocks<=%d threads=%d "
                  "CPU<=%d/node "
@@ -1818,15 +1856,17 @@ struct PacketPipeline::Impl {
           }
         }
       }
-      slot.readers.store(active * nodes, std::memory_order_relaxed);
+      slot.readers.store(options.gpuProgress ? 0 : active * nodes,
+                         std::memory_order_relaxed);
       lastSequence[0] = first + ((tiles - 1) & ~size_t(1));
       if (tiles > 1) lastSequence[1] = first + ((tiles - 2) | size_t(1));
       ++published;
     }
-    for (int node = 0; node < nodes; ++node)
-      for (int i = 0; i < active; ++i)
-        RouterCore::process(*executor, node * options.workersPerNode + i,
-                            executeJob, &slot);
+    if (!options.gpuProgress)
+      for (int node = 0; node < nodes; ++node)
+        for (int i = 0; i < active; ++i)
+          RouterCore::process(*executor, node * options.workersPerNode + i,
+                              executeJob, &slot);
     for (int rank = 0; rank < ranks; ++rank) {
       if (!publishOnly) CUDA(cudaSetDevice(devices[rank]));
       Transport p{};
@@ -1840,6 +1880,9 @@ struct PacketPipeline::Impl {
       }
       p.flags = mappedFlags[rank];
       p.readerFlags = mappedReaderFlags[rank];
+      if (options.gpuProgress)
+        for (int owner = 0; owner < ranks; ++owner)
+          p.peerFlags[owner] = mappedPeerFlags[rank][owner];
       p.grid = grids[rank];
       p.plan = plan;
       p.packetElements = capacity;
@@ -1848,6 +1891,7 @@ struct PacketPipeline::Impl {
       p.profile = profile;
       p.gpuReduce = gpuReduce;
       p.interleaveScatter = interleaveScatter;
+      p.gpuProgress = options.gpuProgress;
       for (int slot = 0; slot < 2; ++slot) p.previous[slot] = previous[slot];
       p.producerBlocks = producerBlocks[rank];
       p.consumerBlocks = consumerBlocks[rank];

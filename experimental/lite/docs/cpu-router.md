@@ -3,6 +3,8 @@
 The opt-in [reduction-placement experiment](reduction-placement.md) adds
 destination-GPU arithmetic and interleaved scatter packets to the C++ module.
 Existing CPU defaults and measurement-gated fallback behavior are retained.
+The subsequent [GPU progress experiment and baseline comparison](baseline-comparison.md)
+remove CPU packet-routing workers in an explicit GPU-reduction configuration.
 
 CPU-router is an independent component for routing BF16 collective traffic
 through NUMA-local mapped host memory. It is useful when direct peer paths are

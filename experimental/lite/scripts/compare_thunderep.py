@@ -120,6 +120,11 @@ def main():
         action="store_true",
         help="GPU reduction with all-destination packet stripes",
     )
+    parser.add_argument(
+        "--gpu-progress",
+        action="store_true",
+        help="GPU-driven upload/credit handoff; implies GPU reduction",
+    )
     args = parser.parse_args()
     if (
         args.gpus < 2
@@ -153,6 +158,10 @@ def main():
         if args.interleave_scatter
         else "cpu-router-gpu-reduce" if args.gpu_reduce else "cpu-router"
     )
+    if args.gpu_progress:
+        router_backend = (
+            "gpu-progress-striped" if args.interleave_scatter else "gpu-progress-flat"
+        )
     sizes = []
     size = args.begin
     while size <= args.end:
@@ -249,6 +258,8 @@ def main():
                 cmd.append("--gpu-reduce")
             if args.interleave_scatter:
                 cmd.append("--interleave-scatter")
+            if args.gpu_progress:
+                cmd.append("--gpu-progress")
             save()
             print(
                 f"Running {operation}: {len(sizes)} sizes, 5 paired repetitions",
