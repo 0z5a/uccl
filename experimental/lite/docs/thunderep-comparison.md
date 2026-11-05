@@ -1,5 +1,12 @@
 # ThunderEP comparison — in progress
 
+**Implementation update:** the [independent communication reimplementation](thunderep-reimplementation.md)
+now includes DMA prefill, sender/destination readiness, double-buffer credits,
+SM decode graphs without host replay updates, and routed MoE correctness tests.
+It is a separate module, not a relabeling of CPU-router and not author code.
+The original planning/measurement record below remains as historical context;
+its packet-pipeline limitations still describe that candidate, not the new reference.
+
 The latest [NCCL measurements and ThunderEP reference comparison](baseline-comparison.md)
 summarize the current handoff, including all results and the missing head-to-head inputs.
 

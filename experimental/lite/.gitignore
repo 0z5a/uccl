@@ -7,3 +7,6 @@ __pycache__/
 !/benchmarks/data/reduction-placement/*_provenance.json
 !/benchmarks/data/gpu-progress/*.csv
 !/benchmarks/data/gpu-progress/*_provenance.json
+!/benchmarks/data/host-staged-reference/*.csv
+!/benchmarks/data/host-staged-reference/provenance.json
+!/benchmarks/data/host-staged-reference/trace_validation.json

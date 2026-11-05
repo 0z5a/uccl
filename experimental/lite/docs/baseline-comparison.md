@@ -1,10 +1,13 @@
 # UCCL Lite versus NCCL and ThunderEP
 
-**Current outcome: some local AllGather wins, no general collective or
-end-to-end superiority claim.** The current implementation work and local
-comparison are complete for this iteration. ThunderEP has **not** been run on
-this machine; the paper's results below are a separate reference, not a
-head-to-head measurement.
+**New: an [independent ThunderEP communication reimplementation](thunderep-reimplementation.md)
+now provides executable DMA/SM baselines, sender-ready overlap and device-only
+graph epochs.** Its local comparison is documented there. The author implementation
+and complete vLLM system have not been run here.
+
+The earlier GPU-progress ablation below is retained unchanged: some local
+AllGather wins, no general collective or end-to-end superiority claim. Its
+ThunderEP paper numbers are a separate reference, not head-to-head measurements.
 
 ## 1. Direct comparison with NCCL
 
@@ -83,7 +86,7 @@ this repository. [Paper, §§5.2–5.3](https://arxiv.org/pdf/2609.40093).
 | Author ThunderEP implementation | Not obtained; exact-name GitHub repository search returned no result on November 5, 2026; this does not prove no public code exists |
 | Exact primitive dtype, inner timing, size rounding and normalization | Some paper details still unresolved; local choices are explicit above |
 | Qwen3-30B-A3B and GPT-OSS-20B/120B inference | Not run with this backend; BF16/MXFP4, framework versions and workloads still need matched evaluation |
-| UCCL Lite versus ThunderEP on one machine | **Unmeasured** |
+| UCCL Lite versus original-author ThunderEP on one machine | **Unmeasured**; the new [independent communication reimplementation](thunderep-reimplementation.md) is a separately labeled executable baseline |
 
 The full evaluation configuration and outstanding settings are recorded in
 [the comparison specification](thunderep-comparison.md). Application/framework
@@ -130,7 +133,7 @@ python3 scripts/compare_thunderep.py \
 python3 scripts/plot_reduction_ablation.py --gpu-progress --preview
 ```
 
-To finish the original head-to-head goal, the missing inputs are a verified
-ThunderEP implementation and access to a matched six-4090/5090 testbed (or an
-agreed alternative for both systems). No additional architecture branch is
-started as part of this iteration's handoff.
+The independent implementation above follows the subsequent request to implement
+the paper's mechanisms. A paper-configuration comparison still requires the
+six-4090/5090 testbed and resolved evaluation settings. An author-implementation
+claim additionally requires obtaining and running verified author code.

@@ -140,6 +140,20 @@ covered by policy tests against historical measurements; this port's eight-GPU
 performance has not been rerun.
 [API, policy, calibration, and limitations](docs/cpu-router.md)
 
+## Independent host-staged reference
+
+An independently implemented [ThunderEP communication reference](docs/thunderep-reimplementation.md)
+provides shared-host AllGather/ReduceScatter, chunked bidirectional DMA, per-sender
+compute/return hooks, receiver-credit double buffering, and host-update-free SM
+decode graphs. It is separate from the UCCL Lite candidate and never changes
+automatic backend selection. It is **not author code or a vLLM reproduction**.
+
+```bash
+make -j2 host-staged-reference host-staged-checks
+build/uccl_lite_host_staged_check --gpus 4
+build/uccl_lite_host_staged_moe_check 4
+```
+
 ## Measured performance
 
 ### Single-node AllReduce
@@ -224,13 +238,16 @@ experimental/lite/
 ├── Makefile                    # Independent build; binaries go to build/
 ├── src/collectives/             # Single-node and two-node algorithms + harnesses
 ├── src/cpu_router/              # Optional routing runtime, policy, and dispatcher
+├── src/host_staged/             # Independent paper-reference DMA/SM transport
 ├── include/uccl_lite/           # Reusable grouped-GEMM, routing, and MoE kernels
 ├── benchmarks/
 │   ├── fusion/                 # Dense and expert-parallel MoE benchmarks
 │   ├── probes/                 # GEMM, tensor-core, and overlap diagnostics
 │   ├── cpu_router/             # BF16 dispatch and paired calibration example
+│   ├── host_staged/            # Executable reference/candidate/NCCL comparison
 │   └── data/                   # Curated reference measurements
 ├── tests/cpu_router/            # Host policy, numeric, eager, and graph checks
+├── tests/host_staged/           # Reference collectives, progress, and routed MoE
 ├── scripts/                    # Multi-node launcher and figure regeneration
 ├── patches/                    # MSCCL++ mapped-host registration fix
 └── docs/                       # Build, design, and validation notes
