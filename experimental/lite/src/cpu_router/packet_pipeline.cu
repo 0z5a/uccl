@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <cuda_bf16.h>
 #include <cuda_runtime.h>
 #include <immintrin.h>
 #include <sched.h>
@@ -85,6 +86,8 @@ struct alignas(16) Transport {
   uint32_t firstSequence;
   int rank;
   bool profile;
+  bool gpuReduce;
+  bool interleaveScatter;
   int producerBlocks;
   int consumerBlocks;
   uint32_t initialPhase[2];
@@ -172,8 +175,58 @@ __device__ uint32_t finishPair(uint32_t routed, uint32_t own) {
   return uint32_t(finishScatter(routed, own)) |
          (uint32_t(finishScatter(routed >> 16, own >> 16)) << 16);
 }
+// Sum immutable uploaded packets on the destination GPU. The rank's local
+// contribution stays on-device, including ReduceScatter's retained shard.
+// Accumulate in FP32 and round once; unlike CPU hierarchical BF16 reduction,
+// this does not round intermediate NUMA partials.
+__device__ uint4 sumPacket8(Transport const& p, int slot, size_t offset,
+                            size_t global, bool vector) {
+  float sum[8] = {};
+  for (int rank = 0; rank < p.plan.ranks; ++rank) {
+    if (!(p.plan.sources & (1U << rank))) continue;
+    auto from =
+        rank == p.rank ? p.input + global : p.sources[slot][rank] + offset;
+    if (vector) {
+      uint4 v = DeviceChannel::get16(from);
+      uint32_t words[4] = {v.x, v.y, v.z, v.w};
+#pragma unroll
+      for (int j = 0; j < 4; ++j) {
+        sum[j * 2] += __uint_as_float(words[j] << 16);
+        sum[j * 2 + 1] += __uint_as_float(words[j] & 0xffff0000U);
+      }
+    } else
+      sum[0] += __uint_as_float(uint32_t(DeviceChannel::get2(from)) << 16);
+  }
+  uint32_t words[4] = {};
+#pragma unroll
+  for (int j = 0; j < 4; ++j)
+    words[j] =
+        uint32_t(__bfloat16_as_ushort(__float2bfloat16_rn(sum[j * 2]))) |
+        (uint32_t(__bfloat16_as_ushort(__float2bfloat16_rn(sum[j * 2 + 1])))
+         << 16);
+  return make_uint4(words[0], words[1], words[2], words[3]);
+}
 __device__ void upload(Transport const& p, size_t tile, bool vector,
                        size_t lane, size_t stride) {
+  if (p.interleaveScatter) {
+    if (!(p.plan.sources & (1U << p.rank))) return;
+    size_t shard = p.plan.inputElements / p.plan.ranks;
+    size_t stripe = p.packetElements / p.plan.ranks;
+    size_t n = min(stripe, shard - tile * stripe);
+    for (int dest = 0; dest < p.plan.ranks; ++dest) {
+      if (dest == p.rank)
+        continue;  // Retained locally, just like flat scatter.
+      auto from = p.input + size_t(dest) * shard + tile * stripe;
+      auto to = p.uploads[tile & 1] + size_t(dest) * stripe;
+      if (vector)
+        for (size_t i = lane; i < n / 8; i += stride)
+          DeviceChannel::put16(to + i * 8, DeviceChannel::get16(from + i * 8));
+      else
+        for (size_t i = lane; i < n; i += stride)
+          DeviceChannel::put2(to + i, DeviceChannel::get2(from + i));
+    }
+    return;
+  }
   auto f = p.plan.uploadRanges(p.rank, tile, p.packetElements);
   for (int range = 0; range < f.count; ++range) {
     auto r = f.ranges[range];
@@ -187,6 +240,21 @@ __device__ void upload(Transport const& p, size_t tile, bool vector,
         DeviceChannel::put2(p.uploads[tile & 1] + r.packetOffset + i,
                             DeviceChannel::get2(p.input + r.inputOffset + i));
   }
+}
+__device__ PacketRoute reductionRoute(Transport const& p, size_t tile) {
+  if (!p.interleaveScatter)
+    return p.plan.outputRoute(p.rank, tile, p.packetElements);
+  if (!(p.plan.destinations & (1U << p.rank))) return {};
+  size_t shard = p.plan.inputElements / p.plan.ranks;
+  size_t stripe = p.packetElements / p.plan.ranks;
+  size_t begin = tile * stripe;
+  return {size_t(p.rank) * stripe,
+          begin,
+          min(stripe, shard - begin),
+          size_t(p.rank) * shard + begin,
+          -1,
+          false,
+          (p.plan.sources & (1U << p.rank)) != 0};
 }
 // Flags are published by resident GEMM worker CTAs in this same cooperative
 // grid, never by a future kernel. Every output tile intersecting a packet must
@@ -272,9 +340,8 @@ __device__ void runTransport(Transport const& p, size_t firstTile,
     uint32_t seq = p.firstSequence + tile;
     if (threadIdx.x == 0) {
       if (block == 0) {
-        bool hasResult =
-            p.plan.layout != PacketLayout::Scatter ||
-            p.plan.outputRoute(p.rank, tile, p.packetElements).elements;
+        bool hasResult = p.plan.layout != PacketLayout::Scatter ||
+                         reductionRoute(p, tile).elements;
         if (hasResult)
           while (acquireSys(&p.flags->routed[slot][p.rank].value) < seq)
             __nanosleep(64);
@@ -293,7 +360,7 @@ __device__ void runTransport(Transport const& p, size_t firstTile,
                : min(p.packetElements,
                      p.plan.inputElements - tile * p.packetElements);
     size_t totalUnits = concatenate ? packetUnits * p.plan.ranks : 0;
-    auto single = p.plan.outputRoute(p.rank, tile, p.packetElements);
+    auto single = reductionRoute(p, tile);
     if (!concatenate)
       totalUnits = vector ? single.elements / 8 : single.elements;
     for (size_t flat = thread; flat < totalUnits; flat += stride) {
@@ -306,12 +373,23 @@ __device__ void runTransport(Transport const& p, size_t firstTile,
       if (p.gatherLocalReady && route.local) continue;
       size_t i = concatenate ? flat % packetUnits : flat;
       size_t index = vector ? i * 8 : i;
+      size_t target = route.outputOffset + index;
+      if (p.gpuReduce) {
+        size_t offset = route.sourceOffset + index;
+        size_t global = p.interleaveScatter ? route.retainedOffset + index
+                                            : tile * p.packetElements + offset;
+        auto value = sumPacket8(p, slot, offset, global, vector);
+        if (vector)
+          DeviceChannel::put16(p.output + target, value);
+        else
+          DeviceChannel::put2(p.output + target, uint16_t(value.x));
+        continue;
+      }
       uint16_t const* from =
           route.sourceRank < 0 ? p.results[slot] + route.sourceOffset + index
           : route.local
               ? p.input + route.sourceOffset + index
               : p.sources[slot][route.sourceRank] + route.sourceOffset + index;
-      size_t target = route.outputOffset + index;
       if (vector) {
         uint4 routed = DeviceChannel::get16(from);
         if (route.addRetained) {
@@ -336,7 +414,7 @@ __device__ void runTransport(Transport const& p, size_t firstTile,
     if (block == 0 && threadIdx.x == 0) {
       if (p.gathered) releaseGpu(p.gathered, uint32_t(tile + 1));
       releaseSys(&p.flags->consumed[slot][p.rank].value, seq);
-      if (p.plan.transform == PacketTransform::Copy &&
+      if ((p.plan.transform == PacketTransform::Copy || p.gpuReduce) &&
           (p.plan.destinations & (1U << p.rank)))
         DevicePacketOwnership{{&p.flags->routed[slot][p.rank]},
                               {&p.flags->released[slot][p.rank]},
@@ -892,6 +970,15 @@ struct PacketPipeline::Impl {
   bool profile = std::getenv("UCCL_LITE_ROUTER_PROFILE") != nullptr;
 
   explicit Impl(PacketPipelineOptions o) : options(o) {
+    if (options.reduction != ReductionPlacement::Cpu &&
+        options.reduction != ReductionPlacement::Gpu)
+      throw std::invalid_argument("invalid reduction placement");
+    if (options.reduction == ReductionPlacement::Gpu &&
+        options.backend != TransportBackend::GpuKernel)
+      throw std::invalid_argument("GPU reduction requires the SM transport");
+    if (options.interleaveScatter &&
+        options.reduction != ReductionPlacement::Gpu)
+      throw std::invalid_argument("interleaved scatter requires GPU reduction");
     if (!options.maxTensorBytes || options.packetBytes < 16 ||
         options.packetBytes % 16 || options.minPacketBytes < 16 ||
         options.minPacketBytes > options.packetBytes ||
@@ -1132,6 +1219,11 @@ struct PacketPipeline::Impl {
                  options.packetBytes, options.transportBlocks,
                  options.transportThreads, options.workersPerNode,
                  options.grainElements);
+    std::fprintf(stderr, "# reduction_placement=%s\n",
+                 options.reduction == ReductionPlacement::Cpu ? "cpu" : "gpu");
+    std::fprintf(
+        stderr, "# scatter_packet_order=%s\n",
+        options.interleaveScatter ? "interleaved-destinations" : "flat");
   }
   ~Impl() {
     if (initialized) {
@@ -1249,7 +1341,8 @@ struct PacketPipeline::Impl {
     for (size_t tile = 0; tile < job.tiles; ++tile) {
       int slot = tile & 1;
       uint32_t seq = job.sequence + tile;
-      if (job.plan.transform == PacketTransform::Copy) {
+      if (job.plan.transform == PacketTransform::Copy ||
+          options.reduction == ReductionPlacement::Gpu) {
         for (int peer = 0; peer < ranks; ++peer)
           if (job.plan.sources & (1U << peer))
             waitGpu(flags[rankGroup[peer]]->uploaded[slot][peer], seq);
@@ -1564,12 +1657,35 @@ struct PacketPipeline::Impl {
       if (!recording) CUDA(cudaEventRecord(singleDone[index], ports[0].stream));
       return;
     }
-    if (plan.layout == PacketLayout::Scatter) prepareScatterScratch();
-    size_t capacity =
-        packetCapacity(plan.inputElements, plan.layout, ranks, options);
+    if (fusedGemm && options.reduction != ReductionPlacement::Cpu)
+      throw std::invalid_argument(
+          "GPU reduction has not been validated with resident GEMM");
+    bool gpuReduce = plan.transform == PacketTransform::Sum &&
+                     options.reduction == ReductionPlacement::Gpu;
+    bool interleaveScatter = gpuReduce && options.interleaveScatter &&
+                             plan.layout == PacketLayout::Scatter;
+    if (interleaveScatter && binding && binding->producerElements)
+      throw std::invalid_argument(
+          "interleaved scatter cannot use flat producer-event stripes");
+    if (plan.layout == PacketLayout::Scatter && !gpuReduce)
+      prepareScatterScratch();
+    size_t capacity = packetCapacity(
+        plan.inputElements,
+        interleaveScatter ? PacketLayout::Replicate : plan.layout, ranks,
+        options);
+    if (interleaveScatter) {
+      size_t alignment = size_t(ranks) * 8;
+      capacity = std::max(alignment, capacity / alignment * alignment);
+      if (capacity > options.packetBytes / 2)
+        throw std::invalid_argument("packet too small for interleaved scatter");
+    }
     if (!capacity)
       throw std::invalid_argument("packet too small for rank count");
     size_t tiles = (plan.inputElements + capacity - 1) / capacity;
+    if (interleaveScatter) {
+      size_t stripe = capacity / ranks, shard = plan.inputElements / ranks;
+      tiles = (shard + stripe - 1) / stripe;
+    }
     if (tiles > UINT32_MAX - sequence)
       throw std::runtime_error("router sequence exhausted");
     uint32_t first = sequence;
@@ -1581,6 +1697,8 @@ struct PacketPipeline::Impl {
                       : plan.layout == PacketLayout::Scatter
                           ? std::min(work, plan.inputElements / ranks)
                           : work;
+      if (interleaveScatter)
+        egress = std::min(capacity / ranks, plan.inputElements / ranks);
       producerBlocks[rank] = std::min<size_t>(
           crew,
           std::max<size_t>(1, (work * 2 + options.transportGrainBytes - 1) /
@@ -1668,7 +1786,7 @@ struct PacketPipeline::Impl {
     size_t cpuWork =
         work * (plan.layout == PacketLayout::Concatenate ? ranks : 1);
     int active =
-        plan.transform == PacketTransform::Copy
+        (plan.transform == PacketTransform::Copy || gpuReduce)
             ? 1
             : std::min<size_t>(
                   options.workersPerNode,
@@ -1686,7 +1804,7 @@ struct PacketPipeline::Impl {
           binding ? *binding : PacketPipeline::Binding{};
       slot.job = {plan,     first,        tiles,       active,
                   capacity, lastSequence, lastResults, lastConsumers};
-      if (plan.transform == PacketTransform::Sum) {
+      if (plan.transform == PacketTransform::Sum && !gpuReduce) {
         for (size_t tile = 0; tile < tiles; ++tile) {
           size_t begin = tile * capacity;
           uint32_t mask = destinations(
@@ -1728,6 +1846,8 @@ struct PacketPipeline::Impl {
       p.firstSequence = first;
       p.rank = rank;
       p.profile = profile;
+      p.gpuReduce = gpuReduce;
+      p.interleaveScatter = interleaveScatter;
       for (int slot = 0; slot < 2; ++slot) p.previous[slot] = previous[slot];
       p.producerBlocks = producerBlocks[rank];
       p.consumerBlocks = consumerBlocks[rank];

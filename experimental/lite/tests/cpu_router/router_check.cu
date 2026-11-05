@@ -16,7 +16,13 @@ __device__ uint16_t value(int rank, size_t index, int step) {
             (step % 5) / 16.0f;
   return __bfloat16_as_ushort(__float2bfloat16_rn(v));
 }
-__global__ void producer(uint16_t* input, size_t n, int rank, int step) {
+__global__ void producer(uint16_t* input, size_t n, int rank, int step,
+                         bool delayed) {
+  if (delayed && threadIdx.x == 0) {
+    auto start = clock64();
+    while (clock64() - start < 200000) __nanosleep(64);
+  }
+  __syncthreads();
   for (size_t i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x)
     input[i] = value(rank, i, step);
@@ -44,6 +50,10 @@ __global__ void consumer(uint16_t const* output, size_t n, int rank, int step,
 int main(int argc, char** argv) {
   try {
     bool small = false;
+    bool gpuReduce = false;
+    bool interleaveScatter = false;
+    int delayRank = -1;
+    size_t packetBytes = 512UL << 10;
     int ranks = 8;
     std::vector<int> devices;
     for (int i = 1; i < argc; ++i) {
@@ -57,6 +67,15 @@ int main(int argc, char** argv) {
         ranks = std::stoi(argv[++i]);
       else if (arg == "small" || arg == "--small")
         small = true;
+      else if (arg == "--gpu-reduce")
+        gpuReduce = true;
+      else if (arg == "--interleave-scatter") {
+        gpuReduce = true;
+        interleaveScatter = true;
+      } else if (arg == "--delay-rank" && i + 1 < argc)
+        delayRank = std::stoi(argv[++i]);
+      else if (arg == "--packet-bytes" && i + 1 < argc)
+        packetBytes = std::stoull(argv[++i]);
       else
         throw std::invalid_argument("unknown router check option");
     }
@@ -64,9 +83,14 @@ int main(int argc, char** argv) {
       ranks = int(devices.size());
     else
       for (int rank = 0; rank < ranks; ++rank) devices.push_back(rank);
-    if (ranks < 1 || ranks > uccl_lite::cpu_router::kMaxRanks)
+    if (ranks < 1 || ranks > uccl_lite::cpu_router::kMaxRanks ||
+        delayRank < -1 || delayRank >= ranks)
       throw std::invalid_argument("invalid rank count");
     uccl_lite::cpu_router::CpuRouterOptions options;
+    options.interleaveScatter = interleaveScatter;
+    options.packetBytes = packetBytes;
+    if (gpuReduce)
+      options.reduction = uccl_lite::cpu_router::ReductionPlacement::Gpu;
     options.maxTensorBytes = 32UL << 20;
     if (std::getenv("UCCL_LITE_TRANSPORT") &&
         std::string(std::getenv("UCCL_LITE_TRANSPORT")) == "dma")
@@ -108,8 +132,8 @@ int main(int argc, char** argv) {
         bool source = kind != BC || rank == ranks - 1,
              destination = kind != RD || rank == ranks / 2;
         if (source)
-          producer<<<64, 256, 0, streams[rank]>>>(input, plan.inputElements,
-                                                  rank, step);
+          producer<<<64, 256, 0, streams[rank]>>>(
+              input, plan.inputElements, rank, step, rank == delayRank);
         ports[rank] = {source ? input : nullptr, destination ? out : nullptr,
                        streams[rank], devices[rank]};
       }

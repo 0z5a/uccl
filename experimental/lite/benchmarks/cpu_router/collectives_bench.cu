@@ -1,6 +1,7 @@
 // Standalone BF16 AR/AG/RS dispatcher example and paired local calibration.
 // The optional module is independent of NCCL; only this fallback harness links
 // it.
+#include "nccl_identity.hpp"
 #include "uccl_lite/collective_dispatch.hpp"
 #include <algorithm>
 #include <cstdio>
@@ -15,6 +16,7 @@
 #include <nccl.h>
 
 using namespace uccl_lite;
+extern char** environ;
 namespace {
 void cudaCheck(cudaError_t e) {
   if (e != cudaSuccess) throw std::runtime_error(cudaGetErrorString(e));
@@ -45,7 +47,10 @@ struct Config {
   std::vector<int> devices;
   int gpus = 4, warmup = 3, iterations = 10, repeats = 3;
   size_t begin = 1024, end = 1 << 20;
+  size_t packetBytes = 512UL << 10;
   bool inPlace = false;
+  bool gpuReduce = false;
+  bool interleaveScatter = false;
   std::string operation = "all", profile, reference, calibrate, samples;
   RouterMode mode = RouterMode::Auto;
 };
@@ -192,6 +197,8 @@ int main(int argc, char** argv) {
         cfg.begin = std::stoull(next());
       else if (arg == "--end")
         cfg.end = std::stoull(next());
+      else if (arg == "--packet-bytes")
+        cfg.packetBytes = std::stoull(next());
       else if (arg == "--op")
         cfg.operation = next();
       else if (arg == "--backend")
@@ -206,7 +213,12 @@ int main(int argc, char** argv) {
         cfg.samples = next();
       else if (arg == "--in-place")
         cfg.inPlace = true;
-      else if (arg == "--warmup")
+      else if (arg == "--gpu-reduce")
+        cfg.gpuReduce = true;
+      else if (arg == "--interleave-scatter") {
+        cfg.gpuReduce = true;
+        cfg.interleaveScatter = true;
+      } else if (arg == "--warmup")
         cfg.warmup = std::stoi(next());
       else if (arg == "--iterations")
         cfg.iterations = std::stoi(next());
@@ -220,6 +232,11 @@ int main(int argc, char** argv) {
             "  --backend auto|off|force  --begin BYTES --end BYTES --in-place\n"
             "  --reference CSV  --profile FILE  --calibrate NEW_FILE\n"
             "  --samples NEW_CSV (checked per-invocation timing records)\n"
+            "  --gpu-reduce (experimental destination-GPU Sum arithmetic)\n"
+            "  --interleave-scatter (GPU reduction with all-destination packet "
+            "stripes)\n"
+            "  --packet-bytes BYTES (upper bound; default 524288, minimum "
+            "131072)\n"
             "  --warmup N --iterations N --repeats N (at least 3)\n"
             "Auto keeps NCCL unless matching validated evidence shows a stable "
             "gain.\n"
@@ -234,7 +251,9 @@ int main(int argc, char** argv) {
     if (cfg.devices.empty() || cfg.devices.size() > 32 || cfg.begin < 128 ||
         cfg.end < cfg.begin || cfg.end > (1UL << 30) ||
         cfg.begin % (cfg.devices.size() * 2) || cfg.warmup < 1 ||
-        cfg.iterations < 1 || cfg.repeats < 3)
+        cfg.iterations < 1 || cfg.repeats < 3 ||
+        cfg.packetBytes < (128UL << 10) || cfg.packetBytes > (32UL << 20) ||
+        cfg.packetBytes % 16)
       throw std::invalid_argument(
           "invalid device count, size, or iteration settings");
     if (!cfg.calibrate.empty() && std::filesystem::exists(cfg.calibrate))
@@ -255,11 +274,15 @@ int main(int argc, char** argv) {
                       "slowest_rank_us\n";
     }
     auto topology = inspectTopology(cfg.devices);
+    // Invalidate pre-fingerprint local profiles even when this invocation has
+    // no NCCL overrides. Historical reference matching is a separate opt-in.
+    topology.identity += ";benchmark-nccl-config-v1";
     int ncclVersion;
     ncclCheck(ncclGetVersion(&ncclVersion));
     BackendPolicy policy;
     policy.mode = cfg.mode;
-    policy.fallbackIdentity = "nccl:" + std::to_string(ncclVersion);
+    policy.fallbackIdentity = benchmark::ncclFallbackIdentity(
+        ncclVersion, benchmark::ncclConfiguration(environ));
     if (!cfg.reference.empty())
       policy.measurements = loadL4ReferenceProfile(cfg.reference);
     if (!cfg.profile.empty()) {
@@ -293,6 +316,13 @@ int main(int argc, char** argv) {
       Buffers buffers(cfg.devices, cfg.end);
       cpu_router::CpuRouterOptions options;
       options.maxTensorBytes = cfg.end;
+      options.packetBytes = cfg.packetBytes;
+      options.reduction = cfg.gpuReduce ? cpu_router::ReductionPlacement::Gpu
+                                        : cpu_router::ReductionPlacement::Cpu;
+      options.interleaveScatter = cfg.interleaveScatter;
+      char const* routerName = cfg.interleaveScatter ? "cpu-router-gpu-striped"
+                               : cfg.gpuReduce       ? "cpu-router-gpu-reduce"
+                                                     : "cpu-router";
       CollectiveDispatcher selected(topology, policy, fallback, options);
       BackendPolicy forced = policy, off = policy;
       forced.mode = RouterMode::Force;
@@ -339,9 +369,9 @@ int main(int argc, char** argv) {
             for (int repeat = 0; repeat < cfg.repeats; ++repeat) {
               if (repeat % 2 == 0) {
                 baselineSamples.push_back(measure(*baseline, "nccl", repeat));
-                cpuSamples.push_back(measure(*router, "cpu-router", repeat));
+                cpuSamples.push_back(measure(*router, routerName, repeat));
               } else {
-                cpuSamples.push_back(measure(*router, "cpu-router", repeat));
+                cpuSamples.push_back(measure(*router, routerName, repeat));
                 baselineSamples.push_back(measure(*baseline, "nccl", repeat));
               }
             }
@@ -361,7 +391,7 @@ int main(int argc, char** argv) {
               auto t = backend ? m.router : m.fallback;
               std::printf("%s,%zu,%d,%s,%.3f,%.3f,%.3f,%.4f,%d\n",
                           collectiveName(op), bytes, cfg.inPlace,
-                          backend ? "cpu-router" : "fallback", t.median,
+                          backend ? routerName : "fallback", t.median,
                           t.minimum, t.maximum, m.fallback.median / t.median,
                           backend ? router->routerInitialized()
                                   : baseline->routerInitialized());
@@ -376,13 +406,13 @@ int main(int argc, char** argv) {
               samples.push_back(
                   run(selected, call, buffers, cfg.iterations, true,
                       cfg.samples.empty() ? nullptr : &sampleOutput,
-                      decision.cpuRouter ? "cpu-router" : "nccl", repeat));
+                      decision.cpuRouter ? routerName : "nccl", repeat));
             auto t = summarize(samples);
             std::printf("%s,%zu,%d,%s,%.3f,%.3f,%.3f,%.4f,%d\n",
                         collectiveName(op), bytes, cfg.inPlace,
-                        decision.cpuRouter ? "cpu-router" : "fallback",
-                        t.median, t.minimum, t.maximum,
-                        decision.measuredSpeedup, selected.routerInitialized());
+                        decision.cpuRouter ? routerName : "fallback", t.median,
+                        t.minimum, t.maximum, decision.measuredSpeedup,
+                        selected.routerInitialized());
           }
         }
     }

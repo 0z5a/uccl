@@ -135,7 +135,14 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
   if (options_.backend != cpu_router::TransportBackend::GpuKernel)
     throw std::invalid_argument(
         "adaptive CPU-router dispatch supports the SM transport only");
+  if (options_.reduction != cpu_router::ReductionPlacement::Cpu &&
+      options_.reduction != cpu_router::ReductionPlacement::Gpu)
+    throw std::invalid_argument("invalid reduction placement");
+  if (options_.interleaveScatter &&
+      options_.reduction != cpu_router::ReductionPlacement::Gpu)
+    throw std::invalid_argument("interleaved scatter requires GPU reduction");
   topology_.referenceRouterOptions =
+      options_.reduction == cpu_router::ReductionPlacement::Cpu &&
       options_.packetBytes == (512UL << 10) &&
       options_.minPacketBytes == (128UL << 10) &&
       options_.transportBlocks == 64 && options_.transportThreads == 256 &&
@@ -153,6 +160,11 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
       << ',' << options_.scatterWorkersPerNode << ',' << options_.grainElements
       << ',' << options_.replayCpu << ',' << options_.inlineReplay << ','
       << options_.concurrentProducer;
+  // Keep the legacy CPU identity stable, but never reuse its measurements for
+  // a different placement. GPU mode needs its own exact local calibration.
+  if (options_.reduction != cpu_router::ReductionPlacement::Cpu)
+    key << ";reduction=gpu-v1";
+  if (options_.interleaveScatter) key << ";scatter=interleaved-v2";
   for (int cpu : options_.workerCpus) key << ";worker=" << cpu;
   for (int node : options_.numaNodes) key << ";numa=" << node;
   topology_.identity += key.str();

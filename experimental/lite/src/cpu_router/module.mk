@@ -7,14 +7,18 @@ ROUTER_OBJECTS := $(addprefix $(ROUTER_BUILD)/,$(addsuffix .o,$(ROUTER_HOST) $(R
 ROUTER_STATIC := $(ROUTER_BUILD)/libuccl_lite_cpu_router.a
 ROUTER_SHARED := $(ROUTER_BUILD)/libuccl_lite_cpu_router.so
 ROUTER_LIB := $(ROUTER_STATIC) -L$(CUDA_HOME)/lib64 -lcudart -lpthread -ldl -Wl,-rpath,$(CUDA_HOME)/lib64
-ROUTER_CUDA_TESTS := primitives_check primitive_example router_check router_graph_check
+ROUTER_CUDA_TESTS := primitives_check primitive_example router_check router_graph_check gpu_reduction_check
 ROUTER_HOST_TESTS := cpu_bf16_check router_core_check dispatcher_check
 
-.PHONY: cpu-router adaptive-collectives router-checks router-policy-check
+.PHONY: cpu-router adaptive-collectives router-checks router-policy-check nccl-identity-check
 cpu-router: $(ROUTER_STATIC) $(ROUTER_SHARED)
 adaptive-collectives: $(BUILD)/uccl_lite_collectives
 router-policy-check: $(BUILD)/uccl_lite_router_policy_check
-router-checks: cpu-router router-policy-check $(addprefix $(BUILD)/uccl_lite_,$(ROUTER_CUDA_TESTS) $(ROUTER_HOST_TESTS))
+router-checks: cpu-router router-policy-check nccl-identity-check $(addprefix $(BUILD)/uccl_lite_,$(ROUTER_CUDA_TESTS) $(ROUTER_HOST_TESTS))
+nccl-identity-check: $(BUILD)/uccl_lite_nccl_identity_check
+
+$(BUILD)/uccl_lite_nccl_identity_check: tests/cpu_router/nccl_identity_check.cc benchmarks/cpu_router/nccl_identity.hpp | $(BUILD)
+	$(CXX) -O2 -std=c++17 $< -o $@
 
 $(ROUTER_BUILD):
 	mkdir -p $@

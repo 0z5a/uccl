@@ -50,6 +50,40 @@ class SummaryTest(unittest.TestCase):
         result = comparison.summarize(rows, "reducescatter", [1024], 5, 2, 4)
         self.assertEqual(result[1]["speedup_vs_local_nccl"], 2)
 
+    def test_gpu_reduction_is_separate_backend(self):
+        rows = [
+            (
+                {**row, "backend": "cpu-router-gpu-reduce"}
+                if row["backend"] == "cpu-router"
+                else row
+            )
+            for row in self.rows
+        ]
+        result = comparison.summarize(
+            rows, "allgather", [1024], 5, 2, 4, "cpu-router-gpu-reduce"
+        )
+        self.assertEqual(result[1]["backend"], "cpu-router-gpu-reduce")
+        with self.assertRaises(ValueError):
+            self.summary(rows)
+
+    def test_striped_is_not_contiguous_reduction(self):
+        rows = [
+            (
+                {**row, "backend": "cpu-router-gpu-striped"}
+                if row["backend"] == "cpu-router"
+                else row
+            )
+            for row in self.rows
+        ]
+        result = comparison.summarize(
+            rows, "allgather", [1024], 5, 2, 4, "cpu-router-gpu-striped"
+        )
+        self.assertEqual(result[1]["speedup_vs_local_nccl"], 2)
+        with self.assertRaises(ValueError):
+            comparison.summarize(
+                rows, "allgather", [1024], 5, 2, 4, "cpu-router-gpu-reduce"
+            )
+
     def test_invalid_fields(self):
         for field, value in (
             ("collective", "reducescatter"),

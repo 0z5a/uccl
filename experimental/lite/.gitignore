@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 !/benchmarks/data/*.csv
 !/benchmarks/data/*_provenance.json
+!/benchmarks/data/reduction-placement/*.csv
+!/benchmarks/data/reduction-placement/*_provenance.json

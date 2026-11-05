@@ -21,6 +21,9 @@ struct PacketPort {
 };
 enum class PacketTransform : uint32_t { Sum, Copy };
 enum class PacketLayout : uint32_t { Replicate, Concatenate, Scatter };
+// CPU routing/ownership stays shared; only the Sum arithmetic is relocated.
+// GPU mode is an opt-in SM-transport ablation, not an automatic policy.
+enum class ReductionPlacement : uint32_t { Cpu, Gpu };
 
 #ifdef __CUDACC__
 #define UCCL_LITE_HD __host__ __device__
@@ -174,6 +177,12 @@ struct PacketPipelineOptions {
   // separately from the executor pool to avoid waking every AllReduce worker.
   // Zero uses the full workersPerNode limit; positive values are upper bounds.
   int scatterWorkersPerNode = 16;
+  ReductionPlacement reduction = ReductionPlacement::Cpu;
+  // GPU reduction only: each packet carries one stripe for every destination
+  // instead of draining a complete destination shard before the next one.
+  // Keeps all destination PCIe links active; source/destination layout at the
+  // public API is unchanged. Not compatible with flat producer-event stripes.
+  bool interleaveScatter = false;
 };
 
 // One process, 1..kMaxRanks ports in arbitrary device/NUMA order. All GPU

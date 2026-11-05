@@ -28,12 +28,14 @@ def command(args, env=None):
     }
 
 
-def summarize(samples, operation, sizes, repeats, iterations, ranks):
+def summarize(
+    samples, operation, sizes, repeats, iterations, ranks, router_backend="cpu-router"
+):
     """Require every checked iteration; summarize means, not best observations."""
     expected = {
         (size, backend, repeat, iteration)
         for size in sizes
-        for backend in ("nccl", "cpu-router")
+        for backend in ("nccl", router_backend)
         for repeat in range(repeats)
         for iteration in range(iterations)
     }
@@ -64,7 +66,7 @@ def summarize(samples, operation, sizes, repeats, iterations, ranks):
     result = []
     for size in sizes:
         backend_stats = {}
-        for backend in ("nccl", "cpu-router"):
+        for backend in ("nccl", router_backend):
             run_means = [
                 statistics.mean(values[size, backend, r, i] for i in range(iterations))
                 for r in range(repeats)
@@ -107,6 +109,17 @@ def main():
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--required-nccl", type=int, default=23007)
+    parser.add_argument("--packet-bytes", type=int, default=512 << 10)
+    parser.add_argument(
+        "--gpu-reduce",
+        action="store_true",
+        help="Opt-in destination-GPU reduction ablation",
+    )
+    parser.add_argument(
+        "--interleave-scatter",
+        action="store_true",
+        help="GPU reduction with all-destination packet stripes",
+    )
     args = parser.parse_args()
     if (
         args.gpus < 2
@@ -117,6 +130,9 @@ def main():
         or args.end > 1 << 30
         or args.iterations < 1
         or args.warmup < 1
+        or args.packet_bytes < 128 << 10
+        or args.packet_bytes > 32 << 20
+        or args.packet_bytes % 16
     ):
         parser.error(
             "invalid size/count; full-array bytes must divide into BF16 shards"
@@ -132,6 +148,11 @@ def main():
         "NCCL_DEBUG": "INFO",
     }
     env.update(overrides)
+    router_backend = (
+        "cpu-router-gpu-striped"
+        if args.interleave_scatter
+        else "cpu-router-gpu-reduce" if args.gpu_reduce else "cpu-router"
+    )
     sizes = []
     size = args.begin
     while size <= args.end:
@@ -142,6 +163,8 @@ def main():
         "paper_pdf_sha256": "977b985bcb74cfb1c886e68805aad93682f44ffb03010e8968099b32bc8d7941",
         "paper_setup_reproduced": False,
         "comparison_scope": "local eager BF16 primitives, not ThunderEP or end-to-end",
+        "router_backend": router_backend,
+        "router_packet_bytes": args.packet_bytes,
         "measurement_scope": "slowest-rank CUDA events; includes eager host submission gaps",
         "aggregation": "arithmetic mean of five per-run arithmetic means; shared process",
         "status": "running",
@@ -180,6 +203,10 @@ def main():
             str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in [
                 ROOT / "benchmarks/cpu_router/collectives_bench.cu",
+                ROOT / "benchmarks/cpu_router/nccl_identity.hpp",
+                ROOT / "src/cpu_router/packet_pipeline.cu",
+                ROOT / "include/uccl_lite/cpu_router/packet_pipeline.hpp",
+                ROOT / "src/cpu_router/collective_dispatch.cc",
                 Path(__file__).resolve(),
             ]
         },
@@ -210,12 +237,18 @@ def main():
                 str(args.iterations),
                 "--repeats",
                 "5",
+                "--packet-bytes",
+                str(args.packet_bytes),
                 "--calibrate",
                 str(out / f"{operation}.profile"),
                 "--samples",
                 str(samples),
             ]
             manifest["commands"].append(cmd)
+            if args.gpu_reduce:
+                cmd.append("--gpu-reduce")
+            if args.interleave_scatter:
+                cmd.append("--interleave-scatter")
             save()
             print(
                 f"Running {operation}: {len(sizes)} sizes, 5 paired repetitions",
@@ -248,6 +281,7 @@ def main():
                     5,
                     args.iterations,
                     args.gpus,
+                    router_backend,
                 )
             )
         with (out / "summary.csv").open("w", newline="") as handle:

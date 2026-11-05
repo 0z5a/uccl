@@ -28,6 +28,9 @@ __global__ void validate(__nv_bfloat16 const* x, size_t count, float expected,
 int main(int argc, char** argv) {
   try {
     bool large = false;
+    bool gpuReduce = false;
+    bool interleaveScatter = false;
+    size_t packetBytes = 512UL << 10;
     size_t contributionElements = 64;
     bool customElements = false;
     int ranks = 8;
@@ -47,12 +50,19 @@ int main(int argc, char** argv) {
         customElements = true;
       } else if (arg == "--large")
         large = true;
-      else if (arg == "--c-api")
+      else if (arg == "--gpu-reduce")
+        gpuReduce = true;
+      else if (arg == "--interleave-scatter") {
+        gpuReduce = true;
+        interleaveScatter = true;
+      } else if (arg == "--c-api")
         capi = true;
       else if (arg == "--c-api-legacy") {
         capi = true;
         legacy = true;
-      } else
+      } else if (arg == "--packet-bytes" && i + 1 < argc)
+        packetBytes = std::stoull(argv[++i]);
+      else
         throw std::invalid_argument("unknown graph check argument");
     }
     if (!devices.empty())
@@ -67,6 +77,13 @@ int main(int argc, char** argv) {
       throw std::invalid_argument("invalid graph contribution size");
     size_t extent = std::max<size_t>(1024, contributionElements * ranks);
     uccl_lite::cpu_router::CpuRouterOptions options;
+    options.interleaveScatter = interleaveScatter;
+    options.packetBytes = packetBytes;
+    if (gpuReduce && capi)
+      throw std::invalid_argument(
+          "GPU reduction is currently a C++-only option");
+    if (gpuReduce)
+      options.reduction = uccl_lite::cpu_router::ReductionPlacement::Gpu;
     if (std::getenv("UCCL_LITE_INLINE_REPLAY")) options.inlineReplay = true;
     if (std::getenv("UCCL_LITE_TRANSPORT") &&
         std::string(std::getenv("UCCL_LITE_TRANSPORT")) == "dma")

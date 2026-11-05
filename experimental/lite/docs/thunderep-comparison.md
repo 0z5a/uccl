@@ -97,6 +97,11 @@ experiments before interpreting small-message overheads as device latency.
 
 ## Architecture experiments to test next
 
+The first implemented experiment is
+[reduction placement with destination striping](reduction-placement.md): CPU
+reduction, flat destination-GPU reduction, and an interleaved destination schedule.
+It remains opt-in and does not change the default backend-selection policy.
+
 ### First local diagnostic — November 5, 2026
 
 The full 21-size AG/RS sweep completed with **8,400 checked timed calls** and
@@ -122,7 +127,8 @@ including unfavorable cases and per-iteration outliers, are retained in the
 These observations prioritize a controlled CPU/GPU/hybrid reduction-placement
 ablation, plus a separate submission/graph-timing analysis. They do **not**
 identify the cause by themselves and do not compare against ThunderEP. No
-architecture change or superiority claim has yet passed the completion gates.
+superiority claim has yet passed the completion gates. The implementation and
+subsequent ablations are documented separately above.
 
 Validation of this measurement tooling: four host-side summary tests pass; the
 31 existing policy checks pass; 108 additional in-place calls cover all three
@@ -151,9 +157,10 @@ reproduce the reference's mechanisms; they are not new contributions.
    computation without per-replay host graph edits. Validate slot reuse, delayed
    senders, changing routes and repeated graph replay before timing.
 
-These are hypotheses, not implemented or measured improvements. Select the
-first implementation using the local AG/RS bottleneck measurements, then carry
-it through layer and model-level ablations on the required hardware.
+The reduction-placement experiment is now implemented; hybrid NUMA reduction,
+GPU-published routing, and graph-stable MoE overlap remain hypotheses. Carry
+validated primitive changes through layer and model-level ablations on the
+required hardware before making a complete-system claim.
 
 A concrete existing limitation is visible in
 [packet_pipeline.cu](../src/cpu_router/packet_pipeline.cu): the `Copy` branch of
@@ -175,5 +182,6 @@ release acknowledgements must remain correct when exposing earlier readiness.
   data, unfavorable cases, OOMs, environment and source identities.
 - If UCCL Lite loses, implement and ablate system-level changes, then repeat the
   same measurements. No selective shape or baseline substitution.
-- Publish matched navy/light-blue bars only after these gates pass. Keep
-  primitive, layer, and complete-inference claims separate.
+- Publish matched ThunderEP head-to-head bars only after these gates pass.
+  Local ablation figures must remain explicitly labeled as local diagnostics.
+  Keep primitive, layer, and complete-inference claims separate.

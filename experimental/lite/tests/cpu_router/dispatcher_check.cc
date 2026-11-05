@@ -108,6 +108,31 @@ int main() {
     CollectiveDispatcher disabled(t, off, callback);
     require(!disabled.prepare(call).cpuRouter && !disabled.routerInitialized(),
             "explicit off remains uninitialized");
+    cpu_router::CpuRouterOptions gpu;
+    gpu.reduction = cpu_router::ReductionPlacement::Gpu;
+    CollectiveDispatcher gpuAutomatic(t, autoPolicy, callback, gpu);
+    require(!gpuAutomatic.prepare(call).cpuRouter &&
+                !gpuAutomatic.routerInitialized(),
+            "unmeasured GPU reduction retains fallback without allocation");
+    require(
+        !gpuAutomatic.topology().referenceRouterOptions &&
+            gpuAutomatic.topology().identity != automatic.topology().identity,
+        "GPU reduction does not match historical CPU reduction profiles");
+    gpu.interleaveScatter = true;
+    gpu.reduction = cpu_router::ReductionPlacement::Gpu;
+    CollectiveDispatcher striped(t, autoPolicy, callback, gpu);
+    require(striped.topology().identity != gpuAutomatic.topology().identity &&
+                !striped.prepare(call).cpuRouter &&
+                !striped.routerInitialized(),
+            "striped placement requires its own measurements and stays "
+            "uninitialized");
+    gpu.reduction = cpu_router::ReductionPlacement::Cpu;
+    rejects([&] { CollectiveDispatcher invalid(t, autoPolicy, callback, gpu); },
+            "interleaved scatter cannot silently use CPU reduction");
+    gpu.reduction = static_cast<cpu_router::ReductionPlacement>(99);
+    rejects(
+        [&] { CollectiveDispatcher invalid(t, autoPolicy, callback, gpu); },
+        "invalid reduction placement is rejected before CUDA initialization");
     std::cout << "Dispatcher: " << checks
               << " checks passed; no GPU initialization needed\n";
   } catch (std::exception const& e) {

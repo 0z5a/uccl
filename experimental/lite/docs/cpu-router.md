@@ -1,5 +1,9 @@
 # Optional CPU-router module
 
+The opt-in [reduction-placement experiment](reduction-placement.md) adds
+destination-GPU arithmetic and interleaved scatter packets to the C++ module.
+Existing CPU defaults and measurement-gated fallback behavior are retained.
+
 CPU-router is an independent component for routing BF16 collective traffic
 through NUMA-local mapped host memory. It is useful when direct peer paths are
 unavailable or less efficient for the measured workload. It can be left entirely
