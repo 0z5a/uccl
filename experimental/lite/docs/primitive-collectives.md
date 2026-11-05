@@ -1,8 +1,8 @@
 # Standalone AllGather and ReduceScatter reference results
 
-These are historical results from the related CPU-router primitive branch,
-whose runtime is not included in this subtree. The current Makefile does not
-build standalone AllGather or ReduceScatter executables. The included dense
+These are historical results from the CPU-router primitive branch, now ported
+as the [optional CPU-router module](cpu-router.md). `make adaptive-collectives`
+builds a standalone BF16 AR/AG/RS dispatcher and calibration benchmark. The included dense
 fusion benchmarks exercise AG/RS as part of communication–GEMM pipelines;
 their timings must not be used as standalone collective measurements.
 
@@ -21,8 +21,9 @@ It contains 576 summary rows: three collectives × two placements × four backen
 × 24 sizes. AllReduce rows are retained for completeness; the README uses this
 file only for the eight-GPU standalone AllGather and ReduceScatter figures.
 
-No application integration, adapter library, or CPU-router runtime is imported
-with this dataset. No new GPU benchmark was run for these figures.
+The data import was followed by a modular runtime port with new four-GPU
+validation. No application integration or NCCL interposition adapter is included.
+No eight-GPU benchmark was rerun for these figures.
 
 ## Hardware and method
 
@@ -87,5 +88,6 @@ At 1 GiB in-place:
 
 Regenerate both plots, together with the other reference figures, using
 `python3 scripts/plot_results.py --preview`. This redraws committed measurements;
-reproducing the benchmark requires the separate source revision and eight-GPU
-testbed described above.
+reproducing the historical benchmark requires its recorded source revision and
+eight-GPU testbed. The new port has its own build, selection, and calibration
+instructions in [cpu-router.md](cpu-router.md).

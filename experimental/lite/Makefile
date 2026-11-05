@@ -73,5 +73,8 @@ $(BUILD)/header_check.o: benchmarks/header_check.cu | $(BUILD)
 
 help:
 	@printf '%s\n' 'UCCL Lite targets:' '  make single-node  (default): AllReduce and All-to-All' '  make fusion: dense and expert-parallel MoE benchmarks' '  make probes: standalone GEMM and overlap diagnostics' '  make headers: compile-check reusable MoE headers' '  make all: all of the above' '  make multinode: two-node benchmarks (Open MPI required)' '  make <name>: build one executable, e.g. tccl_ring_allreduce' 'See docs/build.md for dependency paths and launch commands.'
+	@printf '%s\n' '  make cpu-router: optional static/shared CPU-router module' '  make adaptive-collectives: BF16 dispatcher + NCCL calibration benchmark' '  make router-checks: core, policy, eager, and graph correctness executables'
+
+include src/cpu_router/module.mk
 
 -include $(wildcard $(BUILD)/*.d)

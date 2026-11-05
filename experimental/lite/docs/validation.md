@@ -51,8 +51,58 @@ were rerun for it.
 Standalone AllGather and ReduceScatter figures additionally use the complete
 matched eight-L4 BF16 CPU-router summary from source revision `9d088c9`.
 The CSV checksum, dimensions, bandwidth normalization, and both placements were
-checked. Its separate runtime is not included or validated by the current build;
-see [primitive results](primitive-collectives.md).
+checked. The subsequent runtime port is described in
+[CPU-router module](cpu-router.md); its historical eight-GPU measurements remain
+separate from the current host's validation.
+
+## CPU-router module integration
+
+The optional static/shared library, adaptive BF16 benchmark, and all router test
+executables build on the current four-L4 host (CUDA 12.9, driver 595.58.03).
+The module's shared-library dependencies contain neither NCCL nor MSCCL++.
+Only the benchmark links NCCL 2.28.7 as its existing-backend callback.
+
+| Check | Result |
+| --- | --- |
+| Pure host backend policy | 31 checks pass, including matched eight-L4 wins, four-GPU rejection of eight-GPU data, version/topology/dtype/placement mismatch, regressions, noisy ranges, and profile round trip |
+| Dispatcher boundary | 21 checks pass without GPU initialization; fallback callback, no router allocation, explicit prepare, dtype/capacity semantics, placement and device-order validation |
+| CPU BF16 reference | 524,312 scalar-oracle checks pass |
+| Router core operations | Host `forward/process/multicast` checks pass |
+| Primitive channels and ownership | SM/DMA channels, peer transfer, CPU tasks, 300 multi-reader generations, and owned bindings across queue wrap pass on four GPUs |
+| Direct AR/AG/RS example | 36 cases pass across SM/DMA, tails, and both placements on two GPUs |
+| Four-GPU eager pipeline | 732 mixed producer/collective/consumer cases pass |
+| Four-GPU SM CUDA Graph pipeline | 1,000 captured mixed collectives across five replays and 128-entry queue wrap pass through both C++ and count-aware C APIs |
+| Adaptive example | AR/AG/RS pass with auto fallback and with forced router, including 1 MiB in-place calls |
+
+The imported primitive test originally assumed eight visible GPUs. It now uses
+the available rank count (up to eight), discovers NUMA nodes/CPU affinity, and
+uses host routing when the direct channel peer-access test is unavailable.
+
+### Local benefit gate
+
+The paired calibration uses BF16, four GPUs, out-of-place AR/AG/RS at
+1/2/4/8 MiB, five warmups, ten timed iterations per repetition, and three
+repetitions with alternating backend order. Each invocation is independently
+checked outside timing. Min/median/max are over run-level medians. CPU-router
+and fallback instances coexist during calibration; initialization is excluded.
+The recorded `dispatcher_router_initialized` flag describes each dispatcher,
+not whether another calibration candidate exists in the process.
+
+All 12 workloads retain NCCL in automatic mode: no measured router median
+beats the fallback. Loading the saved profile in a fresh process selects the
+fallback for all 12 and initializes **no CPU-router instance**. Both the raw
+[calibration summary](../benchmarks/data/cpu_router_4l4_calibration.csv) and
+[selection audit](../benchmarks/data/cpu_router_4l4_selection.csv) are retained.
+The large AllReduce timing outlier is preserved in the range rather than removed.
+
+At 8 MiB, the paired median latencies (fallback / router) are 725.5 / 1670.1 µs
+for AR, 422.9 / 491.0 µs for AG, and 400.4 / 1083.4 µs for RS. These eager
+integration measurements are not replacements for the historical collective
+plots or a comparison against the separate float32 MSCCL++ implementation.
+
+No eight-GPU machine was used for fresh validation. The eight-L4 reference
+selection behavior is checked against the archived measurements in host tests;
+its newly ported runtime performance still needs an eight-GPU rerun.
 
 ## What this validation does not establish
 

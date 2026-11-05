@@ -4,7 +4,7 @@
 
 **Topology-aware collectives and communication–compute fusion for PCIe GPUs.**
 
-[Build & run](docs/build.md) · [Collectives](docs/collectives.md) · [Fusion](docs/fusion.md) · [Multi-node](docs/multinode.md) · [Measurements](benchmarks/README.md)
+[Build & run](docs/build.md) · [CPU-router module](docs/cpu-router.md) · [Collectives](docs/collectives.md) · [Fusion](docs/fusion.md) · [Multi-node](docs/multinode.md) · [Measurements](benchmarks/README.md)
 
 </div>
 
@@ -14,8 +14,11 @@ as its inputs arrive. It combines low-latency packet protocols, scheduled peer
 transfers, copy-engine rings, and readiness-driven GEMM fusion on
 [MSCCL++](https://github.com/microsoft/mscclpp).
 
-The current implementation is specialized to **four NVIDIA L4 GPUs, PCIe Gen4,
-no NVLink, with two GPUs per NUMA socket**. Two-node AllReduce extends that
+The MSCCL++ peer paths are specialized to **four NVIDIA L4 GPUs, PCIe Gen4,
+no NVLink, with two GPUs per NUMA socket**. The optional **CPU-router module**
+provides BF16 AllReduce, AllGather, and ReduceScatter through NUMA-local host
+memory for 1–32 local GPUs, with a policy that enables it only when matching
+measurements show a stable gain. Two-node AllReduce extends the four-GPU peer
 layout to eight GPUs across two network rails. This is an experimental kernel
 and benchmark project: application integrations and serving-framework hooks
 are intentionally outside its scope.
@@ -26,7 +29,7 @@ are intentionally outside its scope.
 | :--- | :--- | :--- |
 | **AllReduce** | LL packets, NUMA hierarchy, copy-engine ring | **6.08 µs** at 1 KiB; **20.13 GB/s** bus bandwidth at 1 GiB |
 | **All-to-All** | Collision-free peer schedules on SMs and copy engines | **74.47 GB/s** aggregate at 256 MiB/rank |
-| **AllGather / ReduceScatter reference results** | Archived eight-GPU CPU-router primitive experiments; runtime not included here | **5.25 / 5.59 GB/s** bus bandwidth at 1 GiB, BF16, in-place |
+| **CPU-router module** | Optional BF16 AR/AG/RS backend; NUMA memory, channels, CPU executor, packet pipeline | Historical 8-L4 AG/RS: **5.25 / 5.59 GB/s** at 1 GiB; local selection is measurement-gated |
 | **Dense fusion** | AllGather + GEMM, GEMM + ReduceScatter, GEMM + AllReduce | **1.47× / 1.24× / 1.30×** over cuBLAS + NCCL at the large reference shapes |
 | **Expert-parallel MoE** | Ragged dispatch, grouped GEMM, activation, down projection, combine | **1.39–1.52×** full-layer speedup at large token counts |
 | **Tensor-parallel MoE** | Reusable down/combine/AllReduce and direct-decode device kernels | **1.10–1.14×** Qwen prefill layer; direct decode wins at selected tiny batches |
@@ -92,6 +95,53 @@ make -j2 fusion \
 See [build instructions](docs/build.md) for all targets, dependency versions,
 small correctness runs, and the optional two-node setup.
 
+## Optional CPU-router backend
+
+CPU-router is a separately built library, not a replacement for the existing
+four-GPU peer paths. A caller supplies its existing backend as a callback.
+The dispatcher retains that callback unless the operation, dtype, size,
+placement, topology, and baseline match validated measurements showing at least
+**3% speedup with non-overlapping timing ranges**. No matching evidence means
+no router initialization, no router worker threads, and no pinned router buffers.
+
+```mermaid
+flowchart LR
+    Call[Collective call] --> Policy[Topology + workload + measured benefit]
+    Policy -->|No stable matching gain| Existing[Caller-owned existing backend]
+    Policy -->|Validated gain| Router[CPU-router packet pipeline]
+    subgraph Module[Optional CPU-router module]
+        Router --> Channels[GPU / host channels]
+        Router --> CPU[CPU operators and worker lanes]
+        Router --> Memory[NUMA memory and packet ownership]
+    end
+```
+
+```bash
+make -j2 cpu-router adaptive-collectives
+
+# On the current four-L4 host, auto retains the fallback and creates no router.
+# This standalone BF16 example supplies NCCL as its existing backend.
+./build/uccl_lite_collectives --gpus 4 --backend auto --op all
+
+# Measure both paths on the local host, then use the saved evidence.
+./build/uccl_lite_collectives --gpus 4 --begin 1048576 --end 8388608 \
+  --calibrate build/router-local.profile
+./build/uccl_lite_collectives --gpus 4 --begin 1048576 --end 8388608 \
+  --backend auto --profile build/router-local.profile
+```
+
+`--backend off` disables the module; `--backend force` enables it for explicit
+testing without claiming a speedup. `--reference benchmarks/data/primitives_8l4.csv`
+allows the historical profile only on its matching eight-L4/no-P2P configuration,
+including the recorded CUDA, driver, CPU budget, and NCCL baseline. It never
+turns the router on merely because eight GPUs are visible.
+On the current four-L4 host, paired BF16 calibration at 1/2/4/8 MiB for all
+three collectives retained the fallback in all **12** cases. Reusing the profile
+in a fresh process initialized no router. The eight-GPU enable decisions are
+covered by policy tests against historical measurements; this port's eight-GPU
+performance has not been rerun.
+[API, policy, calibration, and limitations](docs/cpu-router.md)
+
 ## Measured performance
 
 ### Single-node AllReduce
@@ -123,8 +173,9 @@ counts all nonlocal traffic and is distinct from AllReduce bus bandwidth.
 The independent AllGather and ReduceScatter results come from a separate
 CPU-router implementation on **one node with eight L4 GPUs, BF16, and no GPU
 peer access**. They were recorded on October 12 after the ReduceScatter packet
-scheduling fix. This runtime has not been migrated into this subtree; the data
-is retained as a historical primitive-collective comparison. It is a different
+scheduling fix. The runtime is now included as the optional CPU-router module;
+the data remains a historical primitive-collective comparison, not a fresh
+eight-GPU validation of the port. It is a different
 configuration from the four-GPU float32 benchmarks above.
 
 ![Standalone AllGather latency and bandwidth for in-place and out-of-place on eight L4 GPUs](docs/assets/allgather.svg)
@@ -222,11 +273,14 @@ favor NCCL over the hierarchical and global-ring paths.
 experimental/lite/
 ├── Makefile                    # Independent build; binaries go to build/
 ├── src/collectives/             # Single-node and two-node algorithms + harnesses
+├── src/cpu_router/              # Optional routing runtime, policy, and dispatcher
 ├── include/uccl_lite/           # Reusable grouped-GEMM, routing, and MoE kernels
 ├── benchmarks/
 │   ├── fusion/                 # Dense and expert-parallel MoE benchmarks
 │   ├── probes/                 # GEMM, tensor-core, and overlap diagnostics
+│   ├── cpu_router/             # BF16 dispatch and paired calibration example
 │   └── data/                   # Curated reference measurements
+├── tests/cpu_router/            # Host policy, numeric, eager, and graph checks
 ├── scripts/                    # Multi-node launcher and figure regeneration
 ├── patches/                    # MSCCL++ mapped-host registration fix
 └── docs/                       # Build, design, and validation notes
@@ -234,13 +288,16 @@ experimental/lite/
 
 ## Scope and status
 
-- **Specialized hardware:** four local ranks, or exactly two nodes with four
-  ranks each. General topology discovery and arbitrary world sizes are not
-  implemented.
+- **Specialized peer paths:** four local ranks, or exactly two nodes with four
+  ranks each. The separate CPU-router discovers local GPU/NUMA/peer topology
+  and supports 1–32 ports owned by one process; this does not generalize the
+  original MSCCL++ algorithms to arbitrary ranks.
 - **Explicit data types:** float32 standalone collectives, FP16 dense fusion,
   and BF16 MoE with FP32 accumulation where documented.
-- **Independent runtime:** MSCCL++ is an external dependency. This directory
-  does not replace UCCL's main transports or provide an NCCL-compatible API.
+- **Independent runtimes:** MSCCL++ remains external for the peer paths.
+  CPU-router uses CUDA, host memory, and CPU workers and has no MSCCL++ or NCCL
+  dependency. NCCL is used only by its example fallback/benchmark. This
+  directory does not replace UCCL's main transports or provide an NCCL-compatible API.
 - **Experimental paths:** persistent mapped-host communication is retained as
   an opt-in diagnostic and has known correctness failures. The reliable host
   fallback uses synchronous staging.

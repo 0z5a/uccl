@@ -1492,52 +1492,52 @@ L 936.144 491.04
   </g>
   <g id="text_51">
    <text style="font-size: 8.5px; font-family: 'DejaVu Sans'; fill: #61758b" transform="translate(61.776 544.328854)">Same-session three-run medians and min–max whiskers; identical per-collective nccl-tests binaries. No per-size backend selection.</text>
-   <text style="font-size: 8.5px; font-family: 'DejaVu Sans'; fill: #61758b" transform="translate(61.776 554.531178)">Size = complete output per rank; bus bandwidth = algorithm bandwidth × 7/8. CPU-router runtime is not included in this subtree.</text>
+   <text style="font-size: 8.5px; font-family: 'DejaVu Sans'; fill: #61758b" transform="translate(61.776 554.531178)">Size = complete output per rank; bus bandwidth = algorithm bandwidth × 7/8. Historical eight-GPU results; see CPU-router docs for port validation.</text>
   </g>
   <g id="legend_1">
    <g id="patch_74">
-    <path d="M 253.155148 56.808516
-L 267.405148 56.808516
-L 267.405148 50.158516
-L 253.155148 50.158516
+    <path d="M 251.825148 56.808516
+L 266.075148 56.808516
+L 266.075148 50.158516
+L 251.825148 50.158516
 z
 " style="fill: #d8e8f5"/>
    </g>
    <g id="text_52">
-    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #19324d" x="275.005148" y="56.808516" transform="rotate(-0 275.005148 56.808516)">NCCL 2.18.3 (TCCL runtime)</text>
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #19324d" x="273.675148" y="56.808516" transform="rotate(-0 273.675148 56.808516)">NCCL 2.18.3 (TCCL runtime)</text>
    </g>
    <g id="patch_75">
-    <path d="M 427.575148 56.808516
-L 441.825148 56.808516
-L 441.825148 50.158516
-L 427.575148 50.158516
+    <path d="M 426.245148 56.808516
+L 440.495148 56.808516
+L 440.495148 50.158516
+L 426.245148 50.158516
 z
 " style="fill: #a8c9e5"/>
    </g>
    <g id="text_53">
-    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #19324d" x="449.425148" y="56.808516" transform="rotate(-0 449.425148 56.808516)">NCCL 2.27.5</text>
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #19324d" x="448.095148" y="56.808516" transform="rotate(-0 448.095148 56.808516)">NCCL 2.27.5</text>
    </g>
    <g id="patch_76">
-    <path d="M 527.328117 56.808516
-L 541.578117 56.808516
-L 541.578117 50.158516
-L 527.328117 50.158516
+    <path d="M 525.998117 56.808516
+L 540.248117 56.808516
+L 540.248117 50.158516
+L 525.998117 50.158516
 z
 " style="fill: #729dc6"/>
    </g>
    <g id="text_54">
-    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #19324d" x="549.178117" y="56.808516" transform="rotate(-0 549.178117 56.808516)">TCCL</text>
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #19324d" x="547.848117" y="56.808516" transform="rotate(-0 547.848117 56.808516)">TCCL</text>
    </g>
    <g id="patch_77">
-    <path d="M 591.984523 56.808516
-L 606.234523 56.808516
-L 606.234523 50.158516
-L 591.984523 50.158516
+    <path d="M 590.654523 56.808516
+L 604.904523 56.808516
+L 604.904523 50.158516
+L 590.654523 50.158516
 z
 " style="fill: #173e6c"/>
    </g>
    <g id="text_55">
-    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #19324d" x="613.834523" y="56.808516" transform="rotate(-0 613.834523 56.808516)">CPU-router SM · historical</text>
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #19324d" x="612.504523" y="56.808516" transform="rotate(-0 612.504523 56.808516)">UCCL Lite · CPU-router SM</text>
    </g>
   </g>
  </g>

@@ -1,0 +1,51 @@
+#pragma once
+
+#include "backend_policy.hpp"
+#include "cpu_router/cpu_router.hpp"
+#include <functional>
+#include <memory>
+#include <vector>
+
+namespace uccl_lite {
+
+Topology inspectTopology(std::vector<int> const& devices);
+
+struct CollectiveCall {
+  Collective collective = Collective::AllReduce;
+  ScalarType dtype = ScalarType::BFloat16;
+  // AR tensor elements, AG contribution elements, or RS output-shard elements.
+  size_t count = 0;
+  bool inPlace = false;
+  std::vector<cpu_router::PacketPort> ports;
+  Workload workload() const;
+};
+
+// Optional decorator around a caller-owned existing backend. No NCCL
+// dependency. One process owns all device ports. Calls are serialized by the
+// caller.
+class CollectiveDispatcher {
+ public:
+  using Fallback = std::function<void(CollectiveCall const&)>;
+  CollectiveDispatcher(Topology topology, BackendPolicy policy,
+                       Fallback fallback,
+                       cpu_router::CpuRouterOptions options = {});
+  ~CollectiveDispatcher();
+  BackendDecision decision(CollectiveCall const& call) const;
+  // Initialization boundary: call with idle streams before enqueue, outside
+  // capture. A fallback decision creates no CPU workers or pinned routing
+  // buffers.
+  BackendDecision prepare(CollectiveCall const& call);
+  BackendDecision enqueue(CollectiveCall const& call);
+  bool routerInitialized() const { return bool(router_); }
+  Topology const& topology() const { return topology_; }
+
+ private:
+  void validatePorts(CollectiveCall const& call) const;
+  Topology topology_;
+  BackendPolicy policy_;
+  Fallback fallback_;
+  cpu_router::CpuRouterOptions options_;
+  std::unique_ptr<cpu_router::CpuRouter> router_;
+};
+
+}  // namespace uccl_lite

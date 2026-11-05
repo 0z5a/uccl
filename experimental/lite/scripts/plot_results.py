@@ -225,7 +225,7 @@ def primitive_collectives(preview):
         ("nccl_tccl", "NCCL 2.18.3 (TCCL runtime)", PALE),
         ("nccl", "NCCL 2.27.5", LIGHT),
         ("tccl", "TCCL", MEDIUM),
-        ("kernel", "CPU-router SM · historical", NAVY),
+        ("kernel", "UCCL Lite · CPU-router SM", NAVY),
     ]
     for collective, name, title in (
         ("all_gather", "allgather", "AllGather"),
@@ -259,7 +259,7 @@ def primitive_collectives(preview):
             name,
             [(b[1], b[2]) for b in backends],
             "Same-session three-run medians and min–max whiskers; identical per-collective nccl-tests binaries. No per-size backend selection.\n"
-            f"Size = {extent} per rank; bus bandwidth = algorithm bandwidth × 7/8. CPU-router runtime is not included in this subtree.",
+            f"Size = {extent} per rank; bus bandwidth = algorithm bandwidth × 7/8. Historical eight-GPU results; see CPU-router docs for port validation.",
             preview,
         )
 

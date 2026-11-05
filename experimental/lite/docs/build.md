@@ -4,6 +4,13 @@ Run all commands from `experimental/lite/`. The Makefile builds independent
 benchmarks and writes only to `build/`; it does not install libraries or modify
 the rest of UCCL. Use `make help` for the target list.
 
+The [optional CPU-router module](cpu-router.md) has independent targets:
+`make cpu-router` builds its static/shared libraries, `make adaptive-collectives`
+builds the BF16 AR/AG/RS calibration example, and `make router-checks` builds
+its tests. These are not dependencies of the existing single-node/fusion targets.
+The module uses Linux/x86-64, AVX2, CUDA, and CUTLASS; it does not need MSCCL++
+or NCCL. The calibration example additionally needs NCCL for its fallback.
+
 ## Dependencies
 
 | Dependency | Used by | Tested configuration |
