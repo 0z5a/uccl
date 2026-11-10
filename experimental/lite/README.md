@@ -111,33 +111,45 @@ small-shape regressions, remain available until then.
 
 ## Optional CPU router
 
-The CPU router is a separately built library. A caller supplies its existing
-backend as a callback. The included eight-GPU example now supplies a **UCCL
-Lite two-NUMA collective** as that backend; NCCL is an optional external
-control. Automatic selection requires an **exact local** match for collective,
-dtype, byte count, placement, topology/software identity, and fallback
-identity. A candidate needs at least **3% median speedup with non-overlapping
-timing ranges**; a fresh fallback-only dispatcher runs the local collective
-without creating router workers.
+The optional CPU router exchanges packets through NUMA-local pinned host
+memory. **Forward** moves a packet, **Multicast** sends one packet to multiple
+destinations, and **Process** transforms packet contents. CPU processing
+provides Reduce, Pack, and Deduplicate operators; selected reductions can
+instead use GPU processing. Collectives compose these operations, with packet
+slots and reader credits preventing reuse until consumers finish.
 
-```bash
-make -j2 cpu-router local-collectives adaptive-collectives \
-  NCCL_HOME=/path/to/nccl
-./build/uccl_lite_collectives --gpus 8 --fallback local --op all \
-  --in-place --begin 1048576 --end 1073741824 \
-  --calibrate build/local-in-place.profile
-./build/uccl_lite_collectives --gpus 8 --fallback local --op all \
-  --in-place --begin 1048576 --end 1073741824 \
-  --backend auto --profile build/local-in-place.profile
+```mermaid
+flowchart TB
+    R["CPU Router"]
+    F["Forward"]
+    PC["Process (CPU)"]
+    M["Multicast"]
+    PG["Process (GPU)"]
+    RED["Reduce"]
+    PACK["Pack"]
+    DEDUP["Deduplicate"]
+
+    R --> F
+    R --> PC
+    R --> M
+    R --> PG
+    PC --> RED
+    PC --> PACK
+    PC --> DEDUP
+
+    classDef router fill:#164F86,stroke:#164F86,color:#fff
+    classDef stage fill:#E5F0F8,stroke:#7CA8C8,color:#17364F
+    classDef operator fill:#F4F7FA,stroke:#A8BAC9,color:#17364F
+    class R router
+    class F,PC,M,PG stage
+    class RED,PACK,DEDUP operator
 ```
 
-The 8xL4 GPU figures above show the fastest **measured** UCCL Lite path at each size.
-Runtime `auto` is more conservative: with its matching local profile, it
-retains local AllGather at 1 GiB because the CPU-router gain is below the 3%
-selection margin. Without a matching profile it uses the local fallback.
-The [local/router calibration and diagnostic figure](benchmarks/data/local_fallback_8l4_20261110_v3/README.md)
-record the other UCCL Lite paths and negative results; the
-[API and calibration guide](docs/cpu-router.md) explains runtime selection.
+A caller keeps its existing collective backend. The dispatcher enables the
+router only for workloads with matching, validated local measurements; a
+fallback decision does not allocate router buffers or start workers. See the
+[architecture and calibration guide](docs/cpu-router.md) for the packet
+protocol, API, and selection rules.
 
 ## Documentation
 
