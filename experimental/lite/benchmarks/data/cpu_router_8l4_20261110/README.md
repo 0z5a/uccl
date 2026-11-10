@@ -32,6 +32,14 @@ application benchmark. The CSV's `bytes` is the complete per-rank tensor for
 AllGather/ReduceScatter and the per-rank array for AllReduce. No per-size
 algorithm variant is chosen when presenting router and NCCL timings.
 
+The [six-panel bandwidth figure](../../../docs/assets/cpu-router-8l4.svg)
+shows all three collectives and both placements. It converts the recorded
+latencies to decimal bus bandwidth using `14/8` for AllReduce and `7/8` for
+AllGather/ReduceScatter. Blue points are open where the automatic replay
+retained NCCL; the lines always show the measured router and NCCL backends.
+Regenerate it with `python3 scripts/plot_cpu_router_8l4.py` from
+`experimental/lite`.
+
 | Placement | AllReduce router choices | AllGather router choices | ReduceScatter router choices | Total |
 | --- | ---: | ---: | ---: | ---: |
 | In place | 9/11 | 7/11 | 8/11 | 24/33 |

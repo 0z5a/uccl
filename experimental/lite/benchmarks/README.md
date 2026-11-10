@@ -78,6 +78,7 @@ sweeps and the 512-KiB NCCL anomaly remain in the CSVs.
 ```bash
 python3 scripts/plot_results.py
 python3 scripts/plot_multinode_peer.py
+python3 scripts/plot_cpu_router_8l4.py
 ```
 
 Requires Matplotlib and NumPy. `plot_results.py` reads committed CSV/text data
@@ -85,10 +86,13 @@ and regenerates seven SVGs under `docs/assets/`: four-GPU AllReduce and All-to-A
 historical eight-GPU AG/RS, dense-fusion overview and labeled shapes, and EP-MoE. The historical AG/RS
 figures now appear in [primitive results](../docs/primitive-collectives.md).
 `plot_multinode_peer.py` draws two more SVGs from the validated paired
-two-node AG, RS, and AR summaries, for nine figures total. Neither script runs
-GPU work or benchmarks.
+two-node AG, RS, and AR summaries. `plot_cpu_router_8l4.py` draws one SVG
+from the current eight-L4 paired BF16 calibration and automatic-selection
+replay, for ten figures total. These scripts do not run GPU work or benchmarks.
 Use `python3 scripts/plot_results.py --preview` to also export PNG and PDF copies
 under ignored `build/figures/` for inspection or reuse in a technical report.
 `python3 scripts/plot_multinode_peer.py --preview` exports PNG/PDF copies there.
+`python3 scripts/plot_cpu_router_8l4.py --preview` does the same for the
+eight-L4 CPU-router figure.
 For fresh measurements, use the commands in [build.md](../docs/build.md), keep
 correctness enabled, and save the complete run configuration with each result.

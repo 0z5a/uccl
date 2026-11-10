@@ -131,6 +131,8 @@ eight GPUs and **9.89–10.27 GB/s** on individual peer links within a node;
 cross-node CUDA peer access is unavailable. The probe describes the machine;
 the paired collective timings below determine each automatic choice.
 
+![Eight-L4 BF16 CPU router and NCCL bus bandwidth for AllReduce, AllGather, and ReduceScatter in both placements; open blue points retain NCCL in automatic mode](docs/assets/cpu-router-8l4.svg)
+
 At **1 GiB of full tensor bytes per rank**, the current BF16 CPU router and
 NCCL 2.28.9 measured these median slowest-rank CUDA-event times:
 
