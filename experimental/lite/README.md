@@ -16,9 +16,9 @@ a separate module for 1–32 local GPUs. Most collective and fusion paths
 use MSCCL++; standalone peer AG/RS uses CUDA peer copies.
 
 The eight-L4 results were measured on a separate host with four GPUs per
-NUMA node. Fresh four-L4, two-node, and fusion measurements appear below
-with their own timing scopes. Small messages and small GEMMs can lose to
-NCCL; full sweeps and negative results are retained.
+NUMA node. Fresh four-L4, two-node, and eight-L4 dense fusion
+measurements appear below with their own timing scopes. Small messages
+and small GEMMs can lose to NCCL; negative results are retained.
 
 ## What is included
 
@@ -52,10 +52,11 @@ the two-node launcher.
 
 ## Measured results
 
-The completed 8xL4 GPU comparison shows **latency from 1 KiB to 1 MiB** and
-**throughput from 1 MiB to 1 GiB** for each collective. The four-L4,
-two-node, and fusion sections below use fresh matched measurements with
-their own recorded hardware and timing scopes.
+The 8xL4 GPU collective comparison shows **latency from 1 KiB to
+1 MiB** and **throughput from 1 MiB to 1 GiB**. The four-L4 and
+two-node sections use fresh matched measurements. Fusion results
+cover both the four-L4 direct-peer testbed and this eight-L4
+CPU-router host, with separate timing scopes.
 
 ### Single-node collectives
 
@@ -163,9 +164,49 @@ outside this kernel benchmark.
 [Shapes, selected paths, raw logs, and negative results](docs/fusion.md) ·
 [Fresh measurement files](benchmarks/data/refresh_20261110/README.md).
 
-The separate eight-L4 host has no GPU peer access between its two
-four-GPU NUMA groups. These four-GPU fusion runs do not establish
-eight-GPU fusion performance.
+The four-GPU fusion runs do not establish eight-GPU fusion
+performance; the CPU-router measurements below use all eight GPUs.
+
+### Fusion: eight L4
+
+These eight-GPU experiments use the CPU router across the two NUMA groups.
+Each bar is the median of two independent runs; each run has five alternating
+repetitions of ten checked calls. The comparison includes cuBLAS + NCCL,
+cuBLAS + UCCL-Lite CPU router in sequence, and a resident GEMM kernel fused
+with the CPU router. All bars show slowest-GPU CUDA-event latency.
+[Samples and reproduction commands](benchmarks/data/fusion_8l4_20261110/README.md)
+are retained.
+
+#### GEMM + AllReduce on single 8xL4 GPU
+
+![Eight-GPU GEMM plus AllReduce latency bars by shape for NCCL, sequential CPU router, and fused CPU router](docs/assets/fusion-8l4-gemm-ar.svg)
+
+The fused path takes **0.268 ms versus 0.367 ms** for cuBLAS + NCCL at
+`(M,N,K)=(128,1024,1024)`. The smaller `(64,1024,1024)` shape is nearly tied
+in one run. The fused path loses at the three larger tested shapes; at
+`(512,4096,4096)`, separate cuBLAS + CPU router is fastest.
+
+#### AllGather + GEMM on single 8xL4 GPU
+
+![Eight-GPU AllGather plus GEMM latency bars by shape for NCCL, sequential CPU router, and fused CPU router](docs/assets/fusion-8l4-ag-gemm.svg)
+
+The sequential CPU-router path is faster than cuBLAS + NCCL at all three
+tested shapes, but the resident fused kernel does not improve on that path.
+The best result is **0.143 ms versus 0.200 ms** at `(128,1024,1024)`.
+
+#### GEMM + ReduceScatter on single 8xL4 GPU
+
+![Eight-GPU GEMM plus ReduceScatter latency bars by shape for NCCL, sequential CPU router, and fused CPU router](docs/assets/fusion-8l4-gemm-rs.svg)
+
+The fused path takes **0.214 ms versus 0.270 ms** for cuBLAS + NCCL at
+`(128,1024,1024)` and **0.391 ms versus 0.452 ms** at `(256,2048,2048)`.
+At `(512,4096,4096)`, separate cuBLAS + CPU router is slightly faster than
+the fused path; the difference is small across the two runs.
+
+#### Other fusion workloads
+
+The four-GPU expert-parallel MoE results above use CUDA IPC peer links.
+MoE has not been ported across this host's two four-GPU NUMA groups.
 
 ## Optional CPU router
 

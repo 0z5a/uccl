@@ -29,7 +29,7 @@ COLLECTIVES := allreduce alltoall
 PEER_COLLECTIVES := peer_ag_rs
 NCCL_CONTROLS := nccl_4l4_mpi_baseline nccl_2x4l4_baseline
 MULTINODE := multinode_allreduce multinode_cpu_router host_hierarchical_allreduce
-FUSION := dense_fusion fused_moe fused_moe_layer fused_moe_layer_qwen
+FUSION := dense_fusion fused_moe fused_moe_layer fused_moe_layer_qwen router_fusion_8l4
 PROBES := gemm_probe mma_gemm_probe mma_peak_probe moe_overlap_probe cutlass_gemm_probe hardware_profiler
 ALL_NAMES := $(COLLECTIVES) $(PEER_COLLECTIVES) $(NCCL_CONTROLS) $(MULTINODE) host_allreduce $(FUSION) $(PROBES)
 BIN = $(addprefix $(BUILD)/uccl_lite_,$(1))
@@ -74,6 +74,9 @@ $(BUILD)/uccl_lite_host_allreduce: src/collectives/host_allreduce.cu | $(BUILD)
 
 $(call BIN,dense_fusion fused_moe fused_moe_layer): $(BUILD)/uccl_lite_%: benchmarks/fusion/%.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++17 $(FUSION_FLAGS) $(FUSION_INC) $< -o $@ $(FUSION_LIB) -lcudart -lpthread
+
+$(BUILD)/uccl_lite_router_fusion_8l4: benchmarks/fusion/router_fusion_8l4.cu $(BUILD)/cpu_router/libuccl_lite_cpu_router.a | $(BUILD)
+	$(NVCC) $(NVCC_FLAGS) -std=c++17 $(FUSION_FLAGS) $(ROUTER_INC) -I$(NCCL_HOME)/include $< $(ROUTER_STATIC) -o $@ -L$(NCCL_HOME)/lib -lnccl -lcublas -Xlinker -rpath=$(NCCL_HOME)/lib -Xcompiler=-pthread -ldl
 
 $(BUILD)/uccl_lite_fused_moe_layer_qwen: benchmarks/fusion/fused_moe_layer.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++17 -DMOE_QWEN36 $(FUSION_FLAGS) $(FUSION_INC) $< -o $@ $(FUSION_LIB) -lcudart -lpthread

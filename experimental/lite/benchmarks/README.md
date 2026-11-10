@@ -9,6 +9,9 @@ Migration-time validation is in [validation.md](../docs/validation.md).
 
 ## Testbed and interpretation
 
+The following four-GPU setup describes the earlier records; eight-GPU
+records give their own topology and measurement protocol.
+
 - Four NVIDIA L4 GPUs per node, PCIe Gen4, no NVLink; dual Xeon Silver 4410Y.
 - NUMA pairs `(0,1)` and `(2,3)`; two-node tests use two local network rails.
 - Refreshed four-L4 and two-node AllReduce/AllGather/ReduceScatter: float32;
@@ -33,6 +36,7 @@ Migration-time validation is in [validation.md](../docs/validation.md).
 | [allreduce_two_node.csv](data/allreduce_two_node.csv) | October 12: three runs, slowest of eight ranks. Hierarchical UCCL Lite selects among 12 piece/distance configurations. CPU router uses 1 MiB pieces. |
 | [cpu_router_4l4_calibration.csv](data/cpu_router_4l4_calibration.csv), [cpu_router_4l4_selection.csv](data/cpu_router_4l4_selection.csv) | New four-L4 BF16 adaptive-module validation against NCCL 2.28.7: three paired repetitions, 5 warmups / 10 iterations, 1–8 MiB AR/AG/RS. All 12 automatic decisions retain the fallback with no router initialization. These are integration calibration results, not the historical peak-throughput sweeps. |
 | [collectives_8l4_20261110.csv](data/collectives_8l4_20261110.csv) | Current eight-L4 BF16 single-node comparison: 21 doubling sizes each for AR/AG/RS, one best measured UCCL Lite path against NCCL 2.28.9. AR is in place; AG/RS are out of place. Three README figures each show 1 KiB–1 MiB latency and 1 MiB–1 GiB throughput. |
+| [fusion_8l4_20261110/README.md](data/fusion_8l4_20261110/README.md) | Eight-L4 BF16 AG+GEMM, GEMM+RS, and GEMM+AR CPU-router experiments versus cuBLAS+NCCL 2.28.9. Two independent runs, 3,900 checked timed calls, all three paths retained in README latency bars. |
 | [collectives_small_8l4_20261110/README.md](data/collectives_small_8l4_20261110/README.md) | New 1 KiB–512 KiB BF16 measurements on the same host: local and router path selection, paired router/NCCL controls, and both All-to-All paths. Five sweeps, 5,700 output-checked calls. |
 | [reducescatter_8l4_20261110_v2/README.md](data/reducescatter_8l4_20261110_v2/README.md) | Current eight-L4 BF16 ReduceScatter rerun: five paired repetitions against both the local fallback and NCCL, 1 KiB–1 GiB, plus packet/reduction-mode ablations and preserved regressions. |
 | [router_vs_nccl_8l4_20261110/README.md](data/router_vs_nccl_8l4_20261110/README.md) | Direct paired CPU-router/NCCL 2.28.9 BF16 AR/AG/RS sweeps, both placements, 1 MiB–1 GiB. Three alternating repetitions × ten checked calls per backend and key. |
