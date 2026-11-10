@@ -55,10 +55,10 @@ def plot_operation(data, operation, filename, factor, preview):
                         wspace=0.28)
     for ax, sizes, measure, ylabel, ticks in (
         (axes[0], SMALL_SIZES, lambda size, us: us,
-         "Latency (µs) ↓",
+         "Latency (µs)",
          [1 << power for power in (10, 12, 14, 16, 18, 20)]),
         (axes[1], LARGE_SIZES, lambda size, us: throughput(size, us, factor),
-         "Bus throughput (GB/s) ↑",
+         "Bus throughput (GB/s)",
          [1 << power for power in (20, 22, 24, 26, 28, 30)]),
     ):
         clean_axis(ax)
@@ -89,7 +89,7 @@ def plot_operation(data, operation, filename, factor, preview):
                bbox_to_anchor=(0.5, 0.99), ncol=2, frameon=False,
                fontsize=12.5, handlelength=2.8, columnspacing=3.0,
                markerscale=1.2)
-    save(fig, f"collectives-8l4-{filename}-v5", preview)
+    save(fig, f"collectives-8l4-{filename}-v6", preview)
 
 
 def main() -> None:
