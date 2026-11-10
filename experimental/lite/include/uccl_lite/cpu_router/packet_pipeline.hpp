@@ -142,6 +142,10 @@ struct PacketPipelineOptions {
   size_t maxTensorBytes = 1UL << 30;
   size_t packetBytes = 512UL << 10;
   size_t minPacketBytes = 128UL << 10;
+  // The adaptive dispatcher prepares a smaller router for AllReduce through
+  // 4 MiB. Zero disables this choice; direct PacketPipeline users keep
+  // packetBytes unchanged.
+  size_t smallAllReducePacketBytes = 128UL << 10;
   int transportBlocks = 64;
   int transportThreads = 256;
   size_t transportGrainBytes = 16UL << 10;

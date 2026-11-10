@@ -49,6 +49,7 @@ struct Config {
   int gpus = 8, warmup = 3, iterations = 10, repeats = 3;
   size_t begin = 1024, end = 1 << 20;
   size_t packetBytes = 512UL << 10;
+  size_t smallAllReducePacketBytes = 128UL << 10;
   bool inPlace = false;
   bool gpuReduce = false;
   bool gpuProgress = false;
@@ -202,6 +203,8 @@ int main(int argc, char** argv) {
         cfg.end = std::stoull(next());
       else if (arg == "--packet-bytes")
         cfg.packetBytes = std::stoull(next());
+      else if (arg == "--small-ar-packet-bytes")
+        cfg.smallAllReducePacketBytes = std::stoull(next());
       else if (arg == "--op")
         cfg.operation = next();
       else if (arg == "--fallback")
@@ -248,6 +251,8 @@ int main(int argc, char** argv) {
             "stripes)\n"
             "  --packet-bytes BYTES (upper bound; default 524288, minimum "
             "131072)\n"
+            "  --small-ar-packet-bytes BYTES (default 131072 through 4 MiB; "
+            "0 disables)\n"
             "  --warmup N --iterations N --repeats N (at least 3)\n"
             "Auto keeps the selected fallback unless matching validated "
             "evidence shows a stable "
@@ -268,7 +273,11 @@ int main(int argc, char** argv) {
         cfg.begin % (cfg.devices.size() * 2) || cfg.warmup < 1 ||
         cfg.iterations < 1 || cfg.repeats < 3 ||
         cfg.packetBytes < (128UL << 10) || cfg.packetBytes > (32UL << 20) ||
-        cfg.packetBytes % 16)
+        cfg.packetBytes % 16 ||
+        (cfg.smallAllReducePacketBytes &&
+         (cfg.smallAllReducePacketBytes < (128UL << 10) ||
+          cfg.smallAllReducePacketBytes > cfg.packetBytes ||
+          cfg.smallAllReducePacketBytes % 16)))
       throw std::invalid_argument(
           "invalid device count, size, or iteration settings");
     if (!cfg.calibrate.empty() && std::filesystem::exists(cfg.calibrate))
@@ -347,6 +356,7 @@ int main(int argc, char** argv) {
       cpu_router::CpuRouterOptions options;
       options.maxTensorBytes = cfg.end;
       options.packetBytes = cfg.packetBytes;
+      options.smallAllReducePacketBytes = cfg.smallAllReducePacketBytes;
       options.reduction = cfg.gpuReduce ? cpu_router::ReductionPlacement::Gpu
                                         : cpu_router::ReductionPlacement::Cpu;
       options.interleaveScatter = cfg.interleaveScatter;

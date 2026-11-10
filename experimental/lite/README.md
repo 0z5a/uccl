@@ -148,26 +148,28 @@ CPU-router paths measured these median slowest-rank CUDA-event times. NCCL
 
 | Placement | Collective | UCCL Lite local | CPU router | NCCL control | Automatic choice |
 | --- | --- | ---: | ---: | ---: | --- |
-| In place | AllReduce | 1500.25 ms | 275.28 ms | 368.50 ms | Router |
-| In place | AllGather | 178.53 ms | 181.22 ms | 186.73 ms | Local |
-| In place | ReduceScatter | 951.08 ms | 168.61 ms | 196.42 ms | Router |
-| Out of place | AllReduce | 1498.57 ms | 277.21 ms | 369.08 ms | Router |
-| Out of place | AllGather | 179.32 ms | 180.60 ms | 186.26 ms | Local |
-| Out of place | ReduceScatter | 953.43 ms | 169.88 ms | 196.49 ms | Router |
+| In place | AllReduce | 1479.32 ms | 277.64 ms | 368.50 ms | Router |
+| In place | AllGather | 183.35 ms | 181.60 ms | 186.73 ms | Local |
+| In place | ReduceScatter | 933.82 ms | 169.57 ms | 196.42 ms | Router |
+| Out of place | AllReduce | 1443.51 ms | 276.35 ms | 369.08 ms | Router |
+| Out of place | AllGather | 187.14 ms | 181.69 ms | 186.26 ms | Local |
+| Out of place | ReduceScatter | 881.90 ms | 170.28 ms | 196.49 ms | Router |
 
-The local path gathers each GPU's shard through NUMA-pinned host memory. Its
-AllReduce and ReduceScatter are slower, so the router wins all measured sizes
-for those operations. Across the 1-MiB–1-GiB doubling sweep, automatic mode
-selected the router at **30/33** in-place and **31/33** out-of-place keys; the
-other keys use local AllGather at 256 MiB–1 GiB and 512 MiB–1 GiB,
-respectively. Load the matching calibration profile before using `auto` here:
-without one, it runs the local fallback, whose AllReduce and ReduceScatter
-are much slower. At 1 MiB, the selected router AllReduce still takes about
-**0.76 ms** versus **0.59 ms** in the separate NCCL control. This small-size
-regression remains unresolved. Every timed call passed the output check.
+The local path gathers each GPU's shard through NUMA-pinned host memory. For
+AllReduce and ReduceScatter through 2 MiB it also reduces eight inputs in
+pinned host memory; larger reductions use the four-GPU peer groups. The router
+uses **128 KiB packets for AllReduce through 4 MiB** and its original 512 KiB
+packets otherwise. Across the 1-MiB–1-GiB doubling sweep, automatic mode
+selected the router at **32/33** keys in each placement. It retained local
+AllGather at 1 GiB under the 3% selection margin. Load the matching
+calibration profile before using `auto`; without one, it runs the local
+fallback. At 1 MiB, the selected router AllReduce measured **0.488 / 0.529
+ms** in/out of place, versus **0.588 / 0.579 ms** in the separate NCCL
+control. The prior 512 KiB router packet setting measured **0.799 / 0.775
+ms** in a same-code diagnostic. Every timed call passed the output check.
 Measurements used CUDA 12.9, driver 580.178.04, five warmups, ten timed calls
 per repetition, and three alternating paired repetitions. [Paired local/router
-data and selection replay](benchmarks/data/local_fallback_8l4_20261110/README.md) ·
+data and selection replay](benchmarks/data/local_fallback_8l4_20261110_v3/README.md) ·
 [Separate NCCL control and hardware profile](benchmarks/data/cpu_router_8l4_20261110/README.md).
 
 The earlier four-L4 calibration retained NCCL in all **12** cases. Historical

@@ -1,5 +1,7 @@
 #include "uccl_lite/local_collectives.hpp"
+#include <cmath>
 #include <cstdio>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -56,7 +58,7 @@ float expectedValue(Collective op, int rank, size_t index, size_t contribution,
 
 int main() {
   try {
-    constexpr size_t maxBytes = (1 << 20) + 128;
+    constexpr size_t maxBytes = (4 << 20) + 128;
     std::vector<int> ids{0, 1, 2, 3, 4, 5, 6, 7};
     auto topology = uccl_lite::inspectTopology(ids);
     uccl_lite::LocalCollectives local(topology, maxBytes);
@@ -70,7 +72,8 @@ int main() {
         topology, policy,
         [&](uccl_lite::CollectiveCall const& call) { local.enqueue(call); });
     int cases = 0;
-    for (size_t bytes : {size_t(128), size_t(8192), maxBytes})
+    for (size_t bytes : {size_t(128), size_t(8192), size_t((1 << 20) + 128),
+                         size_t((2 << 20) + 128), maxBytes})
       for (auto op : {Collective::AllReduce, Collective::AllGather,
                       Collective::ReduceScatter})
         for (bool inPlace : {false, true})
@@ -129,6 +132,46 @@ int main() {
             }
             ++cases;
           }
+    uccl_lite::CollectiveCall rounded;
+    rounded.collective = Collective::AllReduce;
+    rounded.count = 64;
+    std::vector<std::vector<__nv_bfloat16>> values(
+        8, std::vector<__nv_bfloat16>(rounded.count));
+    for (int rank = 0; rank < 8; ++rank) {
+      auto& device = devices[rank];
+      for (size_t i = 0; i < rounded.count; ++i) {
+        float value = float((rank + 1) * (1 + i % 23)) / 1000.0f;
+        if (i == 0 && rank == 0)
+          value = std::numeric_limits<float>::quiet_NaN();
+        if (i == 1 && rank == 0) value = std::numeric_limits<float>::infinity();
+        if (i == 1 && rank == 1)
+          value = -std::numeric_limits<float>::infinity();
+        values[rank][i] = __float2bfloat16(value);
+      }
+      check(cudaSetDevice(device.id));
+      check(cudaMemcpy(device.input, values[rank].data(), rounded.count * 2,
+                       cudaMemcpyHostToDevice));
+      rounded.ports.push_back(
+          {device.input, device.output, device.stream, device.id});
+    }
+    dispatch.enqueue(rounded);
+    for (int rank = 0; rank < 8; ++rank) {
+      check(cudaSetDevice(devices[rank].id));
+      std::vector<__nv_bfloat16> actual(rounded.count);
+      check(cudaMemcpy(actual.data(), devices[rank].output, rounded.count * 2,
+                       cudaMemcpyDeviceToHost));
+      for (size_t i = 0; i < rounded.count; ++i) {
+        float sum = __bfloat162float(values[0][i]);
+        for (int source = 1; source < 8; ++source)
+          sum += __bfloat162float(values[source][i]);
+        float got = __bfloat162float(actual[i]);
+        float expected = __bfloat162float(__float2bfloat16_rn(sum));
+        if ((std::isnan(expected) && !std::isnan(got)) ||
+            (!std::isnan(expected) && got != expected))
+          throw std::runtime_error("rounded local AllReduce mismatch");
+      }
+    }
+    ++cases;
     uccl_lite::CollectiveCall captured;
     captured.collective = Collective::AllReduce;
     captured.count = 64;
@@ -151,7 +194,7 @@ int main() {
       throw std::runtime_error("local path accepted graph capture");
     std::printf(
         "PASS: %d eight-GPU BF16 local-fallback cases, including tails and "
-        "both placements and capture rejection\n",
+        "both placements, BF16 rounding, and capture rejection\n",
         cases);
   } catch (std::exception const& error) {
     std::fprintf(stderr, "FAIL: %s\n", error.what());

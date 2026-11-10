@@ -144,14 +144,20 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
   if (options_.gpuProgress &&
       options_.reduction != cpu_router::ReductionPlacement::Gpu)
     throw std::invalid_argument("GPU progress requires GPU reduction");
+  if (options_.smallAllReducePacketBytes &&
+      (options_.smallAllReducePacketBytes < options_.minPacketBytes ||
+       options_.smallAllReducePacketBytes > options_.packetBytes ||
+       options_.smallAllReducePacketBytes % 16))
+    throw std::invalid_argument("invalid small AllReduce packet size");
   std::ostringstream key;
   // maxTensorBytes is a validation bound, not packet geometry or an allocation
   // size.
   key << ";options=" << options_.packetBytes << ',' << options_.minPacketBytes
-      << ',' << options_.transportBlocks << ',' << options_.transportThreads
-      << ',' << options_.transportGrainBytes << ',' << options_.workersPerNode
-      << ',' << options_.scatterWorkersPerNode << ',' << options_.grainElements
-      << ',' << options_.replayCpu << ',' << options_.inlineReplay << ','
+      << ";small-ar-packet-v1=" << options_.smallAllReducePacketBytes << ','
+      << options_.transportBlocks << ',' << options_.transportThreads << ','
+      << options_.transportGrainBytes << ',' << options_.workersPerNode << ','
+      << options_.scatterWorkersPerNode << ',' << options_.grainElements << ','
+      << options_.replayCpu << ',' << options_.inlineReplay << ','
       << options_.concurrentProducer;
   // Keep the legacy CPU identity stable, but never reuse its measurements for
   // a different placement. GPU mode needs its own exact local calibration.
@@ -240,9 +246,17 @@ BackendDecision CollectiveDispatcher::decision(
   }
   return policy_.select(topology_, w);
 }
+size_t CollectiveDispatcher::packetBytesFor(CollectiveCall const& call) const {
+  if (call.collective == Collective::AllReduce &&
+      call.workload().bytes <= (4UL << 20) &&
+      options_.smallAllReducePacketBytes)
+    return std::min(options_.packetBytes, options_.smallAllReducePacketBytes);
+  return options_.packetBytes;
+}
 BackendDecision CollectiveDispatcher::prepare(CollectiveCall const& call) {
   auto selected = decision(call);
-  if (selected.cpuRouter && !router_) {
+  size_t packetBytes = packetBytesFor(call);
+  if (selected.cpuRouter && (!router_ || routerPacketBytes_ != packetBytes)) {
     for (auto const& port : call.ports) {
       check(cudaSetDevice(port.device));
       cudaStreamCaptureStatus status;
@@ -251,9 +265,13 @@ BackendDecision CollectiveDispatcher::prepare(CollectiveCall const& call) {
         throw std::invalid_argument("prepare CPU-router before graph capture");
       check(cudaStreamSynchronize(port.stream));
     }
-    auto router = std::make_unique<cpu_router::CpuRouter>(options_);
+    router_.reset();
+    auto activeOptions = options_;
+    activeOptions.packetBytes = packetBytes;
+    auto router = std::make_unique<cpu_router::CpuRouter>(activeOptions);
     router->prepare(call.ports);
     router_ = std::move(router);
+    routerPacketBytes_ = packetBytes;
   }
   return selected;
 }
@@ -265,6 +283,9 @@ BackendDecision CollectiveDispatcher::enqueue(CollectiveCall const& call) {
   }
   if (!router_)
     throw std::logic_error("call prepare before CPU-router enqueue");
+  size_t packetBytes = packetBytesFor(call);
+  if (routerPacketBytes_ != packetBytes)
+    throw std::logic_error("prepare CPU-router for this packet size");
   // Graph replay needs the core's explicit publication protocol. Do not
   // silently capture only GPU work.
   for (auto const& port : call.ports) {

@@ -6,8 +6,10 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
+#include <immintrin.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -53,6 +55,46 @@ __global__ void sumTwo(__nv_bfloat16* partial, __nv_bfloat16 const* remote,
     partial[i] = __float2bfloat16_rn(__bfloat162float(partial[i]) +
                                      __bfloat162float(remote[i]));
 }
+
+__attribute__((target("avx512f,avx512bw"))) void reduceBf16Span(
+    std::array<void*, 8> const& inputs, void* result, size_t begin,
+    size_t end) {
+  auto* output = static_cast<uint16_t*>(result);
+  size_t i = begin;
+  for (; i + 16 <= end; i += 16) {
+    __m512 sum;
+    for (int rank = 0; rank < 8; ++rank) {
+      auto const* source = static_cast<uint16_t const*>(inputs[rank]);
+      auto raw =
+          _mm256_loadu_si256(reinterpret_cast<__m256i const*>(source + i));
+      auto expanded = _mm512_cvtepu16_epi32(raw);
+      auto value = _mm512_castsi512_ps(_mm512_slli_epi32(expanded, 16));
+      if (rank == 0)
+        sum = value;
+      else
+        sum = _mm512_add_ps(sum, value);
+    }
+    auto bits = _mm512_castps_si512(sum);
+    auto lsb =
+        _mm512_and_si512(_mm512_srli_epi32(bits, 16), _mm512_set1_epi32(1));
+    bits = _mm512_srli_epi32(
+        _mm512_add_epi32(bits,
+                         _mm512_add_epi32(_mm512_set1_epi32(0x7fff), lsb)),
+        16);
+    auto nan = _mm512_cmp_ps_mask(sum, sum, _CMP_UNORD_Q);
+    bits = _mm512_mask_or_epi32(bits, nan, bits, _mm512_set1_epi32(0x40));
+    auto packed = _mm512_cvtepi32_epi16(bits);
+    _mm256_storeu_si256(reinterpret_cast<__m256i*>(output + i), packed);
+  }
+  for (; i < end; ++i) {
+    float sum =
+        __bfloat162float(static_cast<__nv_bfloat16 const*>(inputs[0])[i]);
+    for (int rank = 1; rank < 8; ++rank)
+      sum +=
+          __bfloat162float(static_cast<__nv_bfloat16 const*>(inputs[rank])[i]);
+    static_cast<__nv_bfloat16*>(result)[i] = __float2bfloat16_rn(sum);
+  }
+}
 }  // namespace
 
 LocalCollectives::LocalCollectives(Topology topology, size_t maxTensorBytes)
@@ -87,6 +129,22 @@ LocalCollectives::LocalCollectives(Topology topology, size_t maxTensorBytes)
 }
 
 LocalCollectives::~LocalCollectives() {
+  {
+    std::lock_guard<std::mutex> lock(reductionMutex_);
+    reductionStopping_ = true;
+  }
+  reductionReady_.notify_all();
+  for (auto& worker : reductionWorkers_) worker.join();
+  for (int rank = 0; rank < 8; ++rank) {
+    if (smallInput_[rank]) {
+      cudaHostUnregister(smallInput_[rank]);
+      munmap(smallInput_[rank], smallBytes_);
+    }
+  }
+  if (smallResult_) {
+    cudaHostUnregister(smallResult_);
+    munmap(smallResult_, smallBytes_);
+  }
   for (int group = 0; group < 2; ++group) {
     if (scratch_[group] || remote_[group]) {
       cudaSetDevice(topology_.devices[groups_[group][0]]);
@@ -102,6 +160,7 @@ LocalCollectives::~LocalCollectives() {
 
 void LocalCollectives::prepare() {
   if (initialized_) return;
+  smallBytes_ = std::min(maxTensorBytes_, size_t(2) << 20);
   for (int group = 0; group < 2; ++group) {
     int device = topology_.devices[groups_[group][0]];
     check(cudaSetDevice(device));
@@ -111,6 +170,15 @@ void LocalCollectives::prepare() {
     if (!scratch_[group])
       check(cudaMalloc(&scratch_[group], 4 * maxTensorBytes_));
     if (!remote_[group]) check(cudaMalloc(&remote_[group], maxTensorBytes_));
+  }
+  for (int rank = 0; rank < 8; ++rank)
+    if (!smallInput_[rank])
+      smallInput_[rank] = pinnedNuma(smallBytes_, topology_.numaNodes[rank]);
+  if (!smallResult_)
+    smallResult_ = pinnedNuma(smallBytes_, topology_.numaNodes[0]);
+  while (reductionWorkers_.size() < 8) {
+    int worker = int(reductionWorkers_.size());
+    reductionWorkers_.emplace_back([this, worker] { reductionWorker(worker); });
   }
   initialized_ = true;
 }
@@ -159,8 +227,106 @@ void LocalCollectives::enqueue(CollectiveCall const& call) {
   }
   if (call.collective == Collective::AllGather)
     gather(call, bytes);
+  else if (bytes <= smallBytes_)
+    reduceSmall(call, bytes);
   else
     reduce(call, bytes);
+}
+
+void LocalCollectives::reductionWorker(int worker) {
+  bool avx512 =
+      __builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512bw");
+  size_t seen = 0;
+  for (;;) {
+    size_t count;
+    CollectiveCall const* call;
+    {
+      std::unique_lock<std::mutex> lock(reductionMutex_);
+      reductionReady_.wait(lock, [&] {
+        return reductionStopping_ || reductionGeneration_ != seen;
+      });
+      if (reductionStopping_) return;
+      seen = reductionGeneration_;
+      count = reductionCount_;
+      call = reductionCall_;
+    }
+    auto const& port = call->ports[worker];
+    auto error = cudaSetDevice(port.device);
+    if (error == cudaSuccess)
+      error = cudaMemcpyAsync(smallInput_[worker], port.input,
+                              count * sizeof(__nv_bfloat16),
+                              cudaMemcpyDeviceToHost, port.stream);
+    if (error == cudaSuccess) error = cudaStreamSynchronize(port.stream);
+    {
+      std::unique_lock<std::mutex> lock(reductionMutex_);
+      reductionErrors_[worker] = error;
+      if (error != cudaSuccess) reductionFailed_ = true;
+      if (++reductionDownloaded_ == 8)
+        reductionPhase_.notify_all();
+      else
+        reductionPhase_.wait(lock, [&] { return reductionDownloaded_ == 8; });
+      if (reductionFailed_) error = cudaErrorUnknown;
+    }
+    auto begin = count * size_t(worker) / 8;
+    auto end = count * size_t(worker + 1) / 8;
+    if (error == cudaSuccess) {
+      if (avx512)
+        reduceBf16Span(smallInput_, smallResult_, begin, end);
+      else
+        for (size_t i = begin; i < end; ++i) {
+          float sum = __bfloat162float(
+              static_cast<__nv_bfloat16 const*>(smallInput_[0])[i]);
+          for (int rank = 1; rank < 8; ++rank)
+            sum += __bfloat162float(
+                static_cast<__nv_bfloat16 const*>(smallInput_[rank])[i]);
+          static_cast<__nv_bfloat16*>(smallResult_)[i] =
+              __float2bfloat16_rn(sum);
+        }
+    }
+    {
+      std::unique_lock<std::mutex> lock(reductionMutex_);
+      if (++reductionReduced_ == 8)
+        reductionPhase_.notify_all();
+      else
+        reductionPhase_.wait(lock, [&] { return reductionReduced_ == 8; });
+    }
+    if (error == cudaSuccess) {
+      size_t bytes = count * sizeof(__nv_bfloat16);
+      size_t copyBytes =
+          call->collective == Collective::ReduceScatter ? bytes / 8 : bytes;
+      auto* source = static_cast<char*>(smallResult_) +
+                     (call->collective == Collective::ReduceScatter
+                          ? size_t(worker) * copyBytes
+                          : 0);
+      error = cudaMemcpyAsync(port.output, source, copyBytes,
+                              cudaMemcpyHostToDevice, port.stream);
+      if (error == cudaSuccess) error = cudaStreamSynchronize(port.stream);
+    }
+    {
+      std::lock_guard<std::mutex> lock(reductionMutex_);
+      reductionErrors_[worker] = error;
+      if (++reductionCompleted_ == 8) reductionDone_.notify_one();
+    }
+  }
+}
+
+void LocalCollectives::reduceSmall(CollectiveCall const& call, size_t bytes) {
+  {
+    std::lock_guard<std::mutex> lock(reductionMutex_);
+    reductionCount_ = bytes / sizeof(__nv_bfloat16);
+    reductionCall_ = &call;
+    reductionDownloaded_ = 0;
+    reductionReduced_ = 0;
+    reductionCompleted_ = 0;
+    reductionFailed_ = false;
+    ++reductionGeneration_;
+  }
+  reductionReady_.notify_all();
+  {
+    std::unique_lock<std::mutex> lock(reductionMutex_);
+    reductionDone_.wait(lock, [&] { return reductionCompleted_ == 8; });
+  }
+  for (auto error : reductionErrors_) check(error);
 }
 
 void LocalCollectives::gather(CollectiveCall const& call, size_t bytes) {

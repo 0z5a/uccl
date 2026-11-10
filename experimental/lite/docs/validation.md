@@ -2,24 +2,23 @@
 
 ## Eight-L4 local fallback and adaptive rerun — November 10, 2026
 
-The standalone BF16 example now defaults to a UCCL Lite two-NUMA fallback
-instead of NCCL. Its host-staged AllGather and peer-group reduction paths have
-no NCCL dependency. A dedicated eight-GPU correctness check passed 36 cases
-across AR/AG/RS, in-place/out-of-place layouts, three sizes including a tail,
-and two input generations; it checked every output element and capture
-rejection. The `--fallback nccl` external-control mode also passed a checked
-smoke call.
+The standalone BF16 example defaults to a UCCL Lite two-NUMA fallback.
+Its host-staged AllGather, small host reduction, and large peer-group reduction
+paths have no NCCL dependency. The final dedicated eight-GPU correctness
+check passed **61 cases** across AR/AG/RS, both placements, five sizes
+including tails, two input generations, BF16 rounding and nonfinite values;
+it also checked capture rejection.
 
 Both 1-MiB–1-GiB local/router calibrations completed 1,980 checked timed
 calls per placement. Fresh-process automatic replays selected the router at
-30/33 in-place and 31/33 out-of-place keys; the remaining keys are large
-AllGather calls to the UCCL Lite fallback. The [full record](../benchmarks/data/local_fallback_8l4_20261110/README.md)
-includes all paired samples, run-level ranges, profiles and selection logs.
-At 1 GiB, the local AllGather took 178.53 ms in place and 179.32 ms out of
-place, versus 181.22/180.60 ms for the router. The local AR/RS paths are
-slower; their negative results remain in the data. A separate earlier NCCL
-control gives context, not a third automatic backend. Small AllReduce still
-regresses against that control.
+**32/33** keys in each placement and retained local AllGather at 1 GiB under
+the 3% selection margin. The [full v3 record](../benchmarks/data/local_fallback_8l4_20261110_v3/README.md)
+includes paired samples, run-level ranges, profiles, packet-size diagnostics,
+and selection logs; the [v2 record](../benchmarks/data/local_fallback_8l4_20261110/README.md)
+preserves the earlier negative result. At 1 MiB, router AllReduce took
+**0.488/0.529 ms** in/out of place with 128 KiB packets, versus
+**0.588/0.579 ms** in the separate NCCL control. Larger local AR/RS paths
+remain slower than the router, and their negative results remain in the data.
 
 This validation is single-node, eager, BF16, and specific to two four-GPU
 NUMA groups with intra-group peer access. It does not establish application

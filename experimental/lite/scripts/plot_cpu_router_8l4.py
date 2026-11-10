@@ -14,7 +14,7 @@ from matplotlib.lines import Line2D
 from figure_style import BASELINE, BLUE, MUTED, ROOT, TEAL, clean_axis, configure, heading, save
 
 
-DATA = ROOT / "benchmarks/data/local_fallback_8l4_20261110"
+DATA = ROOT / "benchmarks/data/local_fallback_8l4_20261110_v3"
 CONTROL = ROOT / "benchmarks/data/cpu_router_8l4_20261110"
 OPERATIONS = (
     ("all_reduce", "AllReduce", 14 / 8),

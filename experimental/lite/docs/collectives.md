@@ -76,12 +76,17 @@ for cross-group transfers and requires CUDA peer access within each group for
 AllReduce and ReduceScatter. It supports in-place and out-of-place BF16
 AR/AG/RS with one process owning all device streams. Its eager `enqueue`
 completes the streams before returning; `prepare` allocates pinned host and
-GPU scratch outside timing. It does not link NCCL or MSCCL++.
+GPU scratch outside timing. For reductions through 2 MiB it downloads all
+eight inputs to pinned host buffers, reduces BF16 values with CPU workers,
+and uploads the result. Larger reductions use peer-group GPU partials and
+host staging. It does not link NCCL or MSCCL++.
 
-The [paired eight-L4 calibration](../benchmarks/data/local_fallback_8l4_20261110/README.md)
-finds this local AllGather faster than the CPU router at the largest sizes.
-The local AR/RS paths are slower and remain explicit negative results; the
-measurement-gated dispatcher chooses the router for them on this host.
+The [paired eight-L4 calibration](../benchmarks/data/local_fallback_8l4_20261110_v3/README.md)
+retains local AllGather at 1 GiB under the selection margin. The local AR/RS
+paths are slower and remain explicit negative results; the measurement-gated
+dispatcher chooses the router for them on this host. With 128 KiB packets
+through 4 MiB AllReduce, the router also beats the separate NCCL control at
+1 MiB in both placements.
 The earlier NCCL run is a separate control, not an automatic fallback for this
 configuration.
 

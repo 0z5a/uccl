@@ -63,6 +63,13 @@ The selection key includes collective, BF16 dtype, exact byte count, in-place
 placement, topology identity, and the identity of the caller's fallback.
 No interpolation or best-neighbor size policy is applied.
 
+For AllReduce through 4 MiB, the adaptive dispatcher prepares the CPU router
+with 128 KiB packets by default. Larger AllReduce and the other collectives
+use the 512 KiB default. The packet choice happens in `prepare`, outside the
+timed invocation. `--small-ar-packet-bytes 0` disables the smaller choice in
+the example. Packet geometry is part of the profile identity, so changing it
+requires new calibration.
+
 1. Unsupported dtype/topology/capacity retains the existing backend.
 2. Only an exact local calibration record can enable the router. A newer
    matching record showing a regression disables it.
@@ -119,9 +126,10 @@ two NUMA groups of four GPUs with peer access within each group. Its
 `prepare()` allocates pinned host and GPU scratch outside timing; its
 `enqueue()` is eager and synchronizes its submitted streams before returning.
 The local path sends AllGather shards through NUMA-pinned host buffers. For
-AllReduce and ReduceScatter, it reduces within each four-GPU peer group,
-exchanges partials through host memory, then distributes results. This path
-does not use NCCL or CPU-router workers. Other topologies need their own
+AllReduce and ReduceScatter through 2 MiB it uses eight pinned input buffers
+and CPU reduction workers. Larger reductions sum within each four-GPU peer
+group, exchange partials through host memory, then distribute results. This
+path does not use NCCL or CPU-router workers. Other topologies need their own
 caller-supplied fallback.
 
 ```cpp
@@ -241,7 +249,7 @@ single-process; it is separate from the existing MPI two-node CPU-router program
 ```
 
 See [validation](validation.md) for the four-L4 checks and the current eight-L4
-rerun. The [paired local/router calibration](../benchmarks/data/local_fallback_8l4_20261110/README.md)
+rerun. The [paired local/router calibration](../benchmarks/data/local_fallback_8l4_20261110_v3/README.md)
 uses this port, a UCCL Lite fallback, and fresh automatic-selection replays.
 The [NCCL comparison](../benchmarks/data/cpu_router_8l4_20261110/README.md)
 is retained as a separate control; its profiles cannot select a backend against
