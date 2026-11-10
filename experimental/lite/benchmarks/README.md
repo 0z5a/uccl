@@ -1,16 +1,18 @@
 # Reference measurements
 
-These files retain a compact measurement record for the kernels, including
-historical TP-MoE layer measurements whose host harness is not shipped here.
-They were collected before the UCCL Lite reorganization. Labels were normalized
-to the new project name; numerical values were not changed. Migration-time
-validation is recorded separately in [validation.md](../docs/validation.md).
+The older files retain a compact measurement record for the kernels,
+including historical TP-MoE layer measurements whose host harness is not
+shipped here. Those files were collected before the UCCL Lite reorganization;
+their labels were normalized, but numerical values were not changed. The
+November 10 refresh adds new raw logs and per-call samples separately.
+Migration-time validation is in [validation.md](../docs/validation.md).
 
 ## Testbed and interpretation
 
 - Four NVIDIA L4 GPUs per node, PCIe Gen4, no NVLink; dual Xeon Silver 4410Y.
 - NUMA pairs `(0,1)` and `(2,3)`; two-node tests use two local network rails.
-- Standalone collectives: float32; dense fusion: FP16; MoE: BF16.
+- Refreshed four-L4 and two-node AllReduce/AllGather/ReduceScatter: float32;
+  dense fusion: FP16; MoE: BF16.
 - Speedup is baseline latency divided by compared latency. Above 1× is faster.
 - AllReduce bus bandwidth and All-to-All aggregate bandwidth are different
   metrics; do not compare their numerical values as if they were the same.
@@ -21,9 +23,10 @@ validation is recorded separately in [validation.md](../docs/validation.md).
 
 | File | Scope and method |
 | --- | --- |
+| [refresh_20261110/README.md](data/refresh_20261110/README.md) | Fresh four-L4 and two-node AR/AG/RS plus dense/MoE fusion. Raw logs, per-call or per-round samples, selected paths, hardware/software identities, matched timing scopes, and negative results. The old mixed-timer two-node archive is excluded from new comparisons. |
 | [hardware_profile_4l4_20261110_summary.csv](data/hardware_profile_4l4_20261110_summary.csv) and [raw runs](data/hardware_profile_4l4_20261110_run1.txt) | November 10: standalone GPU topology, directed and four-GPU concurrent peer copies, concurrent H2D/D2H, and NUMA CPU copy/BF16 reduction. Three complete runs × three repetitions, useful-byte bandwidth; no NCCL baseline or collective timing. [Method and limits](../docs/hardware-profiler.md). |
-| [peer_ag_rs_4l4_20261110.txt](data/peer_ag_rs_4l4_20261110.txt) | November 10: four-L4 float32 direct-peer AG/RS versus NCCL 2.28.7, 1 KiB–64 MiB. Three alternating repetitions; slowest-rank CUDA events; every output checked. [Design and negative results](../docs/peer-ag-rs.md). |
-| [multinode_peer_20261110/summary.csv](data/multinode_peer_20261110/summary.csv), [summary_large.csv](data/multinode_peer_20261110/summary_large.csv), [summary_ar.csv](data/multinode_peer_20261110/summary_ar.csv) | November 10: two nodes × four L4, standard-layout float32 AG/RS (out of place) and AR (in place) versus NCCL 2.28.7, up to 1 GiB. Three paired alternating runs, ten calls each, slowest-rank CUDA events; full min/median/max and regressions. [Raw logs and excluded prototypes](data/multinode_peer_20261110/README.md), [design and figure](../docs/multinode.md). |
+| [peer_ag_rs_4l4_20261110.txt](data/peer_ag_rs_4l4_20261110.txt) | Earlier four-L4 float32 direct-peer AG/RS versus NCCL 2.28.7, 1 KiB–64 MiB. Three alternating repetitions; slowest-rank CUDA events; correctness checks before and after timing. The new sweep checks every call. [Design and negative results](../docs/peer-ag-rs.md). |
+| [multinode_peer_20261110/summary.csv](data/multinode_peer_20261110/summary.csv), [summary_large.csv](data/multinode_peer_20261110/summary_large.csv), [summary_ar.csv](data/multinode_peer_20261110/summary_ar.csv) | Earlier two-node float32 AG/RS/AR archive, up to 1 GiB. UCCL used CUDA-event time while `nccl-tests` reported host time, so the ratios are diagnostic only. [Raw logs and correction](data/multinode_peer_20261110/README.md), [design](../docs/multinode.md). |
 | [gpu-progress/ablation_provenance.json](data/gpu-progress/ablation_provenance.json) and linked CSVs | November 5: CPU versus GPU packet progress, same GPU reduction and packet layout; 16,800 checked timings, all 21 AG/RS sizes. [Direct NCCL results](../docs/baseline-comparison.md). |
 | [reduction-placement/ablation_provenance.json](data/reduction-placement/ablation_provenance.json) and linked CSVs | November 5: default CPU, 8-MiB CPU, flat-GPU and interleaved-GPU paths, same executable; 33,600 checked full-sweep timings plus three 1-GiB packet-size probes. AllGather and ReduceScatter, including every regression. [Architecture, blue bar figures and limitations](../docs/reduction-placement.md). |
 | [allreduce_single_node.csv](data/allreduce_single_node.csv) | October 12: 1 KiB–1 GiB, 5 warmups, 10 timed iterations, three runs. NCCL 2.18.3/2.28.7 use nccl-tests 2.13.8; UCCL Lite uses its native harness. Fastest correct UCCL Lite variant per size. |
@@ -71,6 +74,13 @@ recorded palettes. The fusion figures use paired latency bars for each shape.
 The recorded min–max timing ranges remain in the CSVs rather than being
 presented as confidence intervals.
 
+The November 10 refresh uses the same two-panel latency/throughput style
+as the current eight-L4 figures, with only the selected correct UCCL
+Lite path and NCCL. Its four-L4 host-clock AR, four-L4 CUDA-event
+AG/RS, and two-node host-clock figures are separate so timing
+scopes are never combined. Fusion refresh figures use paired bars
+of complete-operation latency at every shape, including losses.
+
 The current eight-L4 and historical eight-GPU AG/RS figures split their
 recorded sweeps between small-message latency and large-message bandwidth.
 The [labeled dense shape plot](../docs/fusion.md) keeps all eight
@@ -88,19 +98,22 @@ python3 scripts/plot_multinode_peer.py
 python3 scripts/summarize_8l4_collectives.py
 python3 scripts/plot_8l4_collectives.py
 python3 scripts/plot_cpu_router_8l4.py
+python3 scripts/plot_refresh_collectives.py
+python3 scripts/plot_refresh_fusion.py
 ```
 
 Requires Matplotlib and NumPy. `plot_results.py` reads committed CSV/text data
 and regenerates four SVGs under `docs/assets/`: historical eight-GPU AG/RS,
 the labeled dense-fusion shapes, and EP-MoE. The historical AG/RS
 figures now appear in [primitive results](../docs/primitive-collectives.md).
-`plot_multinode_peer.py` draws two more SVGs from the validated paired
-two-node AG, RS, and AR summaries. The eight-L4 summarizer selects the fastest
+`plot_multinode_peer.py` draws two archived diagnostic SVGs from the
+mixed-timer two-node AG, RS, and AR summaries. The eight-L4 summarizer selects the fastest
 measured UCCL Lite candidate before `plot_8l4_collectives.py` draws three
 two-panel figures, one per collective. `plot_cpu_router_8l4.py` draws one diagnostic SVG
 from the current eight-L4 paired BF16 local/router calibration and automatic
 selection replay, with the earlier NCCL run as a separate control, for ten
-figures total. These scripts do not run GPU work or benchmarks.
+older figures. The two refresh plotting scripts draw six collective and two
+fusion SVGs. These scripts do not run GPU work or benchmarks.
 Use `python3 scripts/plot_results.py --preview` to also export PNG and PDF copies
 under ignored `build/figures/` for inspection or reuse in a technical report.
 `python3 scripts/plot_multinode_peer.py --preview` exports PNG/PDF copies there.

@@ -1285,7 +1285,16 @@ static void runRank(int rank, mscclpp::UniqueId id, Cfg const& cfg) {
           if (cfg.only >= 0 && v != cfg.only) continue;
           if (cfg.skip[v]) continue;
           double const us = once(v);
-          if (us < bestUs[v]) bestUs[v] = us;
+          std::vector<double> all(NRANKS, 0.0);
+          all[rank] = us;
+          bootstrap->allGather(all.data(), sizeof(double));
+          double const worst = *std::max_element(all.begin(), all.end());
+          if (rank == 0) {
+            std::printf("# sample,%d,%s,%d,%.3f\n", T, kName[v], r + 1,
+                        worst);
+            std::fflush(stdout);
+          }
+          if (worst < bestUs[v]) bestUs[v] = worst;
         }
     }
 

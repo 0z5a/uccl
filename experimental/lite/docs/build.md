@@ -41,6 +41,8 @@ because the measured CUDA 12.9 compiler had a frontend failure with C++20.
 # Required paths can be supplied on every make invocation.
 make -j2 single-node MSCCLPP_HOME=/path/to/mscclpp
 make peer_ag_rs NCCL_HOME=/path/to/nccl/build
+make nccl_4l4_mpi_baseline NCCL_HOME=/path/to/nccl/build MPICXX=/path/to/mpicxx
+make nccl_2x4l4_baseline NCCL_HOME=/path/to/nccl/build MPICXX=/path/to/mpicxx
 make eight-gpu-alltoall NCCL_HOME=/path/to/nccl/build
 make -j2 fusion MSCCLPP_HOME=/path/to/mscclpp \
   CUTLASS_HOME=/path/to/cutlass NCCL_HOME=/path/to/nccl/build
@@ -51,7 +53,8 @@ make headers MSCCLPP_HOME=/path/to/mscclpp CUTLASS_HOME=/path/to/cutlass
 
 `make all` builds single-node and peer collectives, fusion, probes, and the reusable-header
 compile check. Multi-node targets are separate. Individual target names are
-`allreduce`, `alltoall`, `peer_ag_rs`, `dense_fusion`, `fused_moe`, `fused_moe_layer`,
+`allreduce`, `alltoall`, `peer_ag_rs`, `nccl_4l4_mpi_baseline`,
+`nccl_2x4l4_baseline`, `dense_fusion`, `fused_moe`, `fused_moe_layer`,
 `fused_moe_layer_qwen`, `gemm_probe`, `mma_gemm_probe`, `mma_peak_probe`,
 `moe_overlap_probe`, `cutlass_gemm_probe`, and `hardware_profiler`. Executables have an `uccl_lite_`
 prefix, for example `build/uccl_lite_dense_fusion`.
@@ -65,8 +68,10 @@ uses substantial host memory.
 ## Single-node correctness runs
 
 Use an idle four-GPU host, verify NUMA order with `nvidia-smi topo -m`, and
-ensure CUDA peer access is available. The executables fork four ranks before
-CUDA initialization; **do not launch them with mpirun or torchrun**.
+ensure CUDA peer access is available. The native AllReduce and All-to-All
+executables fork four ranks before CUDA initialization; **do not launch them
+with mpirun or torchrun**. The `nccl_4l4_mpi_baseline` control instead
+requires four MPI ranks.
 
 ```bash
 ./build/uccl_lite_allreduce -b 1024 -e 16777216 -w 2 -n 3
@@ -146,3 +151,43 @@ interface with one address for `SOCKET_IFNAME`; the recorded two-node AG/RS
 comparison used `ibp55s0f0`. The same executable and MSCCL++ library must be
 present on both hosts. See [multi-node design](multinode.md) for tuning,
 matched NCCL commands and constraints.
+
+## November 10 refresh commands
+
+The paired four-L4 AllReduce script runs the native UCCL Lite executable and
+the four-rank NCCL control in alternating order. Both use host
+enqueue+completion time, FP32 in-place buffers, and check every warmup and
+timed call. The peer AG/RS harness contains both FP32 paths and reports
+paired per-call CUDA-event samples.
+
+```bash
+OUTPUT_DIR=build/single-node-refresh bash scripts/run_single_node_refresh.sh
+./build/uccl_lite_peer_ag_rs -b 1024 -e 1073741824 -w 5 -n 10 -r 3
+```
+
+For two nodes, first build and copy the same `multinode_allreduce` and
+`nccl_2x4l4_baseline` executables to both hosts.
+The checked AR/AG/RS control uses one NCCL rank per GPU and the same host
+timing scope as UCCL Lite. `CHECK_EACH=1` verifies each UCCL call; the custom
+NCCL control verifies each of its calls.
+
+```bash
+export HOSTS=node0:4,node1:4 SOCKET_IFNAME=ibp55s0f0
+export HCA_DEVICES=mlx5_0,mlx5_1
+export NCCL_LIB=/path/to/nccl/build/lib
+export NCCL_BASELINE_BIN=/same/path/on/both/hosts/uccl_lite_nccl_2x4l4_baseline
+TIMING_MODE=host CHECK_EACH=1 OPERATIONS='allreduce allgather reducescatter' \
+  OUTPUT_DIR=build/multinode-refresh bash scripts/run_multinode_peer_compare.sh
+```
+
+The fusion refresh uses the shipped complete-operation controls and retains
+the L4 power-stability method for MoE:
+
+```bash
+OUTPUT_DIR=build/dense-refresh bash scripts/run_dense_refresh.sh
+OUTPUT_LOG=build/moe-refresh.log bash scripts/run_moe_refresh.sh
+```
+
+Keep output from each run and the exact binary/library hashes with the
+summary CSVs. The [refresh record](../benchmarks/data/refresh_20261110/README.md)
+contains the commands, raw logs, and timing boundaries used for the README.

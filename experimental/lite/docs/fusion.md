@@ -4,6 +4,53 @@ Fusion is useful when the first completed piece can be consumed before the
 entire operation finishes. UCCL Lite exposes readiness at the granularity that
 preserves GEMM efficiency: input groups, output shards, or channel stripes.
 
+## November 10 four-L4 refresh
+
+The new FP16 dense comparison uses l40 (`mibura-sky-test-01`), four L4s in a
+2+2 NUMA layout, driver 580.178.04, CUDA 12.9, NCCL 2.28.7, and the same
+MSCCL++ binary for each UCCL path. Each shape ran three independent times,
+with the shape order reversed in the second run. Each executable invocation
+uses five warmups, twenty timed iterations, and correctness checking. The
+plotted values are medians of run-level complete-operation latency. AG uses
+the harness's recorded UCCL Lite dispatch path; RS and AR use the ready-ring
+fusion path. The baselines are respectively NCCL AllGather + cuBLAS,
+cuBLAS + NCCL ReduceScatter, and cuBLAS + NCCL AllReduce.
+
+![Fresh complete-operation latency bars for every dense shape](assets/dense-fusion-4l4-refresh.svg)
+
+At the large reference shape, AG+GEMM is 15.631 versus 22.850 ms, GEMM+RS
+18.423 versus 22.746 ms, and GEMM+AR 19.964 versus 24.515 ms (UCCL Lite
+versus baseline). Small shapes are retained: at Llama 8B M=128, GEMM+RS is
+0.166 versus 0.145 ms and GEMM+AR is 0.302 versus 0.201 ms. The
+selected path is faster at 19 of 24 measured dense operation/shape pairs;
+the five losses remain in the full sweep. These counts are descriptive, not
+significance tests. The
+[per-shape summary](../benchmarks/data/refresh_20261110/fusion_dense_summary.csv),
+[all variant samples](../benchmarks/data/refresh_20261110/fusion_dense_samples.csv),
+and [24 complete run logs](../benchmarks/data/refresh_20261110/fusion_dense_l40/)
+record the other paths and negative results.
+
+The BF16 full-layer MoE refresh uses the same host, CUDA and NCCL versions.
+It measures NCCL + grouped cuBLAS, UCCL Lite + cuBLAS, and the fused path in
+one harness. For each token count, a 2.5-second settling period precedes
+twelve interleaved rounds of four iterations per variant; each round records
+the slowest rank. The minimum of those round times per variant is reported,
+matching this harness's power-stability method. Routing-plan construction
+and framework overhead remain outside the timed layer. At eight tokens per
+rank, fusion takes 2.459 versus 1.370 ms; at 32,768 it takes 84.861 versus
+129.830 ms.
+Fusion wins at five of thirteen token counts, beginning at 2,048 tokens per
+rank; all smaller measured batches lose to the complete-layer baseline.
+
+![Fresh complete-layer latency bars for every measured MoE token count](assets/moe-fusion-4l4-refresh.svg)
+
+The [round samples](../benchmarks/data/refresh_20261110/fusion_moe_samples.csv),
+[full summary](../benchmarks/data/refresh_20261110/fusion_moe_summary.csv), and
+[complete log](../benchmarks/data/refresh_20261110/fusion_moe_l40.log) retain
+all small-batch regressions and the unfused UCCL Lite control. The older
+tables below remain historical measurements and are not substituted for this
+refresh.
+
 ## Dense tensor parallelism
 
 [dense_fusion.cu](../benchmarks/fusion/dense_fusion.cu) contains FP16 benchmarks

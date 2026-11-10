@@ -210,28 +210,37 @@ void verify(std::array<Device*, kRanks> const& devices, Operation op,
 }
 double measure(std::array<Device*, kRanks> const& devices,
                std::array<ncclComm_t, kRanks> const& comms, Operation op,
-               Backend backend, size_t shard, Config const& cfg) {
-  for (int n = 0; n < cfg.warmups; ++n) launch(devices, comms, op, backend, shard);
-  synchronize(devices);
-  for (auto* d : devices) {
-    cudaCheck(cudaSetDevice(d->rank));
-    cudaCheck(cudaEventRecord(d->start, d->stream));
-  }
-  for (int n = 0; n < cfg.iterations; ++n)
+               Backend backend, size_t shard, Config const& cfg, int repeat) {
+  double timedSum = 0;
+  for (int n = 0; n < cfg.warmups + cfg.iterations; ++n) {
+    int generation = 10 + repeat * (cfg.warmups + cfg.iterations) + n;
+    fill(devices, op, shard, generation);
+    for (auto* d : devices) {
+      cudaCheck(cudaSetDevice(d->rank));
+      cudaCheck(cudaEventRecord(d->start, d->stream));
+    }
     launch(devices, comms, op, backend, shard);
-  for (auto* d : devices) {
-    cudaCheck(cudaSetDevice(d->rank));
-    cudaCheck(cudaEventRecord(d->end, d->stream));
+    for (auto* d : devices) {
+      cudaCheck(cudaSetDevice(d->rank));
+      cudaCheck(cudaEventRecord(d->end, d->stream));
+    }
+    synchronize(devices);
+    double slowest = 0;
+    for (auto* d : devices) {
+      cudaCheck(cudaSetDevice(d->rank));
+      float ms = 0;
+      cudaCheck(cudaEventElapsedTime(&ms, d->start, d->end));
+      slowest = std::max(slowest, double(ms) * 1000);
+    }
+    verify(devices, op, backend, shard, generation);
+    if (n >= cfg.warmups) {
+      timedSum += slowest;
+      std::printf("# sample,%s,%zu,%s,%d,%d,%.3f\n", opName(op),
+                  shard * kRanks * sizeof(float), backendName(backend),
+                  repeat + 1, n - cfg.warmups + 1, slowest);
+    }
   }
-  synchronize(devices);
-  double slowest = 0;
-  for (auto* d : devices) {
-    cudaCheck(cudaSetDevice(d->rank));
-    float ms = 0;
-    cudaCheck(cudaEventElapsedTime(&ms, d->start, d->end));
-    slowest = std::max(slowest, double(ms) * 1000 / cfg.iterations);
-  }
-  return slowest;
+  return timedSum / cfg.iterations;
 }
 double median(std::vector<double> samples) {
   std::sort(samples.begin(), samples.end());
@@ -272,8 +281,8 @@ int main(int argc, char** argv) {
     std::printf("# four L4 peer AG/RS, float32; NCCL version=%d; "
                 "warmups=%d iterations=%d repeats=%d\n",
                 version, cfg.warmups, cfg.iterations, cfg.repeats);
-    std::puts("# full bytes per rank; slowest-rank CUDA-event microseconds; "
-              "median of run-level means; every output checked");
+    std::puts("# full bytes per rank; slowest-rank per-call CUDA-event microseconds; "
+              "median of run-level means; every warmup and timed output checked");
     std::puts("collective,bytes,peer_median_us,peer_min_us,peer_max_us,"
               "nccl_median_us,nccl_min_us,nccl_max_us,speedup");
     for (size_t bytes = cfg.begin; bytes <= cfg.end; bytes *= 2) {
@@ -290,15 +299,13 @@ int main(int argc, char** argv) {
         std::vector<double> peer, nccl;
         for (int repeat = 0; repeat < cfg.repeats; ++repeat) {
           if (repeat % 2 == 0) {
-            peer.push_back(measure(devices, comms, op, Backend::Peer, shard, cfg));
-            nccl.push_back(measure(devices, comms, op, Backend::Nccl, shard, cfg));
+            peer.push_back(measure(devices, comms, op, Backend::Peer, shard, cfg, repeat));
+            nccl.push_back(measure(devices, comms, op, Backend::Nccl, shard, cfg, repeat));
           } else {
-            nccl.push_back(measure(devices, comms, op, Backend::Nccl, shard, cfg));
-            peer.push_back(measure(devices, comms, op, Backend::Peer, shard, cfg));
+            nccl.push_back(measure(devices, comms, op, Backend::Nccl, shard, cfg, repeat));
+            peer.push_back(measure(devices, comms, op, Backend::Peer, shard, cfg, repeat));
           }
         }
-        verify(devices, op, Backend::Peer, shard, 1);
-        verify(devices, op, Backend::Nccl, shard, 1);
         fill(devices, op, shard, 2);
         for (auto backend : {Backend::Peer, Backend::Nccl}) {
           launch(devices, comms, op, backend, shard);

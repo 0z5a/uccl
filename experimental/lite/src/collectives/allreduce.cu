@@ -1111,39 +1111,33 @@ static void runRank(int rank, mscclpp::UniqueId id, Cfg const& cfg) {
       if ((a == A3_RING || a == A5_RSFLAT) && bytes < cfg.ringMinBytes)
         continue;
 
-      double relerr = -1.0;
-      if (cfg.check && a != A0_NULL) {
+      double worstErr = -1.0;
+      double timedSum = 0.0;
+      for (int i = 0; i < cfg.warmup + cfg.iters; ++i) {
         fill(nelem);
         bootstrap->barrier();
-        launch((Algo)a, nelem, 0);
+        auto t0 = std::chrono::steady_clock::now();
+        launch((Algo)a, nelem, i);
         CUDACHECK(cudaStreamSynchronize(stream));
-        relerr = verify(nelem);
-        bootstrap->barrier();
+        auto t1 = std::chrono::steady_clock::now();
+        double us =
+            std::chrono::duration<double, std::micro>(t1 - t0).count();
+        double relerr = cfg.check && a != A0_NULL ? verify(nelem) : -1.0;
+        std::vector<double> all(NRANKS);
+        all[rank] = us;
+        bootstrap->allGather(all.data(), sizeof(double));
+        double worst = *std::max_element(all.begin(), all.end());
+        std::vector<double> errs(NRANKS);
+        errs[rank] = relerr;
+        bootstrap->allGather(errs.data(), sizeof(double));
+        worstErr = std::max(worstErr, *std::max_element(errs.begin(), errs.end()));
+        if (rank == 0 && i >= cfg.warmup)
+          std::printf("# sample,%zu,%s,%d,%.3f,%.3e\n", bytes,
+                      kAlgoName[a], i - cfg.warmup + 1, worst,
+                      *std::max_element(errs.begin(), errs.end()));
+        if (i >= cfg.warmup) timedSum += worst;
       }
-
-      fill(nelem);
-      for (int i = 0; i < cfg.warmup; i++) launch((Algo)a, nelem, i);
-      CUDACHECK(cudaStreamSynchronize(stream));
-      bootstrap->barrier();
-
-      auto t0 = std::chrono::steady_clock::now();
-      for (int i = 0; i < cfg.iters; i++) launch((Algo)a, nelem, i);
-      CUDACHECK(cudaStreamSynchronize(stream));
-      auto t1 = std::chrono::steady_clock::now();
-
-      double us = std::chrono::duration<double, std::micro>(t1 - t0).count() /
-                  cfg.iters;
-
-      // The collective is only as fast as its slowest participant.
-      std::vector<double> all(NRANKS);
-      all[rank] = us;
-      bootstrap->allGather(all.data(), sizeof(double));
-      double worst = *std::max_element(all.begin(), all.end());
-
-      std::vector<double> errs(NRANKS);
-      errs[rank] = relerr;
-      bootstrap->allGather(errs.data(), sizeof(double));
-      double worstErr = *std::max_element(errs.begin(), errs.end());
+      double worst = timedSum / cfg.iters;
 
       if (rank == 0) {
         double algbw = (double)bytes / (worst * 1e-6) / 1e9;

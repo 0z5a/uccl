@@ -626,6 +626,7 @@ struct Config {
   int rsPieces = 1;
   size_t rsTargetPieceBytes = 0;
   bool gpuTiming = false;
+  bool checkEach = false;
   size_t minBytes = 1UL << 10;
   size_t maxBytes = 1UL << 30;
   int warmup = 10;
@@ -743,6 +744,8 @@ int main(int argc, char** argv) {
         cfg.rsTargetPieceBytes = std::strtoull(next(), nullptr, 0);
       else if (key == "--gpu-timing")
         cfg.gpuTiming = std::atoi(next()) != 0;
+      else if (key == "--check-each")
+        cfg.checkEach = std::atoi(next()) != 0;
       else
         throw std::runtime_error("unknown argument " + key);
     }
@@ -1168,31 +1171,71 @@ int main(int argc, char** argv) {
       }
     }
 
-    fill(count, (cfg.allGather || cfg.reduceScatter) ? 1 : 0);
-    for (int i = 0; i < cfg.warmup; i++) launch(count, bytes);
-    CUDACHECK(cudaStreamSynchronize(stream));
-    MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
-    if (cfg.gpuTiming) CUDACHECK(cudaEventRecord(timingStart, stream));
-    auto begin = std::chrono::steady_clock::now();
-    for (int i = 0; i < cfg.iters; i++) launch(count, bytes);
-    if (cfg.gpuTiming) CUDACHECK(cudaEventRecord(timingEnd, stream));
-    CUDACHECK(cudaStreamSynchronize(stream));
-    auto end = std::chrono::steady_clock::now();
-    if (cfg.check && (cfg.allGather || cfg.reduceScatter)) {
-      relerr = std::max(relerr, verify(count, 1));
-      fill(count, 2);
-      MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
-      launch(count, bytes);
+    double us = 0;
+    if (cfg.checkEach) {
+      double timedSum = 0;
+      for (int i = 0; i < cfg.warmup + cfg.iters; ++i) {
+        int generation = 10 + i;
+        fill(count, generation);
+        MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+        if (cfg.gpuTiming) CUDACHECK(cudaEventRecord(timingStart, stream));
+        auto begin = std::chrono::steady_clock::now();
+        launch(count, bytes);
+        if (cfg.gpuTiming) CUDACHECK(cudaEventRecord(timingEnd, stream));
+        CUDACHECK(cudaStreamSynchronize(stream));
+        auto end = std::chrono::steady_clock::now();
+        double localUs =
+            std::chrono::duration<double, std::micro>(end - begin).count();
+        if (cfg.gpuTiming) {
+          float ms = 0;
+          CUDACHECK(cudaEventElapsedTime(&ms, timingStart, timingEnd));
+          localUs = double(ms) * 1000;
+        }
+        double localErr = cfg.check ? verify(count, generation) : -1;
+        relerr = std::max(relerr, localErr);
+        double callUs = 0, callErr = 0;
+        MPICHECK(MPI_Reduce(&localUs, &callUs, 1, MPI_DOUBLE, MPI_MAX, 0,
+                            MPI_COMM_WORLD));
+        MPICHECK(MPI_Reduce(&localErr, &callErr, 1, MPI_DOUBLE, MPI_MAX, 0,
+                            MPI_COMM_WORLD));
+        if (rank == 0 && i >= cfg.warmup) {
+          timedSum += callUs;
+          std::printf("# sample,%s,%zu,%d,%.3f,%.3e\n",
+                      cfg.allGather ? "allgather" : cfg.reduceScatter
+                                                  ? "reducescatter"
+                                                  : "allreduce",
+                      bytes, i - cfg.warmup + 1, callUs, callErr);
+        }
+        MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+      }
+      if (rank == 0) us = timedSum / cfg.iters;
+    } else {
+      fill(count, (cfg.allGather || cfg.reduceScatter) ? 1 : 0);
+      for (int i = 0; i < cfg.warmup; i++) launch(count, bytes);
       CUDACHECK(cudaStreamSynchronize(stream));
-      relerr = std::max(relerr, verify(count, 2));
       MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
-    }
-    double us = std::chrono::duration<double, std::micro>(end - begin).count() /
-                cfg.iters;
-    if (cfg.gpuTiming) {
-      float ms = 0;
-      CUDACHECK(cudaEventElapsedTime(&ms, timingStart, timingEnd));
-      us = double(ms) * 1000 / cfg.iters;
+      if (cfg.gpuTiming) CUDACHECK(cudaEventRecord(timingStart, stream));
+      auto begin = std::chrono::steady_clock::now();
+      for (int i = 0; i < cfg.iters; i++) launch(count, bytes);
+      if (cfg.gpuTiming) CUDACHECK(cudaEventRecord(timingEnd, stream));
+      CUDACHECK(cudaStreamSynchronize(stream));
+      auto end = std::chrono::steady_clock::now();
+      if (cfg.check && (cfg.allGather || cfg.reduceScatter)) {
+        relerr = std::max(relerr, verify(count, 1));
+        fill(count, 2);
+        MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+        launch(count, bytes);
+        CUDACHECK(cudaStreamSynchronize(stream));
+        relerr = std::max(relerr, verify(count, 2));
+        MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+      }
+      us = std::chrono::duration<double, std::micro>(end - begin).count() /
+           cfg.iters;
+      if (cfg.gpuTiming) {
+        float ms = 0;
+        CUDACHECK(cudaEventElapsedTime(&ms, timingStart, timingEnd));
+        us = double(ms) * 1000 / cfg.iters;
+      }
     }
     double worstUs = 0.0, worstErr = 0.0;
     MPICHECK(

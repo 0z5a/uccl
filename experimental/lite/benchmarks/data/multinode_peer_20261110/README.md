@@ -1,5 +1,11 @@
 # Two-node AllGather and ReduceScatter experiment
 
+**Timing-scope correction:** these archived UCCL Lite runs used CUDA-event
+timing, while the `nccl-tests` main time column used host timing. The
+side-by-side ratios are not a matched timing comparison. The raw logs and
+original summaries remain intact for provenance; use the checked
+[refresh](../refresh_20261110/README.md) for a matched current comparison.
+
 The accepted AG/RS comparisons are `paired_direct/` (1 KiB–64 MiB) and
 `paired_direct_large/` (128 MiB–1 GiB). Their validated aggregates are
 `summary.csv` and `summary_large.csv`. These rows use standard rank-ordered

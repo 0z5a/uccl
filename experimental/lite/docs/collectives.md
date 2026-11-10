@@ -3,8 +3,36 @@
 The MSCCL++ peer implementations below assume four GPUs in NUMA pairs
 `(0,1)` and `(2,3)`.
 `rank ^ 1` is the intra-socket peer and `rank ^ 2` the cross-socket peer.
-They are standalone float32 benchmark programs with their algorithm kernels
-and bootstrap code in the same translation unit.
+They are standalone benchmarks with their algorithm kernels and bootstrap
+code in the same translation unit.
+
+## November 10 four-L4 matched host sweep
+
+The refreshed AllReduce sweep ran on l40 (`mibura-sky-test-01`): four L4s,
+2+2 NUMA, driver 580.178.04, CUDA 12.9, and NCCL 2.28.7. Both paths use
+FP32 in-place buffers and four GPU processes. The UCCL Lite executable forks
+four ranks; the custom NCCL control uses four MPI ranks. Both report the
+slowest-rank host enqueue+completion latency. Three runs alternate backend
+order; each has five warmups and ten timed calls. Every warmup and timed
+call's complete output is checked. The UCCL path is selected by the lowest
+correct three-run median at each size, independently of NCCL's time.
+
+![Fresh four-L4 AllReduce latency and bus throughput versus NCCL](assets/collectives-4l4-allreduce-refresh.svg)
+
+| Complete bytes/rank | UCCL path | UCCL / NCCL (µs) |
+| ---: | --- | ---: |
+| 1 KiB | A2-tree-ll | 13.454 / 20.333 |
+| 1 MiB | A1-hier-sm | 130.459 / 151.121 |
+| 64 MiB | A3-ring-ce | 5258.517 / 5650.975 |
+| 1 GiB | A3-ring-ce | 80373.248 / 88315.409 |
+
+The selected path wins at 18 of 21 sizes; all three losses remain in the
+[candidate table](../benchmarks/data/refresh_20261110/single_native_candidates.csv).
+The [full selected summary](../benchmarks/data/refresh_20261110/single_native_summary.csv),
+[per-call samples](../benchmarks/data/refresh_20261110/single_native_samples.csv),
+and [paired raw logs](../benchmarks/data/refresh_20261110/single_native_l40/)
+retain every size. This host-clock curve is separate from the peer AG/RS
+CUDA-event sweep and the eight-L4 BF16 CPU router.
 
 ## AllReduce
 

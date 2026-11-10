@@ -1,5 +1,34 @@
 # Four-GPU peer AllGather and ReduceScatter
 
+## November 10 refreshed sweep
+
+The current-source sweep on `mibura-sky-test-02` uses four L4s in 2+2 NUMA
+order, driver 595.58.03, CUDA 12.9 and NCCL 2.28.7. Both direct-peer and
+NCCL run in one process with the same FP32 out-of-place buffers, complete
+bytes per rank, slowest-rank per-call CUDA-event timer, and alternating order.
+Each of three repetitions has five warmups and ten timed calls. Every warmup
+and timed output is fully checked with a changed input generation. A separate
+1008-byte non-power-of-two tail check passes.
+
+![Fresh four-L4 AllGather latency and bus throughput](assets/collectives-4l4-allgather-refresh.svg)
+
+![Fresh four-L4 ReduceScatter latency and bus throughput](assets/collectives-4l4-reducescatter-refresh.svg)
+
+| Complete bytes/rank | AG peer / NCCL (µs) | RS peer / NCCL (µs) |
+| ---: | ---: | ---: |
+| 1 KiB | 90.666 / 40.282 | 99.914 / 32.938 |
+| 1 MiB | 117.491 / 109.014 | 164.496 / 100.739 |
+| 32 MiB | 1717.338 / 1769.373 | 1560.730 / 1714.086 |
+| 1 GiB | 45644.624 / 49371.273 | 51001.610 / 49011.466 |
+
+The 1-GiB AG result is 1.082× faster; RS loses by about 4%. Small-message
+losses remain substantial. The [complete summary](../benchmarks/data/refresh_20261110/single_peer_summary.csv),
+[2,520 timed call samples](../benchmarks/data/refresh_20261110/single_peer_samples.csv),
+[raw log](../benchmarks/data/refresh_20261110/single_peer_ag_rs_raw.log),
+and [tail check](../benchmarks/data/refresh_20261110/single_peer_tail_1008.log)
+retain every size and repetition. The older sweep below is historical and
+uses a different per-run batch timing method.
+
 [peer_ag_rs.cu](../src/collectives/peer_ag_rs.cu) is a standalone float32
 implementation and matched NCCL benchmark for the four-GPU PCIe host. It
 requires CUDA peer access among all four devices and uses one process. It is

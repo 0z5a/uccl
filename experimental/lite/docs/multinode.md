@@ -1,5 +1,51 @@
 # Two-node collectives
 
+## Timing correction for the earlier peer sweep
+
+The November 10 `multinode_peer_20261110` archive used UCCL Lite
+`--gpu-timing 1` CUDA events, while the `nccl-tests` main time column came
+from host timing. Its side-by-side latency and bandwidth values are retained
+as historical diagnostics, but their ratios are **not a matched timing
+comparison**. The refreshed comparison under
+[refresh_20261110](../benchmarks/data/refresh_20261110/README.md) uses
+host enqueue+completion timing for both backends and checks every call.
+
+## November 10 matched two-node refresh
+
+The fresh sweep uses `mibura-sky-test-02` and l40 (`mibura-sky-test-01`),
+four L4 GPUs and two active IB HCAs per node. GPUs 0/1 and `mlx5_0` share
+NUMA node 0; GPUs 2/3 and `mlx5_1` share NUMA node 1. Both hosts have full
+local GPU peer access. The owner uses driver 595.58.03, l40 uses
+580.178.04; both use CUDA 12.9, Open MPI 4.1.7rc1, UCX 1.19.0, and the
+same NCCL 2.28.7 library and copied MSCCL++ binaries.
+
+The FP32 AllReduce is in place; AllGather and ReduceScatter are out of
+place. Each size is the complete byte extent per rank. UCCL Lite and
+NCCL use slowest-rank host enqueue+completion time, one process per GPU,
+five warmups, ten timed calls, and three backend-alternating repetitions.
+Each warmup and timed call's complete output is checked. The custom NCCL
+AR/AG/RS control uses the same rank layout, `ibp55s0f0` bootstrap interface,
+and `mlx5_0,mlx5_1` rails; P2P/GDR use NCCL defaults.
+
+![Fresh two-node AllReduce latency and bus throughput](assets/collectives-2x4l4-allreduce-refresh.svg)
+
+![Fresh two-node AllGather latency and bus throughput](assets/collectives-2x4l4-allgather-refresh.svg)
+
+![Fresh two-node ReduceScatter latency and bus throughput](assets/collectives-2x4l4-reducescatter-refresh.svg)
+
+| Complete bytes/rank | AR UCCL / NCCL (ms) | AG UCCL / NCCL (ms) | RS UCCL / NCCL (ms) |
+| ---: | ---: | ---: | ---: |
+| 64 MiB | 7.075 / 6.914 | 3.323 / 3.649 | 3.445 / 4.175 |
+| 1 GiB | 106.115 / 110.971 | 54.152 / 56.947 | 53.653 / 59.488 |
+
+At 1 GiB, AR/AG/RS have lower latency with non-overlapping three-run ranges.
+All three UCCL paths lose at 1 KiB. NCCL AR at 1 MiB has a repeated,
+highly variable delay; the targeted recheck and raw samples are retained.
+No stable 1-MiB gain is claimed from that point.
+
+[AR/AG/RS full summary](../benchmarks/data/refresh_20261110/multinode_paired_summary.csv) ·
+[raw logs, per-call samples and topology](../benchmarks/data/refresh_20261110/README.md).
+
 All network benchmarks use two nodes with four L4 GPUs each. Local ranks 0/1
 map to `mlx5_0` and ranks 2/3 to `mlx5_1`. Reported latency is the slowest of
 eight ranks. Bus bandwidth multiplies complete bytes per rank divided by time
@@ -21,17 +67,16 @@ with local communication. Immutable IB slots avoid overwriting a source while
 the NIC still reads it.
 
 The reference sweep searches 1/2/4/8 MiB pieces (`-k`) and pipeline distances
-1/2/4 (`-d`). The per-size best median beats the faster tested NCCL version from
-32 MiB upward, reaching 18.06 GB/s at 64 MiB and 17.80 GB/s at 1 GiB. Small
-messages lose because dependent proxy phases impose an approximately 80 µs floor.
+1/2/4 (`-d`). Its selected UCCL Lite path reaches 18.06 GB/s at 64 MiB and
+17.80 GB/s at 1 GiB, measured with CUDA events. A separate host-clock NCCL
+number cannot establish a speedup from this archive. Small UCCL messages
+incur an approximately 80 µs floor from dependent proxy phases.
 
-A fresh [paired current-source sweep](../benchmarks/data/multinode_peer_20261110/summary_ar.csv)
-uses one fixed default UCCL Lite configuration and NCCL 2.28.7 in-place
-AllReduce, both with slowest-rank CUDA events. Across 32 MiB–1 GiB, all six
-sizes have non-overlapping three-run ranges and higher UCCL Lite bandwidth. At
-64 MiB, bus bandwidth is **17.05 versus 16.08 GB/s**; at 1 GiB, it is
-**17.79 versus 16.31 GB/s**. This current result is separate
-from the older best-per-size comparison above.
+A historical [fixed-configuration sweep](../benchmarks/data/multinode_peer_20261110/summary_ar.csv)
+records in-place AllReduce with the same UCCL Lite path at every size. Its
+mixed-timer NCCL ratios are diagnostic only and are excluded from the new
+comparison. This fixed-path archive is separate from the older
+best-per-size search above.
 
 ## Hierarchical AllGather and ReduceScatter
 
@@ -59,53 +104,12 @@ launch occupancy check rejects grids that cannot reside together, because the
 kernels synchronize across the grid. Earlier GPU-packing and prepacked-input
 experiments remain archived but are excluded from the final comparison.
 
-![Two-node AllGather and ReduceScatter small-message latency versus NCCL](assets/multinode-latency.svg)
-
-At 1 KiB, AllGather takes **97.66 µs** versus **19.36 µs** for NCCL 2.28.7,
-and ReduceScatter takes **100.66 versus 23.03 µs**. At 1 MiB, AG reaches
-**111.92 versus 119.60 µs**, while RS still loses at **189.54 versus
-103.76 µs**. The latency figure omits the anomalous 512-KiB NCCL point;
-the complete sweep retains it.
-
-![Paired two-node AllGather, ReduceScatter, and AllReduce latency bars at 64 MiB and 1 GiB](assets/multinode-peer.svg)
-
-The latency bars use the [32–64 MiB paired summary](../benchmarks/data/multinode_peer_20261110/summary.csv),
-[128 MiB–1 GiB summary](../benchmarks/data/multinode_peer_20261110/summary_large.csv),
-and [in-place AR summary](../benchmarks/data/multinode_peer_20261110/summary_ar.csv).
-At 64 MiB, AG/RS/AR take **3.17 / 3.38 / 6.89 ms** versus
-**3.82 / 3.97 / 7.30 ms** for NCCL. The full
-[128-MiB–1-GiB paired sweep](../benchmarks/data/multinode_peer_20261110/summary_large.csv)
-extends the checked comparison:
-
-| Complete bytes/rank | AG UCCL / NCCL | RS UCCL / NCCL | AR UCCL / NCCL |
-| ---: | ---: | ---: | ---: |
-| 128 MiB | 18.20 / 15.93 | 17.54 / 15.25 | 16.96 / 16.18 |
-| 256 MiB | 18.14 / 16.00 | 17.59 / 15.28 | 16.97 / 16.29 |
-| 512 MiB | 18.16 / 16.04 | 17.57 / 15.34 | 17.50 / 16.29 |
-| 1 GiB | 18.23 / 16.02 | 17.62 / 15.36 | 17.79 / 16.31 |
-
-All table values are bus bandwidth in decimal GB/s. This uses complete bytes
-per rank divided by time, multiplied by `7/8` for AG/RS and `7/4` for AR.
-
-The full 1-KiB–1-GiB AG/RS data retain every regression. The latency figure
-selects 64 MiB and 1 GiB; all intermediate points remain in the CSVs. At
-512 KiB the NCCL AG/RS timing is anomalously high, and at 8 MiB one RS run
-is slow. Those points are retained in the data and excluded from the selected
-latency view.
-
-These are three paired repetitions, alternating backend order. Each repetition
-has five warmups and ten timed calls. Both use one GPU per MPI rank, eight ranks,
-FP32, and slowest-rank CUDA-event time; validation and initialization are
-outside timing. NCCL uses MPI-enabled nccl-tests 2.19.7 with NCCL 2.28.7,
-`-a 3`, default P2P/GDR, and both `mlx5_0,mlx5_1` HCAs. Each UCCL Lite
-operation checks three changed input generations per size; NCCL reports zero
-wrong and out-of-bounds values. The workload is a native primitive comparison,
-not an application benchmark or a runtime peer/NCCL selector. The
-[paired launcher](../scripts/run_multinode_peer_compare.sh),
-[validator](../scripts/summarize_multinode_peer.py), and
-[plotter](../scripts/plot_multinode_peer.py) reproduce the logs, table and SVG.
-[Raw-log provenance and excluded prepacked-input runs](../benchmarks/data/multinode_peer_20261110/README.md)
-identify the exact binaries and limitations.
+The older AG/RS/AR sweep used three alternating repetitions, five warmups,
+and ten calls per repetition on eight FP32 ranks. UCCL Lite reported
+CUDA-event time, while MPI-enabled `nccl-tests` 2.19.7 with NCCL 2.28.7
+reported host time. The [complete raw logs and mixed-timer figures](../benchmarks/data/multinode_peer_20261110/README.md)
+remain available to inspect transport behavior, regressions, and the anomalous
+512-KiB NCCL point. They are excluded from the refreshed README comparison.
 
 ## Pinned-host CPU router
 

@@ -9,10 +9,11 @@ from pathlib import Path
 from statistics import median
 
 
-def uccl_rows(path: Path, operation: str) -> dict[int, float]:
+def uccl_rows(path: Path, operation: str, timing_mode: str) -> dict[int, float]:
     text = path.read_text()
-    if "# timing=CUDA event; slowest of eight ranks" not in text:
-        raise ValueError(f"missing CUDA-event timing scope: {path}")
+    expected_timing = {"cuda-event": "CUDA event", "host": "host enqueue+completion"}[timing_mode]
+    if f"# timing={expected_timing}; slowest of eight ranks" not in text:
+        raise ValueError(f"wrong timing scope: {path}")
     expected = {
         "allgather": "# local ring, remote-rank IB exchange",
         "reducescatter": "# local direct ring reduction, remote-rank IB exchange",
@@ -66,7 +67,7 @@ def nccl_rows(path: Path, operation: str) -> dict[int, float]:
 
 
 def summarize(directory: Path, output: Path, repeats: int,
-              operations: tuple[str, ...]) -> None:
+              operations: tuple[str, ...], timing_mode: str) -> None:
     fields = [
         "collective", "bytes", "uccl_min_us", "uccl_median_us", "uccl_max_us",
         "nccl_min_us", "nccl_median_us", "nccl_max_us", "speedup",
@@ -75,7 +76,7 @@ def summarize(directory: Path, output: Path, repeats: int,
     ]
     summary = []
     for operation in operations:
-        uccl = [uccl_rows(directory / f"{operation}_uccl_run{r}.txt", operation)
+        uccl = [uccl_rows(directory / f"{operation}_uccl_run{r}.txt", operation, timing_mode)
                 for r in range(1, repeats + 1)]
         nccl = [nccl_rows(directory / f"{operation}_nccl_run{r}.txt", operation)
                 for r in range(1, repeats + 1)]
@@ -115,6 +116,8 @@ if __name__ == "__main__":
     parser.add_argument("output", type=Path)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--operations", default="allgather,reducescatter")
+    parser.add_argument("--timing-mode", choices=("cuda-event", "host"),
+                        default="cuda-event")
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error("--repeats must be positive")
@@ -122,4 +125,5 @@ if __name__ == "__main__":
     if not operations or any(op not in ("allgather", "reducescatter", "allreduce")
                              for op in operations):
         parser.error("--operations must list allgather, reducescatter, and/or allreduce")
-    summarize(args.directory, args.output, args.repeats, operations)
+    summarize(args.directory, args.output, args.repeats, operations,
+              args.timing_mode)
