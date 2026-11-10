@@ -10,3 +10,5 @@ __pycache__/
 !/benchmarks/data/host-staged-reference/*.csv
 !/benchmarks/data/host-staged-reference/provenance.json
 !/benchmarks/data/host-staged-reference/trace_validation.json
+!/benchmarks/data/cpu_router_8l4_20261110/*.csv
+!/benchmarks/data/cpu_router_8l4_20261110/*.log

@@ -117,21 +117,46 @@ The CPU router is a separately built library. A caller supplies its existing
 backend as a callback. Automatic selection requires an **exact local** match
 for collective, BF16 dtype, byte count, placement, topology/software identity,
 and fallback identity. A candidate needs at least **3% median speedup with
-non-overlapping timing ranges**; otherwise the callback runs without creating
-router workers or buffers.
+non-overlapping timing ranges**; a fresh fallback-only dispatcher calls the
+existing backend without creating router workers or buffers.
 
 ```bash
 make -j2 cpu-router adaptive-collectives
 ./build/uccl_lite_collectives --gpus 4 --backend auto --op all
 ```
 
-On the current four-L4 host, all **12** paired calibration cases retained
-NCCL. Historical data from a different **eight-L4, no-P2P** system recorded
-1-GiB in-place BF16 AllGather/ReduceScatter bandwidth of **5.25/5.59 GB/s**
-versus **5.04/4.86 GB/s** for NCCL 2.27.5. That archive cannot enable the
-router automatically on a new host; this port has not been rerun on eight GPUs.
-[API and calibration](docs/cpu-router.md) · [Historical primitive figures and
-provenance](docs/primitive-collectives.md).
+On this **eight-L4** host, GPUs 0–3 and 4–7 occupy separate NUMA nodes. The
+hardware probe measured **49.30 / 50.98 GB/s** aggregate H2D / D2H over all
+eight GPUs and **9.89–10.27 GB/s** on individual peer links within a node;
+cross-node CUDA peer access is unavailable. The probe describes the machine;
+the paired collective timings below determine each automatic choice.
+
+At **1 GiB of full tensor bytes per rank**, the current BF16 CPU router and
+NCCL 2.28.9 measured these median slowest-rank CUDA-event times:
+
+| Placement | Collective | NCCL | CPU router | NCCL / router | Automatic choice |
+| --- | --- | ---: | ---: | ---: | --- |
+| In place | AllReduce | 368.50 ms | 276.64 ms | 1.332× | Router |
+| In place | AllGather | 186.73 ms | 181.85 ms | 1.027× | NCCL |
+| In place | ReduceScatter | 196.42 ms | 169.67 ms | 1.158× | Router |
+| Out of place | AllReduce | 369.08 ms | 276.33 ms | 1.336× | Router |
+| Out of place | AllGather | 186.26 ms | 182.16 ms | 1.022× | NCCL |
+| Out of place | ReduceScatter | 196.49 ms | 170.42 ms | 1.153× | Router |
+
+The 1-GiB AllGather gains fall below the 3% selection margin. Across the
+1-MiB–1-GiB doubling sweep, automatic mode selected the router at **24/33**
+in-place and **20/33** out-of-place workload keys. At 1 MiB in place,
+the CPU router's AllReduce took **771.58 µs** versus **587.78 µs** for NCCL,
+so automatic mode retained NCCL; the policy does not infer a win from GPU
+count. Every timed call passed the output check.
+Measurements used CUDA 12.9, driver 580.178.04, five warmups, ten timed calls
+per repetition, and three alternating paired repetitions. [Full local data,
+hardware profile, commands, and selection replay](benchmarks/data/cpu_router_8l4_20261110/README.md).
+
+The earlier four-L4 calibration retained NCCL in all **12** cases. Historical
+eight-L4 figures used a different no-P2P configuration and NCCL 2.27.5; they
+do not enable routing on this host. [API and calibration](docs/cpu-router.md) ·
+[Historical primitive figures](docs/primitive-collectives.md).
 
 ## Documentation
 

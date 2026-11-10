@@ -1,5 +1,23 @@
 # Validation and limitations
 
+## Eight-L4 CPU-router rerun — November 10, 2026
+
+The current-source hardware probe and BF16 adaptive benchmark ran on eight L4s
+with four GPUs per NUMA node, CUDA 12.9, driver 580.178.04, and NCCL 2.28.9.
+Both in-place and out-of-place 1-MiB–1-GiB doubling sweeps completed all
+checked AR/AG/RS calls: 33 workload keys × two backends × three repetitions ×
+ten timed calls per placement. The fresh-profile automatic replays selected the
+router at 24/33 in-place and 20/33 out-of-place keys. A separate 1-GiB
+in-place AllGather fallback replay did not initialize router workers. The
+[full local record](../benchmarks/data/cpu_router_8l4_20261110/README.md)
+includes probe output, run-level ranges, every timed sample, profiles, and
+selection logs. This eager benchmark is not an application throughput test.
+
+`make router-checks` built with CUDA 12.9. The host policy (31), dispatcher
+(28), NCCL identity (8), BF16 oracle (524,312), router core, and primitive
+channel checks passed. The eight-GPU eager check passed 732 mixed operations;
+the graph check passed 1,000 captured mixed collectives across five replays.
+
 ## README figure refresh — November 10, 2026
 
 The README now uses compact line and dot plots with latency for small
@@ -32,7 +50,8 @@ the opt-in GPU reduction check passes **26,569,136** scalar/guard checks.
 The rebuilt BF16 adaptive example, with no loaded local profile, checked
 AR/AG/RS at 1 MiB and retained NCCL for all three calls without creating
 router workers. This was a short integration check, not a performance result.
-No eight-GPU or two-node rerun was available for this policy change.
+No eight-GPU or two-node rerun was available in that validation pass; the
+eight-L4 local rerun is recorded above.
 
 ## Direct peer AG/RS — November 10, 2026
 
@@ -168,9 +187,9 @@ for AR, 422.9 / 491.0 µs for AG, and 400.4 / 1083.4 µs for RS. These eager
 integration measurements are not replacements for the historical collective
 plots or a comparison against the separate float32 MSCCL++ implementation.
 
-No eight-GPU machine was used for fresh validation. The archived eight-L4
-measurements no longer enable automatic routing; the newly ported runtime
-performance still needs an eight-GPU rerun.
+At the time of this four-GPU port validation, no eight-GPU machine was used.
+The archived eight-L4 measurements no longer enable automatic routing. The
+later current-source eight-L4 rerun is recorded at the top of this page.
 
 ## What this validation does not establish
 

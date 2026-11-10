@@ -193,6 +193,8 @@ single-process; it is separate from the existing MPI two-node CPU-router program
 ./build/uccl_lite_router_graph_check --gpus 4
 ```
 
-See [validation](validation.md) for what was run on the current four-L4 host.
-Eight-L4 performance remains the archived matched experiment until it is rerun
-with this port on that testbed.
+See [validation](validation.md) for the four-L4 checks and the current eight-L4
+rerun. The [eight-L4 local calibration](../benchmarks/data/cpu_router_8l4_20261110/README.md)
+uses this port, a hardware probe, paired NCCL 2.28.9 measurements, and a fresh
+automatic-selection replay. Its topology and benchmark differ from the older
+no-P2P primitive archive.
