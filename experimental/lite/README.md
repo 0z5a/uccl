@@ -122,14 +122,6 @@ transfers constrain the collective while NUMA-local host
 memory and spare CPU cores can keep up with the packet flow. Fast direct P2P
 or contention for host memory can erase that advantage.
 
-On this 8xL4 GPU host, the [hardware profiler](benchmarks/data/cpu_router_8l4_20261110/hardware_profile.txt)
-found no cross-group peer access and about **10 GB/s per directed peer link**
-within each group. It measured about **49 GB/s H2D** and **51 GB/s D2H** in
-separate eight-GPU sweeps. NUMA-local CPU copy reached **44/60 GB/s**, and
-four-source reduction **35/33 GB/s**, on nodes 0/1. These are separate
-useful-byte bandwidth probes, not simultaneous traffic or a prediction of
-collective latency.
-
 ### High-level design
 
 The optional CPU router exchanges packets through NUMA-local pinned host
@@ -165,6 +157,14 @@ flowchart TB
     class F,PC,M,PG stage
     class RED,PACK,DEDUP operator
 ```
+
+The `Process (CPU)` operators can be used in different collectives:
+
+- **Reduce** combines contributions for AllReduce and ReduceScatter.
+- **Pack** assembles fragments for AllGather and token buffers for
+  dispatch/combine.
+- **Deduplicate** removes repeated token records in dispatch/combine. The
+  included fixed-width operator is intended for small routing metadata.
 
 ### Profiler and selection
 
