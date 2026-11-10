@@ -1,5 +1,36 @@
 # Two-node collectives
 
+## Adaptive local schedules
+
+The follow-up on the same two four-L4 hosts keeps FP32, rank placement,
+NCCL 2.28.7, slowest-rank host enqueue+completion timing, five warmups,
+three backend-alternating runs, ten timed calls per run, and complete
+per-call output checks. A per-size UCCL policy uses flat local AG at
+2 KiB–512 KiB, then ring AG; AllReduce uses flat local gather through
+256 KiB. ReduceScatter uses flat local reduction at 2 KiB–512 KiB,
+one-piece GPU-packed ring at 1–16 MiB, and direct ring at 1 KiB and from
+32 MiB upward. The path for every size is in the summary CSV.
+
+![Optimized two-node AllReduce latency and bus throughput](assets/collectives-2x4l4-allreduce-optimized.svg)
+
+![Optimized two-node AllGather latency and bus throughput](assets/collectives-2x4l4-allgather-optimized.svg)
+
+![Optimized two-node ReduceScatter latency and bus throughput](assets/collectives-2x4l4-reducescatter-optimized.svg)
+
+The packed RS path cuts 1-MiB UCCL latency from **276.3 to 135.1 µs**;
+its paired NCCL control takes **117.6 µs**, so this size still loses.
+At 2/4/8 MiB, optimized RS takes **182.5/291.8/509.4 µs** versus
+NCCL **177.1/279.6/499.0 µs**. Across the complete sweep, fourteen
+RS sizes improve by more than 3% over the earlier UCCL path, with
+non-overlapping run ranges at thirteen. AG improves at nine sizes and AR
+at seven by that median criterion. Small-message AR/AG/RS remain slower
+than NCCL; the later large-message crossover remains visible in the
+figures. The NCCL AR 1-MiB timing anomaly is retained separately and is
+not treated as a stable gain.
+
+[Complete optimized summary](../benchmarks/data/optimization_20261110/multinode_summary.csv) ·
+[raw logs, per-call samples and ablations](../benchmarks/data/optimization_20261110/README.md).
+
 ## Timing correction for the earlier peer sweep
 
 The November 10 `multinode_peer_20261110` archive used UCCL Lite

@@ -15,6 +15,13 @@
 
 namespace {
 constexpr int kRanks = 4;
+constexpr size_t kCompactGatherBytes = 256UL << 10;
+constexpr size_t kCompactScatterBytes = 64UL << 10;
+bool directSelfReduce(size_t fullBytes) {
+  return fullBytes == (256UL << 10) ||
+         (fullBytes >= (1UL << 20) && fullBytes <= (8UL << 20)) ||
+         fullBytes >= (32UL << 20);
+}
 void cudaCheck(cudaError_t status) {
   if (status != cudaSuccess) throw std::runtime_error(cudaGetErrorString(status));
 }
@@ -23,6 +30,7 @@ void ncclCheck(ncclResult_t status) {
 }
 struct Config {
   size_t begin = 1UL << 10, end = 1UL << 26;
+  size_t pullMaxBytes = 32UL << 10;
   int warmups = 5, iterations = 10, repeats = 3;
 };
 Config parse(int argc, char** argv) {
@@ -31,7 +39,8 @@ Config parse(int argc, char** argv) {
     std::string option = argv[i];
     if (option == "--help") {
       std::puts("Usage: uccl_lite_peer_ag_rs [-b BYTES] [-e BYTES] "
-                "[-w WARMUPS] [-n ITERATIONS] [-r REPEATS]\n"
+                "[-w WARMUPS] [-n ITERATIONS] [-r REPEATS] "
+                "[--pull-max-bytes BYTES]\n"
                 "BYTES is full AllGather output / ReduceScatter input per "
                 "rank; requires four peer-accessible GPUs.");
       std::exit(0);
@@ -43,6 +52,8 @@ Config parse(int argc, char** argv) {
     else if (option == "-w") cfg.warmups = std::atoi(value);
     else if (option == "-n") cfg.iterations = std::atoi(value);
     else if (option == "-r") cfg.repeats = std::atoi(value);
+    else if (option == "--pull-max-bytes")
+      cfg.pullMaxBytes = std::strtoull(value, nullptr, 0);
     else throw std::invalid_argument("unknown option: " + option);
   }
   if (cfg.begin < 16 || cfg.begin > cfg.end || cfg.begin % 16 ||
@@ -54,53 +65,111 @@ struct Device {
   int rank;
   float *input = nullptr, *output = nullptr, *scratch = nullptr,
         *reference = nullptr;
+  unsigned int* wrong = nullptr;
   cudaStream_t stream = nullptr;
   cudaEvent_t start = nullptr, end = nullptr, transferDone = nullptr,
-              reduceDone = nullptr;
+              reduceDone = nullptr, transferAllDone = nullptr;
   Device(int r, size_t bytes) : rank(r) {
     cudaCheck(cudaSetDevice(rank));
     cudaCheck(cudaMalloc(&input, bytes));
     cudaCheck(cudaMalloc(&output, bytes));
     cudaCheck(cudaMalloc(&scratch, bytes));
     cudaCheck(cudaMalloc(&reference, bytes));
+    cudaCheck(cudaMalloc(&wrong, sizeof(unsigned int)));
     cudaCheck(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
     cudaCheck(cudaEventCreate(&start));
     cudaCheck(cudaEventCreate(&end));
     cudaCheck(cudaEventCreateWithFlags(&transferDone, cudaEventDisableTiming));
+    cudaCheck(cudaEventCreateWithFlags(&transferAllDone, cudaEventDisableTiming));
     cudaCheck(cudaEventCreateWithFlags(&reduceDone, cudaEventDisableTiming));
   }
   ~Device() {
     cudaSetDevice(rank);
+    if (transferAllDone) cudaEventDestroy(transferAllDone);
     if (reduceDone) cudaEventDestroy(reduceDone);
     if (transferDone) cudaEventDestroy(transferDone);
     if (end) cudaEventDestroy(end);
     if (start) cudaEventDestroy(start);
     if (stream) cudaStreamDestroy(stream);
     if (reference) cudaFree(reference);
+    if (wrong) cudaFree(wrong);
     if (scratch) cudaFree(scratch);
     if (output) cudaFree(output);
     if (input) cudaFree(input);
   }
 };
-__global__ void sumFour(float const* source, float* output, size_t shard) {
+__global__ void sumFour(float const* source, float const* localInput,
+                        float* output, size_t shard, int destination,
+                        bool directSelf) {
   size_t index = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
   if (index >= shard) return;
   float value = 0;
   for (int rank = 0; rank < kRanks; ++rank)
-    value += source[size_t(rank) * shard + index];
+    value += directSelf && rank == destination
+                 ? localInput[size_t(destination) * shard + index]
+                 : source[size_t(rank) * shard + index];
+  output[index] = value;
+}
+__global__ void fillInput(float* input, size_t elements, int rank,
+                          int generation) {
+  size_t index = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+  size_t stride = size_t(gridDim.x) * blockDim.x;
+  float rankValue = float(rank + 1 + generation * kRanks);
+  for (; index < elements; index += stride)
+    input[index] = rankValue * float(1 + index % 97);
+}
+__global__ void checkOutput(float const* output, unsigned int* wrong,
+                            size_t elements, size_t shard, int rank,
+                            int generation, bool gather) {
+  size_t index = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+  size_t stride = size_t(gridDim.x) * blockDim.x;
+  for (; index < elements; index += stride) {
+    float want = gather
+                     ? float(index / shard + 1 + generation * kRanks) *
+                           float(1 + (index % shard) % 97)
+                     : float(10 + generation * kRanks * kRanks) *
+                           float(1 + (size_t(rank) * shard + index) % 97);
+    if (!(fabsf(output[index] - want) <= 1e-5f)) atomicAdd(wrong, 1);
+  }
+}
+__global__ void pullGather(float const* in0, float const* in1,
+                           float const* in2, float const* in3, float* output,
+                           size_t shard) {
+  size_t index = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (index >= shard) return;
+  int source = blockIdx.y;
+  float const* input = source == 0 ? in0 : source == 1 ? in1 : source == 2 ? in2 : in3;
+  output[size_t(source) * shard + index] = input[index];
+}
+__global__ void pullScatter(float const* in0, float const* in1,
+                            float const* in2, float const* in3, float* output,
+                            size_t shard, int destination) {
+  size_t index = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (index >= shard) return;
+  size_t offset = size_t(destination) * shard + index;
+  float value = in0[offset];
+  value += in1[offset];
+  value += in2[offset];
+  value += in3[offset];
   output[index] = value;
 }
 enum class Operation { Gather, Scatter };
-enum class Backend { Peer, Nccl };
+enum class Backend { Peer, Pull, Nccl };
 char const* opName(Operation op) {
   return op == Operation::Gather ? "all_gather" : "reduce_scatter";
 }
 char const* backendName(Backend backend) {
-  return backend == Backend::Peer ? "peer" : "nccl";
+  if (backend == Backend::Peer) return "peer";
+  return backend == Backend::Pull ? "pull" : "nccl";
 }
 void launchPeer(std::array<Device*, kRanks> const& devices, Operation op,
                 size_t shard) {
   size_t bytes = shard * sizeof(float);
+  size_t fullBytes = bytes * kRanks;
+  bool compact = op == Operation::Gather
+                     ? fullBytes <= kCompactGatherBytes
+                     : fullBytes <= kCompactScatterBytes;
+  bool directSelf = op == Operation::Scatter && directSelfReduce(fullBytes);
   for (int source = 0; source < kRanks; ++source) {
     auto& s = *devices[source];
     cudaCheck(cudaSetDevice(source));
@@ -117,25 +186,62 @@ void launchPeer(std::array<Device*, kRanks> const& devices, Operation op,
       float const* input = op == Operation::Gather
                                ? s.input
                                : s.input + size_t(dest) * shard;
-      if (source == dest)
-        cudaCheck(cudaMemcpyAsync(target, input, bytes,
-                                  cudaMemcpyDeviceToDevice, s.stream));
+      if (source == dest) {
+        if (!directSelf)
+          cudaCheck(cudaMemcpyAsync(target, input, bytes,
+                                    cudaMemcpyDeviceToDevice, s.stream));
+      }
       else
         cudaCheck(cudaMemcpyPeerAsync(target, dest, input, source, bytes,
                                       s.stream));
     }
     cudaCheck(cudaEventRecord(s.transferDone, s.stream));
   }
+  if (compact) {
+    // One leader publishes all source completions, avoiding a four-way event
+    // fan-out on every destination for small messages.
+    cudaCheck(cudaSetDevice(0));
+    for (int source = 1; source < kRanks; ++source)
+      cudaCheck(cudaStreamWaitEvent(devices[0]->stream,
+                                    devices[source]->transferDone, 0));
+    cudaCheck(cudaEventRecord(devices[0]->transferAllDone,
+                              devices[0]->stream));
+  }
   for (int dest = 0; dest < kRanks; ++dest) {
     auto& d = *devices[dest];
     cudaCheck(cudaSetDevice(dest));
-    for (int source = 0; source < kRanks; ++source)
-      cudaCheck(cudaStreamWaitEvent(d.stream, devices[source]->transferDone, 0));
+    if (compact) {
+      if (dest != 0)
+        cudaCheck(cudaStreamWaitEvent(d.stream,
+                                      devices[0]->transferAllDone, 0));
+    } else
+      for (int source = 0; source < kRanks; ++source)
+        cudaCheck(cudaStreamWaitEvent(d.stream,
+                                      devices[source]->transferDone, 0));
     if (op == Operation::Scatter)
       sumFour<<<int((shard + 255) / 256), 256, 0, d.stream>>>(
-          d.scratch, d.output, shard);
+          d.scratch, d.input, d.output, shard, dest, directSelf);
     if (op == Operation::Scatter)
       cudaCheck(cudaEventRecord(d.reduceDone, d.stream));
+    cudaCheck(cudaGetLastError());
+  }
+}
+void launchPull(std::array<Device*, kRanks> const& devices, Operation op,
+                size_t shard) {
+  // Inputs are immutable and fully published by fill() before this launch.
+  // A caller using other streams must supply the same input-ready boundary.
+  for (int destination = 0; destination < kRanks; ++destination) {
+    auto& d = *devices[destination];
+    cudaCheck(cudaSetDevice(destination));
+    if (op == Operation::Gather)
+      pullGather<<<dim3(int((shard + 255) / 256), kRanks), 256, 0,
+                   d.stream>>>(
+          devices[0]->input, devices[1]->input, devices[2]->input,
+          devices[3]->input, d.output, shard);
+    else
+      pullScatter<<<int((shard + 255) / 256), 256, 0, d.stream>>>(
+          devices[0]->input, devices[1]->input, devices[2]->input,
+          devices[3]->input, d.output, shard, destination);
     cudaCheck(cudaGetLastError());
   }
 }
@@ -159,6 +265,7 @@ void launch(std::array<Device*, kRanks> const& devices,
             std::array<ncclComm_t, kRanks> const& comms, Operation op,
             Backend backend, size_t shard) {
   if (backend == Backend::Peer) launchPeer(devices, op, shard);
+  else if (backend == Backend::Pull) launchPull(devices, op, shard);
   else launchNccl(devices, comms, op, shard);
 }
 void synchronize(std::array<Device*, kRanks> const& devices) {
@@ -170,41 +277,36 @@ void synchronize(std::array<Device*, kRanks> const& devices) {
 void fill(std::array<Device*, kRanks> const& devices, Operation op,
           size_t shard, int generation) {
   size_t elements = shard * (op == Operation::Gather ? 1 : kRanks);
-  std::vector<float> host(elements);
   for (auto* d : devices) {
-    for (size_t i = 0; i < elements; ++i)
-      host[i] = float(d->rank + 1 + generation * kRanks) *
-                float(1 + i % 97);
     cudaCheck(cudaSetDevice(d->rank));
-    cudaCheck(cudaMemcpy(d->input, host.data(), elements * sizeof(float),
-                         cudaMemcpyHostToDevice));
-    cudaCheck(cudaMemset(d->output, 0xff, shard * kRanks * sizeof(float)));
-    cudaCheck(cudaMemset(d->reference, 0xff,
-                         shard * kRanks * sizeof(float)));
+    fillInput<<<256, 256, 0, d->stream>>>(d->input, elements, d->rank,
+                                         generation);
+    cudaCheck(cudaGetLastError());
+    cudaCheck(cudaMemsetAsync(d->output, 0xff,
+                              shard * kRanks * sizeof(float), d->stream));
+    cudaCheck(cudaMemsetAsync(d->reference, 0xff,
+                              shard * kRanks * sizeof(float), d->stream));
+    cudaCheck(cudaDeviceSynchronize());
   }
 }
 void verify(std::array<Device*, kRanks> const& devices, Operation op,
             Backend backend, size_t shard, int generation) {
   size_t elements = shard * (op == Operation::Gather ? kRanks : 1);
-  std::vector<float> host(elements);
   for (auto* d : devices) {
     cudaCheck(cudaSetDevice(d->rank));
-    cudaCheck(cudaMemcpy(host.data(), backend == Backend::Peer ? d->output
-                                                              : d->reference,
-                         elements * sizeof(float), cudaMemcpyDeviceToHost));
-    for (size_t i = 0; i < elements; ++i) {
-      float want = op == Operation::Gather
-                       ? float(i / shard + 1 + generation * kRanks) *
-                             float(1 + (i % shard) % 97)
-                       : float(10 + generation * kRanks * kRanks) *
-                             float(1 + (size_t(d->rank) * shard + i) % 97);
-      if (std::fabs(host[i] - want) > 1e-5f) {
-        std::fprintf(stderr,
-                     "%s %s rank=%d index=%zu got=%.6f want=%.6f\n",
-                     opName(op), backendName(backend), d->rank, i, host[i],
-                     want);
-        throw std::runtime_error("collective output mismatch");
-      }
+    cudaCheck(cudaMemsetAsync(d->wrong, 0, sizeof(unsigned int), d->stream));
+    checkOutput<<<256, 256, 0, d->stream>>>(
+        backend == Backend::Nccl ? d->reference : d->output, d->wrong,
+        elements, shard, d->rank, generation, op == Operation::Gather);
+    cudaCheck(cudaGetLastError());
+    unsigned int wrong = 0;
+    cudaCheck(cudaMemcpyAsync(&wrong, d->wrong, sizeof(unsigned int),
+                              cudaMemcpyDeviceToHost, d->stream));
+    cudaCheck(cudaStreamSynchronize(d->stream));
+    if (wrong) {
+      std::fprintf(stderr, "%s %s rank=%d wrong=%u\n", opName(op),
+                   backendName(backend), d->rank, wrong);
+      throw std::runtime_error("collective output mismatch");
     }
   }
 }
@@ -283,41 +385,67 @@ int main(int argc, char** argv) {
                 version, cfg.warmups, cfg.iterations, cfg.repeats);
     std::puts("# full bytes per rank; slowest-rank per-call CUDA-event microseconds; "
               "median of run-level means; every warmup and timed output checked");
-    std::puts("collective,bytes,peer_median_us,peer_min_us,peer_max_us,"
-              "nccl_median_us,nccl_min_us,nccl_max_us,speedup");
+    std::printf("# direct peer-read path eligible through %zu bytes\n",
+                cfg.pullMaxBytes);
+    std::printf("# compact peer completion through AG %zu B, RS %zu B\n",
+                kCompactGatherBytes, kCompactScatterBytes);
+    std::puts("# RS direct self contribution at 256 KiB, 1-8 MiB, and >=32 MiB");
+    std::puts("collective,bytes,backend,median_us,min_us,max_us");
     for (size_t bytes = cfg.begin; bytes <= cfg.end; bytes *= 2) {
       size_t shard = bytes / sizeof(float) / kRanks;
       for (auto op : {Operation::Gather, Operation::Scatter}) {
+        bool pullEligible = bytes <= cfg.pullMaxBytes;
+        std::vector<Backend> backends{Backend::Peer};
+        if (pullEligible) backends.push_back(Backend::Pull);
+        backends.push_back(Backend::Nccl);
         for (int generation = 0; generation < 2; ++generation) {
           fill(devices, op, shard, generation);
-          for (auto backend : {Backend::Peer, Backend::Nccl}) {
+          for (auto backend : backends) {
             launch(devices, comms, op, backend, shard);
             synchronize(devices);
             verify(devices, op, backend, shard, generation);
           }
         }
-        std::vector<double> peer, nccl;
+        std::array<std::vector<double>, 3> samples;
         for (int repeat = 0; repeat < cfg.repeats; ++repeat) {
-          if (repeat % 2 == 0) {
-            peer.push_back(measure(devices, comms, op, Backend::Peer, shard, cfg, repeat));
-            nccl.push_back(measure(devices, comms, op, Backend::Nccl, shard, cfg, repeat));
-          } else {
-            nccl.push_back(measure(devices, comms, op, Backend::Nccl, shard, cfg, repeat));
-            peer.push_back(measure(devices, comms, op, Backend::Peer, shard, cfg, repeat));
-          }
+          std::vector<Backend> order;
+          if (pullEligible) {
+            std::array<Backend, 3> latin{Backend::Peer, Backend::Pull,
+                                         Backend::Nccl};
+            for (int offset = 0; offset < 3; ++offset)
+              order.push_back(latin[(repeat + offset) % 3]);
+          } else if (repeat % 2 == 0)
+            order = {Backend::Peer, Backend::Nccl};
+          else
+            order = {Backend::Nccl, Backend::Peer};
+          for (auto backend : order)
+            samples[static_cast<int>(backend)].push_back(
+                measure(devices, comms, op, backend, shard, cfg, repeat));
         }
         fill(devices, op, shard, 2);
-        for (auto backend : {Backend::Peer, Backend::Nccl}) {
+        for (auto backend : backends) {
           launch(devices, comms, op, backend, shard);
           synchronize(devices);
           verify(devices, op, backend, shard, 2);
         }
-        auto peerRange = std::minmax_element(peer.begin(), peer.end());
-        auto ncclRange = std::minmax_element(nccl.begin(), nccl.end());
-        std::printf("%s,%zu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f\n",
-                    opName(op), bytes, median(peer), *peerRange.first,
-                    *peerRange.second, median(nccl), *ncclRange.first,
-                    *ncclRange.second, median(nccl) / median(peer));
+        for (auto backend : backends) {
+          auto const& run = samples[static_cast<int>(backend)];
+          auto range = std::minmax_element(run.begin(), run.end());
+          std::printf("%s,%zu,%s,%.3f,%.3f,%.3f\n", opName(op), bytes,
+                      backendName(backend), median(run), *range.first,
+                      *range.second);
+        }
+        char const* selected =
+            pullEligible && median(samples[static_cast<int>(Backend::Pull)]) <
+                                median(samples[static_cast<int>(Backend::Peer)])
+                ? "pull"
+                : op == Operation::Scatter && directSelfReduce(bytes)
+                      ? "peer-noself"
+                : ((op == Operation::Gather && bytes <= kCompactGatherBytes) ||
+                   (op == Operation::Scatter && bytes <= kCompactScatterBytes))
+                      ? "peer-compact"
+                      : "peer";
+        std::printf("# selected,%s,%zu,%s\n", opName(op), bytes, selected);
         std::fflush(stdout);
       }
       if (bytes > cfg.end / 2) break;

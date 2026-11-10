@@ -22,12 +22,20 @@ MARKERS = {
     "allgather": "# local ring, remote-rank IB exchange",
     "reducescatter": "# local direct ring reduction, remote-rank IB exchange",
 }
+AUTO_MARKERS = {
+    "allreduce": "AG adaptive flat/ring",
+    "allgather": "# local adaptive ring/multicast",
+    "reducescatter": "# local adaptive direct/packed/flat reduction",
+}
+SELECTED = re.compile(r"^# selected,(allreduce|allgather|reducescatter),(\d+),([^,\n]+)$", re.M)
 OWN_SAMPLE = re.compile(r"^# sample,(allreduce|allgather|reducescatter),(\d+),(\d+),([\d.]+),([\d.eE+-]+)$", re.M)
 
 
-def summarize(directory: Path, samples_path: Path, summary_path: Path) -> None:
+def summarize(directory: Path, samples_path: Path, summary_path: Path,
+              auto: bool = False) -> None:
     own = defaultdict(dict)
     baseline = defaultdict(dict)
+    selected_paths = {}
     samples = []
     for operation in OPS:
         for repeat in (1, 2, 3):
@@ -35,8 +43,14 @@ def summarize(directory: Path, samples_path: Path, summary_path: Path) -> None:
             nccl_log = (directory / f"{operation}_nccl_run{repeat}.txt").read_text()
             if "# timing=host enqueue+completion; slowest of eight ranks" not in own_log:
                 raise ValueError("wrong UCCL timing scope")
-            if MARKERS[operation] not in own_log:
+            if (AUTO_MARKERS if auto else MARKERS)[operation] not in own_log:
                 raise ValueError("wrong UCCL path")
+            if auto:
+                for op, size, path in SELECTED.findall(own_log):
+                    key = (op, int(size), repeat)
+                    if key in selected_paths or op != operation:
+                        raise ValueError("invalid or duplicate selected path")
+                    selected_paths[key] = path
             if "NCCL 22807" not in nccl_log or "every invocation fully checked" not in nccl_log:
                 raise ValueError("wrong NCCL control identity")
             placement = "in-place" if operation == "allreduce" else "out-of-place"
@@ -87,9 +101,17 @@ def summarize(directory: Path, samples_path: Path, summary_path: Path) -> None:
                     raise ValueError(f"missing paired calls: {operation}, {size}, {repeat}")
                 own_runs.append(mean(own_calls.values()))
                 nccl_runs.append(mean(nccl_calls.values()))
+            if auto:
+                paths = {selected_paths.get((operation, size, repeat))
+                         for repeat in (1, 2, 3)}
+                if None in paths or len(paths) != 1:
+                    raise ValueError(f"missing or inconsistent adaptive path: {operation}, {size}")
+                path = paths.pop()
+            else:
+                path = PATHS[operation]
             summary.append({
                 "collective": operation, "bytes": size,
-                "uccl_path": PATHS[operation],
+                "uccl_path": path,
                 "uccl_min_us": min(own_runs),
                 "uccl_median_us": median(own_runs),
                 "uccl_max_us": max(own_runs),
@@ -111,5 +133,6 @@ if __name__ == "__main__":
     parser.add_argument("directory", type=Path)
     parser.add_argument("samples", type=Path)
     parser.add_argument("summary", type=Path)
+    parser.add_argument("--auto", action="store_true")
     args = parser.parse_args()
-    summarize(args.directory, args.samples, args.summary)
+    summarize(args.directory, args.samples, args.summary, args.auto)

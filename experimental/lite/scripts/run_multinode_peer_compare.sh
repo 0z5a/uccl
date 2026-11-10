@@ -21,6 +21,7 @@ timeout_seconds="${TIMEOUT_SECONDS:-180}"
 operations="${OPERATIONS:-allgather reducescatter}"
 timing_mode="${TIMING_MODE:-cuda-event}"
 check_each="${CHECK_EACH:-0}"
+auto_variants="${AUTO_VARIANTS:-0}"
 case "$timing_mode" in
   cuda-event) gpu_timing=1 ;;
   host) gpu_timing=0 ;;
@@ -33,11 +34,20 @@ run_uccl() {
   local opts=(--op "$op" -b "$min_bytes" -e "$max_bytes" -w "$warmups"
               -n "$iterations" -c 1 --gpu-timing "$gpu_timing")
   if [[ "$check_each" == 1 ]]; then opts+=(--check-each 1); fi
-  if [[ "$op" == allgather ]]; then
-    opts+=(--ag-ring 1)
-  elif [[ "$op" == reducescatter ]]; then
-    opts+=(--rs-ring 1 --rs-direct-ring 1 --rs-piece-bytes 8388608
-           -B 96 -T 512)
+  if [[ "$auto_variants" == 1 ]]; then
+    case "$op" in
+      allreduce) opts+=(--ar-auto 1) ;;
+      allgather) opts+=(--ag-auto 1) ;;
+      reducescatter)
+        opts+=(--rs-auto 1 --rs-piece-bytes 8388608 -B 96 -T 512) ;;
+    esac
+  else
+    if [[ "$op" == allgather ]]; then
+      opts+=(--ag-ring 1)
+    elif [[ "$op" == reducescatter ]]; then
+      opts+=(--rs-ring 1 --rs-direct-ring 1 --rs-piece-bytes 8388608
+             -B 96 -T 512)
+    fi
   fi
   timeout "${timeout_seconds}s" bash "$root/scripts/run_multinode.sh" \
     multinode_allreduce "${opts[@]}"

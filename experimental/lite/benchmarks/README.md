@@ -26,6 +26,7 @@ records give their own topology and measurement protocol.
 
 | File | Scope and method |
 | --- | --- |
+| [optimization_20261110/README.md](data/optimization_20261110/README.md) | Follow-up four-L4 and two-node AR/AG/RS optimization: peer-read small-message path, compact source-completion events, topology-specific local schedules, complete paired samples, bottleneck evidence, and retained failed probes. |
 | [refresh_20261110/README.md](data/refresh_20261110/README.md) | Fresh four-L4 and two-node AR/AG/RS plus dense/MoE fusion. Raw logs, per-call or per-round samples, selected paths, hardware/software identities, matched timing scopes, and negative results. The old mixed-timer two-node archive is excluded from new comparisons. |
 | [hardware_profile_4l4_20261110_summary.csv](data/hardware_profile_4l4_20261110_summary.csv) and [raw runs](data/hardware_profile_4l4_20261110_run1.txt) | November 10: standalone GPU topology, directed and four-GPU concurrent peer copies, concurrent H2D/D2H, and NUMA CPU copy/BF16 reduction. Three complete runs × three repetitions, useful-byte bandwidth; no NCCL baseline or collective timing. [Method and limits](../docs/hardware-profiler.md). |
 | [peer_ag_rs_4l4_20261110.txt](data/peer_ag_rs_4l4_20261110.txt) | Earlier four-L4 float32 direct-peer AG/RS versus NCCL 2.28.7, 1 KiB–64 MiB. Three alternating repetitions; slowest-rank CUDA events; correctness checks before and after timing. The new sweep checks every call. [Design and negative results](../docs/peer-ag-rs.md). |
@@ -104,6 +105,7 @@ python3 scripts/plot_8l4_collectives.py
 python3 scripts/plot_cpu_router_8l4.py
 python3 scripts/plot_refresh_collectives.py
 python3 scripts/plot_refresh_fusion.py
+python3 scripts/plot_optimized_collectives.py
 ```
 
 Requires Matplotlib and NumPy. `plot_results.py` reads committed CSV/text data
@@ -117,7 +119,8 @@ two-panel figures, one per collective. `plot_cpu_router_8l4.py` draws one diagno
 from the current eight-L4 paired BF16 local/router calibration and automatic
 selection replay, with the earlier NCCL run as a separate control, for ten
 older figures. The two refresh plotting scripts draw six collective and two
-fusion SVGs. These scripts do not run GPU work or benchmarks.
+fusion SVGs. `plot_optimized_collectives.py` draws five follow-up collective
+figures. These scripts do not run GPU work or benchmarks.
 Use `python3 scripts/plot_results.py --preview` to also export PNG and PDF copies
 under ignored `build/figures/` for inspection or reuse in a technical report.
 `python3 scripts/plot_multinode_peer.py --preview` exports PNG/PDF copies there.

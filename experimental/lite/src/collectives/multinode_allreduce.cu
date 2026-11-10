@@ -619,8 +619,11 @@ __global__ void nullKernel() {}
 struct Config {
   bool allGather = false;
   bool reduceScatter = false;
+  bool arAuto = false;
   bool agRing = false;
+  bool agAuto = false;
   bool rsRing = false;
+  bool rsAuto = false;
   bool rsFastPack = false;
   bool rsDirectRing = false;
   int rsPieces = 1;
@@ -640,6 +643,14 @@ struct Config {
   bool check = true;
   std::array<int, kLocalRanks> railMap{0, 0, 1, 1};
 };
+
+static bool autoPackedRs(size_t bytes) {
+  return bytes >= (1UL << 20) && bytes <= (16UL << 20);
+}
+
+static bool autoDirectRs(size_t bytes) {
+  return bytes == 1024 || bytes >= (32UL << 20);
+}
 
 static std::array<int, kLocalRanks> parseRailMap(std::string const& text) {
   std::array<int, kLocalRanks> out{};
@@ -719,6 +730,8 @@ int main(int argc, char** argv) {
         cfg.pipelineDistance = std::atoi(next());
       else if (key == "-a")
         cfg.flatAg = std::atoi(next()) != 0;
+      else if (key == "--ar-auto")
+        cfg.arAuto = std::atoi(next()) != 0;
       else if (key == "-c")
         cfg.check = std::atoi(next()) != 0;
       else if (key == "--rail-map")
@@ -732,8 +745,12 @@ int main(int argc, char** argv) {
               "--op must be allreduce, allgather, or reducescatter");
       } else if (key == "--ag-ring")
         cfg.agRing = std::atoi(next()) != 0;
+      else if (key == "--ag-auto")
+        cfg.agAuto = std::atoi(next()) != 0;
       else if (key == "--rs-ring")
         cfg.rsRing = std::atoi(next()) != 0;
+      else if (key == "--rs-auto")
+        cfg.rsAuto = std::atoi(next()) != 0;
       else if (key == "--rs-fast-pack")
         cfg.rsFastPack = std::atoi(next()) != 0;
       else if (key == "--rs-direct-ring")
@@ -752,6 +769,15 @@ int main(int argc, char** argv) {
   } catch (std::exception const& e) {
     if (rank == 0) std::fprintf(stderr, "%s\n", e.what());
     MPI_Abort(MPI_COMM_WORLD, 2);
+  }
+  if (cfg.arAuto && (cfg.allGather || cfg.reduceScatter)) {
+    if (rank == 0) std::fprintf(stderr, "--ar-auto requires AllReduce\n");
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
+  if (cfg.agAuto) cfg.agRing = true;
+  if (cfg.rsAuto) {
+    cfg.rsRing = true;
+    cfg.rsDirectRing = true;
   }
   if (cfg.agRing && !cfg.allGather) {
     if (rank == 0)
@@ -822,6 +848,12 @@ int main(int argc, char** argv) {
     else
       CUDACHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
           &residentBlocks, hierarchicalAllGather, cfg.threads, 0));
+    if (cfg.agAuto) {
+      int flatResidentBlocks = 0;
+      CUDACHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &flatResidentBlocks, hierarchicalAllGather, cfg.threads, 0));
+      residentBlocks = std::min(residentBlocks, flatResidentBlocks);
+    }
   } else if (cfg.reduceScatter) {
     if (cfg.rsDirectRing)
       CUDACHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
@@ -833,6 +865,17 @@ int main(int argc, char** argv) {
     else
       CUDACHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
           &residentBlocks, hierarchicalReduceScatter, cfg.threads, 0));
+    if (cfg.rsAuto) {
+      int flatResidentBlocks = 0;
+      CUDACHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &flatResidentBlocks, hierarchicalReduceScatter, cfg.threads, 0));
+      residentBlocks = std::min(residentBlocks, flatResidentBlocks);
+      int packedResidentBlocks = 0;
+      CUDACHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &packedResidentBlocks, hierarchicalReduceScatterRing, cfg.threads,
+          0));
+      residentBlocks = std::min(residentBlocks, packedResidentBlocks);
+    }
   } else
     CUDACHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
         &residentBlocks, hierarchicalAllReduce, cfg.threads, 0));
@@ -868,7 +911,7 @@ int main(int argc, char** argv) {
   Layout layout{0, dataBytes, dataBytes + localScratchBytes,
                 dataBytes + localScratchBytes + ibSlotBytes, 0};
   size_t bufferBytes = layout.ibScratch + ibSlotBytes;
-  if (cfg.rsRing && !cfg.rsDirectRing) {
+  if (cfg.rsRing && (!cfg.rsDirectRing || cfg.rsAuto)) {
     layout.immutableInput = bufferBytes;
     bufferBytes += dataBytes;
   }
@@ -973,7 +1016,10 @@ int main(int argc, char** argv) {
       CUDACHECK(cudaMemsetAsync(buffer + layout.data, 0xff,
                                 count * sizeof(float), stream));
     CUDACHECK(cudaMemcpyAsync(buffer + (cfg.allGather ? layout.ibSend :
-                                 cfg.rsRing && !cfg.rsDirectRing
+                                 cfg.rsRing &&
+                                         (!cfg.rsDirectRing ||
+                                          (cfg.rsAuto && autoPackedRs(
+                                                             count * sizeof(float))))
                                      ? layout.immutableInput :
                                               layout.data),
                               hostIn.data(), inputCount * sizeof(float),
@@ -1029,10 +1075,20 @@ int main(int argc, char** argv) {
     }
     return worst;
   };
+  auto useAgRing = [&](size_t bytes) {
+    return cfg.agAuto ? bytes == 1024 || bytes >= (1UL << 20) : cfg.agRing;
+  };
+  auto useRsDirectRing = [&](size_t bytes) {
+    return cfg.rsAuto ? autoDirectRs(bytes)
+                      : cfg.rsDirectRing;
+  };
+  auto useArFlatGather = [&](size_t bytes) {
+    return cfg.arAuto ? bytes <= (1UL << 18) : cfg.flatAg;
+  };
   auto launch = [&](size_t count, size_t bytes) {
     CUDACHECK(cudaSetDevice(localRank));
     if (cfg.allGather) {
-      if (cfg.agRing)
+      if (useAgRing(bytes))
         hierarchicalAllGatherRing<<<cfg.blocks, cfg.threads, 0, stream>>>(
             localSend, localRecv, ib, reinterpret_cast<float*>(buffer), count,
             layout, rank, localRank, ringPosition(localRank));
@@ -1043,7 +1099,7 @@ int main(int argc, char** argv) {
       return;
     }
     if (cfg.reduceScatter) {
-      if (cfg.rsDirectRing) {
+      if (useRsDirectRing(bytes)) {
         int availablePieces =
             int(std::max<size_t>(1, count / kWorld / 32));
         int requestedPieces = cfg.rsTargetPieceBytes
@@ -1057,11 +1113,12 @@ int main(int argc, char** argv) {
                                               stream>>>(
             localSend, localRecv, ib, reinterpret_cast<float*>(buffer), count,
             layout, rank, ringPosition(localRank), pieces);
-      } else if (cfg.rsRing) {
+      } else if (cfg.rsRing && (!cfg.rsAuto || autoPackedRs(bytes))) {
         int availablePieces =
             int(std::max<size_t>(1, count / kWorld / 32));
-        int pieces = std::min(cfg.rsPieces, availablePieces);
-        if (cfg.rsFastPack) {
+        int pieces = cfg.rsAuto ? 1 : std::min(cfg.rsPieces, availablePieces);
+        bool fastPack = cfg.rsAuto || cfg.rsFastPack;
+        if (fastPack) {
           size_t shard = count / kWorld;
           int blocks = int(std::min<size_t>(128, (shard + 255) / 256));
           packReduceScatterRing<<<dim3(blocks, kWorld), 256, 0, stream>>>(
@@ -1070,9 +1127,10 @@ int main(int argc, char** argv) {
         }
         hierarchicalReduceScatterRing<<<cfg.blocks, cfg.threads, 0, stream>>>(
             localSend, localRecv, ib, reinterpret_cast<float*>(buffer), count,
-            layout, rank, ringPosition(localRank), cfg.rsFastPack, pieces);
+            layout, rank, ringPosition(localRank), fastPack, pieces);
       } else
-        hierarchicalReduceScatter<<<cfg.blocks, cfg.threads, 0, stream>>>(
+        hierarchicalReduceScatter<<<cfg.rsAuto ? 24 : cfg.blocks, cfg.threads,
+                                    0, stream>>>(
             localAg, ib, reinterpret_cast<float*>(buffer), count, layout,
             rank, localRank);
       return;
@@ -1089,7 +1147,7 @@ int main(int argc, char** argv) {
     hierarchicalAllReduce<<<cfg.blocks, cfg.threads, 0, stream>>>(
         localSend, localRecv, localAg, ib, reinterpret_cast<float*>(buffer),
         count, layout, localRank, ringPosition(localRank), pieces, distance,
-        cfg.flatAg);
+        useArFlatGather(bytes));
   };
 
   char host[MPI_MAX_PROCESSOR_NAME];
@@ -1115,8 +1173,10 @@ int main(int argc, char** argv) {
     if (cfg.allGather || cfg.reduceScatter)
       std::printf("# local %s, remote-rank IB exchange; rail map "
                   "%d,%d,%d,%d; RS pieces %d\n",
-                  cfg.allGather ? (cfg.agRing ? "ring" : "multicast")
-                                : (cfg.rsDirectRing ? "direct ring reduction"
+                  cfg.allGather ? (cfg.agAuto ? "adaptive ring/multicast"
+                                   : cfg.agRing ? "ring" : "multicast")
+                                : (cfg.rsAuto ? "adaptive direct/packed/flat reduction"
+                                   : cfg.rsDirectRing ? "direct ring reduction"
                                    : cfg.rsRing ? (cfg.rsFastPack
                                                     ? "ring reduction + GPU pack"
                                                     : "ring reduction")
@@ -1130,7 +1190,9 @@ int main(int argc, char** argv) {
       std::printf(
           "# local ring 0->1->3->2->0; AG %s; rail map %d,%d,%d,%d; "
           "piece %zu B; pipeline >= %zu B\n",
-          cfg.flatAg ? "flat" : "ring", cfg.railMap[0], cfg.railMap[1],
+          cfg.arAuto ? "adaptive flat/ring"
+                     : cfg.flatAg ? "flat" : "ring",
+          cfg.railMap[0], cfg.railMap[1],
           cfg.railMap[2], cfg.railMap[3], cfg.pieceBytes,
           cfg.pipelineMinBytes);
     std::printf("# %12s %12s %8s %10s %10s %10s %10s\n", "size(B)", "count",
@@ -1143,7 +1205,7 @@ int main(int argc, char** argv) {
     size_t count = bytes / sizeof(float);
     size_t shardBytes = bytes / kLocalRanks;
     int pieces =
-        cfg.rsRing
+        (cfg.rsRing && (!cfg.rsAuto || useRsDirectRing(bytes)))
             ? std::min(
                   cfg.rsTargetPieceBytes
                       ? int(std::max<size_t>(
@@ -1158,6 +1220,19 @@ int main(int argc, char** argv) {
                   2, std::min<size_t>(32, (shardBytes + cfg.pieceBytes - 1) /
                                               cfg.pieceBytes))
             : 1;
+    if (rank == 0) {
+      char const* selected =
+          cfg.allGather ? (useAgRing(bytes) ? "ring" : "multicast")
+          : cfg.reduceScatter
+              ? (useRsDirectRing(bytes) ? "direct-ring"
+                 : autoPackedRs(bytes) ? "packed-ring" : "flat")
+              : (useArFlatGather(bytes) ? "flat-local-gather"
+                                        : "ring-local-gather");
+      std::printf("# selected,%s,%zu,%s\n",
+                  cfg.allGather ? "allgather"
+                  : cfg.reduceScatter ? "reducescatter" : "allreduce",
+                  bytes, selected);
+    }
     double relerr = -1.0;
     if (cfg.check) {
       int generations = (cfg.allGather || cfg.reduceScatter) ? 2 : 1;

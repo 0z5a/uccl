@@ -52,43 +52,21 @@ the two-node launcher.
 
 ## Measured results
 
-The 8xL4 GPU collective comparison shows **latency from 1 KiB to
-1 MiB** and **throughput from 1 MiB to 1 GiB**. The four-L4 and
-two-node sections use fresh matched measurements. Fusion results
-cover both the four-L4 direct-peer testbed and this eight-L4
-CPU-router host, with separate timing scopes.
-
 ### Single-node collectives
 
-#### Four L4 (refreshed)
+#### AllReduce on single 4xL4 GPU
 
-Both hosts have the required 2+2 NUMA and full peer-access topology. On l40,
-FP32 in-place AllReduce uses slowest-rank host enqueue+completion timing,
-with four processes for each backend. Every call is checked. Three
-backend-alternating runs each use five warmups and ten timed calls. At each
-size, the blue curve selects the fastest correct UCCL Lite non-router path,
-independently of NCCL 2.28.7.
+![AllReduce latency and bus throughput, UCCL Lite versus NCCL](docs/assets/collectives-4l4-allreduce-refresh.svg)
 
-![Four-L4 AllReduce latency and bus throughput, selected UCCL Lite path versus NCCL](docs/assets/collectives-4l4-allreduce-refresh.svg)
+#### AllGather on single 4xL4 GPU
 
-At 1 KiB, AR takes **13.454 / 20.333 µs** (A2 LL / NCCL); at 1 GiB it
-takes **80.373 / 88.315 ms** (A3 ring / NCCL). The selected path and every
-other AR candidate are in the [full four-L4 record](benchmarks/data/refresh_20261110/README.md).
+![AllGather latency and bus throughput, UCCL Lite versus NCCL](docs/assets/collectives-4l4-allgather-optimized.svg)
 
-On `mibura-sky-test-02`, FP32 out-of-place AllGather and ReduceScatter use
-one same-harness peer/NCCL comparison and slowest-rank per-call CUDA events.
-Their three alternating repetitions also check every warmup and timed call.
-At 1 GiB, AG takes **45.645 / 49.371 ms** and RS takes **51.002 / 49.011 ms**
-(UCCL Lite / NCCL). Both lose markedly at small sizes: at 1 KiB, AG is
-**90.666 / 40.282 µs** and RS **99.914 / 32.938 µs**.
+#### ReduceScatter on single 4xL4 GPU
 
-![Four-L4 AllGather latency and bus throughput, direct peer versus NCCL](docs/assets/collectives-4l4-allgather-refresh.svg)
+![ReduceScatter latency and bus throughput, UCCL Lite versus NCCL](docs/assets/collectives-4l4-reducescatter-optimized.svg)
 
-![Four-L4 ReduceScatter latency and bus throughput, direct peer versus NCCL](docs/assets/collectives-4l4-reducescatter-refresh.svg)
-
-The AR figure uses host-clock time on l40; AG/RS use CUDA-event time on the
-owner host. Compare paths within each operation. The eight-GPU CPU router is
-not a four-GPU candidate.
+[Four-L4 data](benchmarks/data/optimization_20261110/README.md)
 
 #### 8xL4 GPU
 
@@ -114,58 +92,31 @@ RS uses the CPU-reduction router at other sizes. Its 256 KiB–4 MiB calls use
 
 ### Multi-node collectives
 
-#### Two nodes × four L4 (refreshed)
+#### AllReduce on two 4xL4 GPU nodes
 
-Both hosts have the 2+2 GPU/NUMA layout, full local peer access, and two
-active IB rails. The refreshed FP32 comparison uses eight GPU ranks,
-NCCL 2.28.7 with `mlx5_0,mlx5_1`, and slowest-rank host
-enqueue+completion time on both sides. AR is in place; AG and RS are out of
-place. Each of three alternating paired repetitions has five warmups
-and ten timed calls; every call's complete output is checked. Complete
-bytes per rank are matched within each operation.
+![Two-node AllReduce latency and bus throughput, UCCL Lite versus NCCL](docs/assets/collectives-2x4l4-allreduce-optimized.svg)
 
-![Two-node AllReduce latency and bus throughput versus NCCL](docs/assets/collectives-2x4l4-allreduce-refresh.svg)
+#### AllGather on two 4xL4 GPU nodes
 
-![Two-node AllGather latency and bus throughput versus NCCL](docs/assets/collectives-2x4l4-allgather-refresh.svg)
+![Two-node AllGather latency and bus throughput, UCCL Lite versus NCCL](docs/assets/collectives-2x4l4-allgather-optimized.svg)
 
-![Two-node ReduceScatter latency and bus throughput versus NCCL](docs/assets/collectives-2x4l4-reducescatter-refresh.svg)
+#### ReduceScatter on two 4xL4 GPU nodes
 
-At 1 GiB, AR / AG / RS take **106.115 / 54.152 / 53.653 ms** with UCCL
-Lite, versus **110.971 / 56.947 / 59.488 ms** with NCCL. Their three-run
-ranges do not overlap at that size. All three UCCL paths lose at 1 KiB.
-NCCL AR at 1 MiB has a repeated, high-variance delay; its raw samples and
-targeted recheck are retained without a stable speedup claim. The earlier
-mixed-timer sweep remains only in the [two-node diagnostic archive](docs/multinode.md).
+![Two-node ReduceScatter latency and bus throughput, UCCL Lite versus NCCL](docs/assets/collectives-2x4l4-reducescatter-optimized.svg)
 
-[Full two-node results, topology and raw logs](benchmarks/data/refresh_20261110/README.md).
+[Two-node data](benchmarks/data/optimization_20261110/README.md)
 
-### Fusion: four L4
+### Fusion on single 4xL4 GPU
 
-The refreshed dense FP16 comparisons use **complete-operation latency** for
-each shape. Each paired bar compares the selected UCCL Lite path with the
-matching NCCL collective + cuBLAS baseline. The eight-shape sweep was run
-three times on l40; the second run reversed shape order. At the large
-reference shapes, AG+GEMM takes **15.631 / 22.850 ms**, GEMM+RS
-**18.423 / 22.746 ms**, and GEMM+AR **19.964 / 24.515 ms** (UCCL Lite /
-baseline). Small-shape regressions remain visible, including GEMM+AR at
-M=128 (**0.302 / 0.201 ms**).
+#### Dense AG+GEMM, GEMM+RS, GEMM+AR
 
-![Paired complete-operation latency bars for every dense fusion shape](docs/assets/dense-fusion-4l4-refresh.svg)
+![Complete-operation latency at every dense shape, UCCL Lite versus NCCL and cuBLAS](docs/assets/dense-fusion-4l4-refresh.svg)
 
-The BF16 expert-parallel MoE chart likewise compares complete-layer latency
-for every measured token count, with **NCCL + grouped cuBLAS** as its actual
-baseline. The 12-round settled, interleaved run on l40 reaches **84.861 /
-129.830 ms** at 32,768 tokens per rank, but loses at eight tokens
-(**2.459 / 1.370 ms**). Routing-plan construction and framework work are
-outside this kernel benchmark.
+#### Expert-parallel MoE
 
-![Paired complete-layer latency bars for every MoE token count](docs/assets/moe-fusion-4l4-refresh.svg)
+![Complete-layer latency at every token count, UCCL Lite versus NCCL and grouped cuBLAS](docs/assets/moe-fusion-4l4-refresh.svg)
 
-[Shapes, selected paths, raw logs, and negative results](docs/fusion.md) ·
-[Fresh measurement files](benchmarks/data/refresh_20261110/README.md).
-
-The four-GPU fusion runs do not establish eight-GPU fusion
-performance; the CPU-router measurements below use all eight GPUs.
+[Fusion data and limits](docs/fusion.md)
 
 ### Fusion on single 8xL4 GPU
 

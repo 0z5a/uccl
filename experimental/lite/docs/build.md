@@ -180,6 +180,12 @@ TIMING_MODE=host CHECK_EACH=1 OPERATIONS='allreduce allgather reducescatter' \
   OUTPUT_DIR=build/multinode-refresh bash scripts/run_multinode_peer_compare.sh
 ```
 
+For the measured follow-up schedule, add `AUTO_VARIANTS=1` to that paired
+two-node command. The four-L4 peer AG/RS executable selects destination-side
+peer reads through 32 KiB and source-side peer writes above that extent;
+its input fill and full-output verification are outside timing for both it
+and NCCL. Keep the same warmup, paired-repeat, and checking settings.
+
 The fusion refresh uses the shipped complete-operation controls and retains
 the L4 power-stability method for MoE:
 

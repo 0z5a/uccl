@@ -1,5 +1,43 @@
 # Four-GPU peer AllGather and ReduceScatter
 
+## Optimized small-message paths
+
+The current four-L4 eager benchmark on l40 compares three correct paths in
+one process: the original source-side peer copies, destination-side peer
+reads, and NCCL 2.28.7. Every backend uses FP32 out-of-place buffers,
+slowest-rank per-call CUDA-event time, five warmups, ten timed calls, and
+three rotated repetitions. A GPU fill kernel publishes changed inputs and
+a GPU check kernel inspects every output element; both run outside the timed
+call for all backends. `cudaDeviceSynchronize` establishes the input-ready
+boundary before peer reads. This is a standalone eager contract, not a
+validation of arbitrary application streams.
+
+The selected UCCL Lite path reads peers directly through 32 KiB. Above
+that, remote-read bandwidth collapses and the source-side peer-write path
+wins. For peer writes, one leader consolidates the four source completion
+events when AG is at most 256 KiB or RS is at most 64 KiB; larger messages
+retain the original waits. The selected path is chosen by correct UCCL
+medians without consulting NCCL.
+For RS at 256 KiB, 1–8 MiB, and at least 32 MiB, the destination reduction
+reads its own input shard directly and skips the local copy into scratch.
+The tested 128-KiB, 512-KiB, and 16-MiB exceptions retain that copy because
+the direct-self variant regressed there on at least one host.
+
+![Optimized four-L4 AllGather latency and bus throughput](assets/collectives-4l4-allgather-optimized.svg)
+
+![Optimized four-L4 ReduceScatter latency and bus throughput](assets/collectives-4l4-reducescatter-optimized.svg)
+
+At 2 KiB, AG takes **14.07 versus 26.57 µs** and RS **13.73 versus
+26.34 µs** (UCCL Lite versus NCCL). At 1 GiB, AG takes **45.489 versus
+47.599 ms**, while RS still loses at **48.579 versus 46.567 ms**. AG wins
+at 13 of 21 sizes and RS at 7 of 21; medium-size regressions remain in the
+full sweep.
+
+The [optimization record](../benchmarks/data/optimization_20261110/README.md)
+links the complete raw log, 3-run samples, every UCCL candidate, and the
+Nsight/ablation evidence. An unfenced peer-read prototype failed RS
+correctness at 1 MiB and is retained there as a negative result.
+
 ## November 10 refreshed sweep
 
 The current-source sweep on `mibura-sky-test-02` uses four L4s in 2+2 NUMA
