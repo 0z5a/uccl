@@ -111,6 +111,27 @@ small-shape regressions, remain available until then.
 
 ## Optional CPU router
 
+### Motivation
+
+When GPU Direct P2P is unavailable between GPU groups, their data already
+needs a host-mediated path. The CPU router uses that host-memory stop to do
+useful work with otherwise idle CPU cores: reduce packets before forwarding
+them and share a packet with multiple destinations. Reusable packet operators
+also support packing and deduplication. Routing is most promising when PCIe
+transfers constrain the collective while NUMA-local host
+memory and spare CPU cores can keep up with the packet flow. Fast direct P2P
+or contention for host memory can erase that advantage.
+
+On this 8xL4 GPU host, the [hardware profiler](benchmarks/data/cpu_router_8l4_20261110/hardware_profile.txt)
+found no cross-group peer access and about **10 GB/s per directed peer link**
+within each group. It measured about **49 GB/s H2D** and **51 GB/s D2H** in
+separate eight-GPU sweeps. NUMA-local CPU copy reached **44/60 GB/s**, and
+four-source reduction **35/33 GB/s**, on nodes 0/1. These are separate
+useful-byte bandwidth probes, not simultaneous traffic or a prediction of
+collective latency.
+
+### High-level design
+
 The optional CPU router exchanges packets through NUMA-local pinned host
 memory. **Forward** moves a packet, **Multicast** sends one packet to multiple
 destinations, and **Process** transforms packet contents. CPU processing
@@ -145,11 +166,22 @@ flowchart TB
     class RED,PACK,DEDUP operator
 ```
 
-A caller keeps its existing collective backend. The dispatcher enables the
-router only for workloads with matching, validated local measurements; a
-fallback decision does not allocate router buffers or start workers. See the
-[architecture and calibration guide](docs/cpu-router.md) for the packet
-protocol, API, and selection rules.
+### Profiler and selection
+
+The hardware profiler checks topology and measures PCIe, peer, and host-memory
+bandwidth to identify plausible routing opportunities. It does **not** enable
+the router from a bandwidth ratio. A separate paired calibration checks output
+correctness and times the router against the caller's existing local backend
+for each exact collective, data type, message size, and buffer placement. The
+profile is bound to the hardware/software configuration and backend identity.
+
+At runtime, `auto` looks up the matching profile; it does not benchmark during
+the collective. The router is selected only when at least three repetitions
+show a **3% median gain** and the router's slowest run is faster than the
+fallback's fastest run. Missing, stale, or inconclusive evidence keeps the
+existing backend without allocating router buffers or starting workers. See
+the [architecture and calibration guide](docs/cpu-router.md) for the API and
+exact profile rules.
 
 ## Documentation
 
