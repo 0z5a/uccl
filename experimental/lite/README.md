@@ -25,6 +25,7 @@ alongside the figures.
 | --- | --- |
 | [Hardware profiler](docs/hardware-profiler.md) | Discover PCI/NUMA/peer topology; measure directed and concurrent GPU transfers, CPU copy, and BF16 reduction bandwidth. |
 | [Single-node collectives](docs/collectives.md) | Float32 AllReduce and All-to-All schedules, plus [direct-peer AllGather and ReduceScatter](docs/peer-ag-rs.md). |
+| [Eight-GPU local fallback](docs/collectives.md#eight-gpu-bf16-local-fallback) | Project-owned BF16 AR/AG/RS for two four-GPU NUMA groups, using peer copies within groups and pinned host staging across groups. |
 | [Two-node collectives](docs/multinode.md) | Eight-rank AllReduce, AllGather, and ReduceScatter over local CUDA IPC and two GPUDirect rails. |
 | [Optional CPU router](docs/cpu-router.md) | BF16 AR/AG/RS over NUMA-local host memory, selected only with matching local benefit evidence. |
 | [Fusion kernels](docs/fusion.md) | AG+GEMM, GEMM+RS, GEMM+AR, and expert-parallel MoE pipelines. |
@@ -114,15 +115,23 @@ construction and framework work are outside timing. [Workload and controls](docs
 ## Optional CPU router
 
 The CPU router is a separately built library. A caller supplies its existing
-backend as a callback. Automatic selection requires an **exact local** match
-for collective, BF16 dtype, byte count, placement, topology/software identity,
-and fallback identity. A candidate needs at least **3% median speedup with
-non-overlapping timing ranges**; a fresh fallback-only dispatcher calls the
-existing backend without creating router workers or buffers.
+backend as a callback. The included eight-GPU example now supplies a **UCCL
+Lite two-NUMA BF16 collective** as that backend; NCCL is an optional external
+control. Automatic selection requires an **exact local** match for collective,
+dtype, byte count, placement, topology/software identity, and fallback
+identity. A candidate needs at least **3% median speedup with non-overlapping
+timing ranges**; a fresh fallback-only dispatcher runs the local collective
+without creating router workers.
 
 ```bash
-make -j2 cpu-router adaptive-collectives
-./build/uccl_lite_collectives --gpus 4 --backend auto --op all
+make -j2 cpu-router local-collectives adaptive-collectives \
+  NCCL_HOME=/path/to/nccl
+./build/uccl_lite_collectives --gpus 8 --fallback local --op all \
+  --in-place --begin 1048576 --end 1073741824 \
+  --calibrate build/local-in-place.profile
+./build/uccl_lite_collectives --gpus 8 --fallback local --op all \
+  --in-place --begin 1048576 --end 1073741824 \
+  --backend auto --profile build/local-in-place.profile
 ```
 
 On this **eight-L4** host, GPUs 0–3 and 4–7 occupy separate NUMA nodes. The
@@ -131,33 +140,41 @@ eight GPUs and **9.89–10.27 GB/s** on individual peer links within a node;
 cross-node CUDA peer access is unavailable. The probe describes the machine;
 the paired collective timings below determine each automatic choice.
 
-![Eight-L4 BF16 CPU router and NCCL bus bandwidth for AllReduce, AllGather, and ReduceScatter in both placements; open blue points retain NCCL in automatic mode](docs/assets/cpu-router-8l4.svg)
+![Eight-L4 BF16 UCCL Lite local fallback, CPU router, and separate NCCL control bus bandwidth for AllReduce, AllGather, and ReduceScatter in both placements; open blue points retain the local fallback in automatic mode](docs/assets/cpu-router-8l4.svg)
 
-At **1 GiB of full tensor bytes per rank**, the current BF16 CPU router and
-NCCL 2.28.9 measured these median slowest-rank CUDA-event times:
+At **1 GiB of full tensor bytes per rank**, the paired UCCL Lite local and
+CPU-router paths measured these median slowest-rank CUDA-event times. NCCL
+2.28.9 is a separate control run under the same benchmark timing scope:
 
-| Placement | Collective | NCCL | CPU router | NCCL / router | Automatic choice |
+| Placement | Collective | UCCL Lite local | CPU router | NCCL control | Automatic choice |
 | --- | --- | ---: | ---: | ---: | --- |
-| In place | AllReduce | 368.50 ms | 276.64 ms | 1.332× | Router |
-| In place | AllGather | 186.73 ms | 181.85 ms | 1.027× | NCCL |
-| In place | ReduceScatter | 196.42 ms | 169.67 ms | 1.158× | Router |
-| Out of place | AllReduce | 369.08 ms | 276.33 ms | 1.336× | Router |
-| Out of place | AllGather | 186.26 ms | 182.16 ms | 1.022× | NCCL |
-| Out of place | ReduceScatter | 196.49 ms | 170.42 ms | 1.153× | Router |
+| In place | AllReduce | 1500.25 ms | 275.28 ms | 368.50 ms | Router |
+| In place | AllGather | 178.53 ms | 181.22 ms | 186.73 ms | Local |
+| In place | ReduceScatter | 951.08 ms | 168.61 ms | 196.42 ms | Router |
+| Out of place | AllReduce | 1498.57 ms | 277.21 ms | 369.08 ms | Router |
+| Out of place | AllGather | 179.32 ms | 180.60 ms | 186.26 ms | Local |
+| Out of place | ReduceScatter | 953.43 ms | 169.88 ms | 196.49 ms | Router |
 
-The 1-GiB AllGather gains fall below the 3% selection margin. Across the
-1-MiB–1-GiB doubling sweep, automatic mode selected the router at **24/33**
-in-place and **20/33** out-of-place workload keys. At 1 MiB in place,
-the CPU router's AllReduce took **771.58 µs** versus **587.78 µs** for NCCL,
-so automatic mode retained NCCL; the policy does not infer a win from GPU
-count. Every timed call passed the output check.
+The local path gathers each GPU's shard through NUMA-pinned host memory. Its
+AllReduce and ReduceScatter are slower, so the router wins all measured sizes
+for those operations. Across the 1-MiB–1-GiB doubling sweep, automatic mode
+selected the router at **30/33** in-place and **31/33** out-of-place keys; the
+other keys use local AllGather at 256 MiB–1 GiB and 512 MiB–1 GiB,
+respectively. Load the matching calibration profile before using `auto` here:
+without one, it runs the local fallback, whose AllReduce and ReduceScatter
+are much slower. At 1 MiB, the selected router AllReduce still takes about
+**0.76 ms** versus **0.59 ms** in the separate NCCL control. This small-size
+regression remains unresolved. Every timed call passed the output check.
 Measurements used CUDA 12.9, driver 580.178.04, five warmups, ten timed calls
-per repetition, and three alternating paired repetitions. [Full local data,
-hardware profile, commands, and selection replay](benchmarks/data/cpu_router_8l4_20261110/README.md).
+per repetition, and three alternating paired repetitions. [Paired local/router
+data and selection replay](benchmarks/data/local_fallback_8l4_20261110/README.md) ·
+[Separate NCCL control and hardware profile](benchmarks/data/cpu_router_8l4_20261110/README.md).
 
 The earlier four-L4 calibration retained NCCL in all **12** cases. Historical
 eight-L4 figures used a different no-P2P configuration and NCCL 2.27.5; they
-do not enable routing on this host. [API and calibration](docs/cpu-router.md) ·
+do not enable routing on this host. NCCL-backed profiles from the earlier
+eight-L4 run also cannot select a backend against the new UCCL Lite fallback.
+[API and calibration](docs/cpu-router.md) ·
 [Historical primitive figures](docs/primitive-collectives.md).
 
 ## Documentation

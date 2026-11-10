@@ -1,6 +1,6 @@
-# Eight-L4 local CPU-router calibration — November 10, 2026
+# Eight-L4 NCCL control calibration — November 10, 2026
 
-This is a current-source, single-node BF16 rerun at commit `d12a9562` on
+This is the NCCL-backed, single-node BF16 rerun at commit `d12a9562` on
 `wxz-l4`: eight NVIDIA L4 GPUs, four per NUMA node, Intel Xeon CPU reported as
 `@ 2.20GHz`, driver 580.178.04, CUDA toolkit/runtime 12.9, and NCCL 2.28.9
 (`+cuda13.0` library). The shell's preconfigured `NCCL_NET=gIB` was cleared;
@@ -10,6 +10,9 @@ PCIe speed/width fields were unavailable, so measured bandwidth is the link
 evidence. This setup differs from the older eight-L4 no-P2P archive.
 The installed NCCL 2.27.5 build failed initialization with a CUDA named-symbol
 error on this driver; it produced no timing rows and was not used as a baseline.
+The adaptive example now defaults to a [UCCL Lite local fallback](../local_fallback_8l4_20261110/README.md).
+These NCCL-backed profiles cannot select a backend against it; the timings
+remain an external control.
 
 ## Files
 
@@ -33,12 +36,11 @@ AllGather/ReduceScatter and the per-rank array for AllReduce. No per-size
 algorithm variant is chosen when presenting router and NCCL timings.
 
 The [six-panel bandwidth figure](../../../docs/assets/cpu-router-8l4.svg)
-shows all three collectives and both placements. It converts the recorded
+uses these NCCL median times as a dashed external control. It converts
 latencies to decimal bus bandwidth using `14/8` for AllReduce and `7/8` for
-AllGather/ReduceScatter. Blue points are open where the automatic replay
-retained NCCL; the lines always show the measured router and NCCL backends.
-Regenerate it with `python3 scripts/plot_cpu_router_8l4.py` from
-`experimental/lite`.
+AllGather/ReduceScatter. Blue and teal curves come from the separate paired
+UCCL Lite local/router rerun. Regenerate it with
+`python3 scripts/plot_cpu_router_8l4.py` from `experimental/lite`.
 
 | Placement | AllReduce router choices | AllGather router choices | ReduceScatter router choices | Total |
 | --- | ---: | ---: | ---: | ---: |
@@ -75,7 +77,7 @@ make -B -j2 hardware_profiler cpu-router adaptive-collectives router-policy-chec
 # Use new output paths; --calibrate and --samples reject existing files.
 env -i HOME="$HOME" PATH=/usr/local/cuda-12.9/bin:/usr/bin:/bin \
   LD_LIBRARY_PATH=build/nccl-2.28.9/lib:/usr/local/cuda-12.9/lib64 \
-  ./build/uccl_lite_collectives --gpus 8 --op all --in-place \
+  ./build/uccl_lite_collectives --gpus 8 --fallback nccl --op all --in-place \
   --begin 1048576 --end 1073741824 --warmup 5 --iterations 10 --repeats 3 \
   --samples build/new-in-place-samples.csv --calibrate build/new-in-place.profile
 

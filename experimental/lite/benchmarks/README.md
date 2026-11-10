@@ -29,7 +29,8 @@ validation is recorded separately in [validation.md](../docs/validation.md).
 | [allreduce_single_node.csv](data/allreduce_single_node.csv) | October 12: 1 KiB–1 GiB, 5 warmups, 10 timed iterations, three runs. NCCL 2.18.3/2.28.7 use nccl-tests 2.13.8; UCCL Lite uses its native harness. Fastest correct UCCL Lite variant per size. |
 | [allreduce_two_node.csv](data/allreduce_two_node.csv) | October 12: three runs, slowest of eight ranks. Hierarchical UCCL Lite selects among 12 piece/distance configurations. CPU router uses 1 MiB pieces. |
 | [cpu_router_4l4_calibration.csv](data/cpu_router_4l4_calibration.csv), [cpu_router_4l4_selection.csv](data/cpu_router_4l4_selection.csv) | New four-L4 BF16 adaptive-module validation against NCCL 2.28.7: three paired repetitions, 5 warmups / 10 iterations, 1–8 MiB AR/AG/RS. All 12 automatic decisions retain the fallback with no router initialization. These are integration calibration results, not the historical peak-throughput sweeps. |
-| [cpu_router_8l4_20261110/README.md](data/cpu_router_8l4_20261110/README.md) | November 10 current-source eight-L4 BF16 CPU router versus NCCL 2.28.9, both placements, 1 MiB–1 GiB AR/AG/RS. Hardware probe, 3 × 10 paired checked timings per backend and key, complete samples, local profiles, and automatic-selection replays. The in-place and out-of-place results are separate from the historical no-P2P archive. |
+| [local_fallback_8l4_20261110/README.md](data/local_fallback_8l4_20261110/README.md) | November 10: eight-L4 BF16 paired UCCL Lite local fallback versus CPU router, both placements, 1 MiB–1 GiB AR/AG/RS. Complete 3 × 10 checked samples, exact local profiles, and fresh automatic-selection replays. Router wins AR/RS; the local path wins large AG. |
+| [cpu_router_8l4_20261110/README.md](data/cpu_router_8l4_20261110/README.md) | Earlier same-day eight-L4 BF16 router versus NCCL 2.28.9 control, both placements. Hardware probe, paired timings and old NCCL-backed profiles remain for external comparison; they cannot select against the new UCCL Lite fallback. |
 | [primitives_8l4.csv](data/primitives_8l4.csv) | October 12 matched CPU-router primitive rerun after the ReduceScatter fix. Single node, eight L4s, BF16, no GPU P2P; both placements, two retained backends, 24 sizes, three runs. Used for standalone AG/RS charts, not automatic backend selection. [Provenance and port status](../docs/primitive-collectives.md). |
 | [collectives.csv](data/collectives.csv) | Earlier compact single-node tables. The AllReduce rows are an older sweep; use the newer single-node CSV for the README figure. |
 | [alltoall.txt](data/alltoall.txt), [nccl_alltoall.txt](data/nccl_alltoall.txt) | All-to-All algorithm ladder and the default NCCL transport baseline. |
@@ -87,8 +88,9 @@ historical eight-GPU AG/RS, dense-fusion overview and labeled shapes, and EP-MoE
 figures now appear in [primitive results](../docs/primitive-collectives.md).
 `plot_multinode_peer.py` draws two more SVGs from the validated paired
 two-node AG, RS, and AR summaries. `plot_cpu_router_8l4.py` draws one SVG
-from the current eight-L4 paired BF16 calibration and automatic-selection
-replay, for ten figures total. These scripts do not run GPU work or benchmarks.
+from the current eight-L4 paired BF16 local/router calibration and automatic
+selection replay, with the earlier NCCL run as a separate control, for ten
+figures total. These scripts do not run GPU work or benchmarks.
 Use `python3 scripts/plot_results.py --preview` to also export PNG and PDF copies
 under ignored `build/figures/` for inspection or reuse in a technical report.
 `python3 scripts/plot_multinode_peer.py --preview` exports PNG/PDF copies there.

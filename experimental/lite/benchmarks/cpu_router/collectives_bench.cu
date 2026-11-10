@@ -1,8 +1,9 @@
-// Standalone BF16 AR/AG/RS dispatcher example and paired local calibration.
-// The optional module is independent of NCCL; only this fallback harness links
-// it.
+// Standalone BF16 AR/AG/RS dispatcher and paired local calibration. The
+// project-owned two-NUMA collective is the default fallback. NCCL is an
+// explicit external comparison; the optional router module does not link it.
 #include "nccl_identity.hpp"
 #include "uccl_lite/collective_dispatch.hpp"
+#include "uccl_lite/local_collectives.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
@@ -45,14 +46,15 @@ __global__ void verify(__nv_bfloat16 const* data, size_t count, int rank,
 }
 struct Config {
   std::vector<int> devices;
-  int gpus = 4, warmup = 3, iterations = 10, repeats = 3;
+  int gpus = 8, warmup = 3, iterations = 10, repeats = 3;
   size_t begin = 1024, end = 1 << 20;
   size_t packetBytes = 512UL << 10;
   bool inPlace = false;
   bool gpuReduce = false;
   bool gpuProgress = false;
   bool interleaveScatter = false;
-  std::string operation = "all", profile, calibrate, samples;
+  std::string operation = "all", fallback = "local", profile, calibrate,
+              samples;
   RouterMode mode = RouterMode::Auto;
 };
 struct Buffers {
@@ -202,6 +204,8 @@ int main(int argc, char** argv) {
         cfg.packetBytes = std::stoull(next());
       else if (arg == "--op")
         cfg.operation = next();
+      else if (arg == "--fallback")
+        cfg.fallback = next();
       else if (arg == "--backend")
         cfg.mode = parseRouterMode(next());
       else if (arg == "--profile")
@@ -231,7 +235,10 @@ int main(int argc, char** argv) {
             "UCCL Lite BF16 collectives (one process owns all selected GPUs)\n"
             "  --gpus N | --devices 0,1,...\n  --op "
             "all|allreduce|allgather|reducescatter\n"
-            "  --backend auto|off|force  --begin BYTES --end BYTES --in-place\n"
+            "  --backend auto|off|force  --fallback local|nccl (default: "
+            "local)\n"
+            "  local requires two peer-accessible four-GPU NUMA groups\n"
+            "  --begin BYTES --end BYTES --in-place\n"
             "  --profile FILE  --calibrate NEW_FILE\n"
             "  --samples NEW_CSV (checked per-invocation timing records)\n"
             "  --gpu-reduce (experimental destination-GPU Sum arithmetic)\n"
@@ -242,9 +249,11 @@ int main(int argc, char** argv) {
             "  --packet-bytes BYTES (upper bound; default 524288, minimum "
             "131072)\n"
             "  --warmup N --iterations N --repeats N (at least 3)\n"
-            "Auto keeps NCCL unless matching validated evidence shows a stable "
+            "Auto keeps the selected fallback unless matching validated "
+            "evidence shows a stable "
             "gain.\n"
-            "Calibration alternates forced CPU-router and NCCL; checks every "
+            "Calibration alternates forced CPU-router and the selected "
+            "fallback; checks every "
             "invocation.");
         return 0;
       } else
@@ -252,6 +261,8 @@ int main(int argc, char** argv) {
     }
     if (cfg.devices.empty())
       for (int r = 0; r < cfg.gpus; ++r) cfg.devices.push_back(r);
+    if (cfg.fallback != "local" && cfg.fallback != "nccl")
+      throw std::invalid_argument("fallback must be local or nccl");
     if (cfg.devices.empty() || cfg.devices.size() > 32 || cfg.begin < 128 ||
         cfg.end < cfg.begin || cfg.end > (1UL << 30) ||
         cfg.begin % (cfg.devices.size() * 2) || cfg.warmup < 1 ||
@@ -278,24 +289,41 @@ int main(int argc, char** argv) {
                       "slowest_rank_us\n";
     }
     auto topology = inspectTopology(cfg.devices);
-    // Invalidate pre-fingerprint local profiles even when this invocation has
-    // no NCCL overrides.
-    topology.identity += ";benchmark-nccl-config-v1";
-    int ncclVersion;
-    ncclCheck(ncclGetVersion(&ncclVersion));
+    std::unique_ptr<LocalCollectives> local;
+    if (cfg.fallback == "local") {
+      topology.identity += ";benchmark-local-fallback-v1";
+      local = std::make_unique<LocalCollectives>(topology, cfg.end);
+    } else {
+      // Invalidate pre-fingerprint NCCL profiles even when no overrides exist.
+      topology.identity += ";benchmark-nccl-config-v1";
+    }
     BackendPolicy policy;
     policy.mode = cfg.mode;
-    policy.fallbackIdentity = benchmark::ncclFallbackIdentity(
-        ncclVersion, benchmark::ncclConfiguration(environ));
+    if (local)
+      policy.fallbackIdentity = LocalCollectives::identity();
+    else {
+      int ncclVersion;
+      ncclCheck(ncclGetVersion(&ncclVersion));
+      policy.fallbackIdentity = benchmark::ncclFallbackIdentity(
+          ncclVersion, benchmark::ncclConfiguration(environ));
+    }
     if (!cfg.profile.empty()) {
       auto local = loadRouterProfile(cfg.profile);
       policy.measurements.insert(policy.measurements.end(), local.begin(),
                                  local.end());
     }
-    std::vector<ncclComm_t> comms(cfg.devices.size());
-    ncclCheck(
-        ncclCommInitAll(comms.data(), int(comms.size()), cfg.devices.data()));
+    std::vector<ncclComm_t> comms;
+    if (!local) {
+      comms.resize(cfg.devices.size());
+      ncclCheck(
+          ncclCommInitAll(comms.data(), int(comms.size()), cfg.devices.data()));
+    }
+    char const* fallbackName = local ? "uccl-lite-local" : "nccl";
     CollectiveDispatcher::Fallback fallback = [&](CollectiveCall const& call) {
+      if (local) {
+        local->enqueue(call);
+        return;
+      }
       ncclCheck(ncclGroupStart());
       for (size_t r = 0; r < call.ports.size(); ++r) {
         const auto& p = call.ports[r];
@@ -358,6 +386,7 @@ int main(int argc, char** argv) {
         for (size_t bytes = cfg.begin; bytes <= cfg.end; bytes *= 2) {
           auto call = buffers.call(op, bytes, cfg.inPlace);
           auto decision = selected.prepare(call);
+          if (local && (!decision.cpuRouter || baseline)) local->prepare();
           std::fprintf(stderr, "%s %zu: %s\n", collectiveName(op), bytes,
                        decision.reason.c_str());
           if (router) {
@@ -374,11 +403,13 @@ int main(int argc, char** argv) {
             };
             for (int repeat = 0; repeat < cfg.repeats; ++repeat) {
               if (repeat % 2 == 0) {
-                baselineSamples.push_back(measure(*baseline, "nccl", repeat));
+                baselineSamples.push_back(
+                    measure(*baseline, fallbackName, repeat));
                 cpuSamples.push_back(measure(*router, routerName, repeat));
               } else {
                 cpuSamples.push_back(measure(*router, routerName, repeat));
-                baselineSamples.push_back(measure(*baseline, "nccl", repeat));
+                baselineSamples.push_back(
+                    measure(*baseline, fallbackName, repeat));
               }
             }
             Measurement m{router->topology().identity,
@@ -412,7 +443,7 @@ int main(int argc, char** argv) {
               samples.push_back(
                   run(selected, call, buffers, cfg.iterations, true,
                       cfg.samples.empty() ? nullptr : &sampleOutput,
-                      decision.cpuRouter ? routerName : "nccl", repeat));
+                      decision.cpuRouter ? routerName : fallbackName, repeat));
             auto t = summarize(samples);
             std::printf("%s,%zu,%d,%s,%.3f,%.3f,%.3f,%.4f,%d\n",
                         collectiveName(op), bytes, cfg.inPlace,

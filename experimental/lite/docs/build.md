@@ -5,11 +5,13 @@ benchmarks and writes only to `build/`; it does not install libraries or modify
 the rest of UCCL. Use `make help` for the target list.
 
 The [optional CPU-router module](cpu-router.md) has independent targets:
-`make cpu-router` builds its static/shared libraries, `make adaptive-collectives`
-builds the BF16 AR/AG/RS calibration example, and `make router-checks` builds
-its tests. These are not dependencies of the existing single-node/fusion targets.
-The module uses Linux/x86-64, AVX2, CUDA, and CUTLASS; it does not need MSCCL++
-or NCCL. The calibration example additionally needs NCCL for its fallback.
+`make cpu-router` builds its static/shared libraries, `make local-collectives`
+builds the project-owned two-NUMA BF16 fallback, `make adaptive-collectives`
+builds the AR/AG/RS calibration example. `make router-checks` and
+`make local-collectives-check` build their checks. These are not dependencies of the
+existing single-node/fusion targets. The router and local fallback use CUDA
+without NCCL; the calibration binary links NCCL for an optional external
+comparison. Its default fallback is UCCL Lite local on eight supported GPUs.
 
 ## Dependencies
 
@@ -17,9 +19,9 @@ or NCCL. The calibration example additionally needs NCCL for its fallback.
 | --- | --- | --- |
 | CUDA toolkit | All CUDA sources | CUDA 12.9, L4 / `sm_89` |
 | MSCCL++ | Collectives and fusion | Commit `52f659d` for the IB experiments; see compatibility note below |
-| NCCL | Fusion reference baselines | 2.28.7; comparisons also include 2.18.3 |
+| NCCL | Fusion and peer reference baselines; optional adaptive-example control | 2.28.7 on four L4s; 2.28.9 on the eight-L4 control |
 | cuBLAS | GEMM baselines and dense fusion | Toolkit library, including grouped GEMM API |
-| CUTLASS | Grouped fusion kernels | 4.5.0, using its 2.x grouped-GEMM interfaces |
+| CUTLASS | Grouped fusion kernels and optional CPU router | 4.5.0, using its 2.x grouped-GEMM interfaces |
 | Open MPI + UCX | Two-node benchmarks | Open MPI 4.1.7rc1 on the measured host |
 | Python + Matplotlib + NumPy | Figure regeneration only | No Python dependency for CUDA executables |
 

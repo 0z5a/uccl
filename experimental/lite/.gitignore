@@ -12,3 +12,5 @@ __pycache__/
 !/benchmarks/data/host-staged-reference/trace_validation.json
 !/benchmarks/data/cpu_router_8l4_20261110/*.csv
 !/benchmarks/data/cpu_router_8l4_20261110/*.log
+!/benchmarks/data/local_fallback_8l4_20261110/*.csv
+!/benchmarks/data/local_fallback_8l4_20261110/*.log

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot the current eight-L4 paired CPU-router calibration."""
+"""Plot the eight-L4 local/router calibration with a separate NCCL control."""
 
 import argparse
 import csv
@@ -11,10 +11,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-from figure_style import BASELINE, BLUE, MUTED, ROOT, clean_axis, configure, heading, save
+from figure_style import BASELINE, BLUE, MUTED, ROOT, TEAL, clean_axis, configure, heading, save
 
 
-DATA = ROOT / "benchmarks/data/cpu_router_8l4_20261110"
+DATA = ROOT / "benchmarks/data/local_fallback_8l4_20261110"
+CONTROL = ROOT / "benchmarks/data/cpu_router_8l4_20261110"
 OPERATIONS = (
     ("all_reduce", "AllReduce", 14 / 8),
     ("all_gather", "AllGather", 7 / 8),
@@ -59,6 +60,26 @@ def load_placement(placement: str, in_place: str):
     return records, decisions
 
 
+def load_nccl_control(placement: str, in_place: str):
+    with (CONTROL / f"{placement}_calibration.csv").open() as stream:
+        rows = list(csv.DictReader(line for line in stream if not line.startswith("#")))
+    control = {}
+    for row in rows:
+        if row["backend"] != "fallback":
+            continue
+        key = (row["collective"], int(row["bytes"]))
+        if key in control or row["in_place"] != in_place:
+            raise ValueError(f"duplicate or misplaced NCCL control row: {key}")
+        value = float(row["median_us"])
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(f"invalid NCCL control timing: {key}")
+        control[key] = value
+    expected = {(operation, size) for operation, _, _ in OPERATIONS for size in SIZES}
+    if set(control) != expected:
+        raise ValueError(f"incomplete NCCL control for {placement}")
+    return control
+
+
 def bandwidth(size: int, latency_us: float, bus_factor: float) -> float:
     return bus_factor * size / latency_us / 1000  # decimal GB/s
 
@@ -68,8 +89,8 @@ def plot(preview: bool) -> None:
     fig, axes = plt.subplots(2, 3, figsize=(12.2, 6.8), sharey=True)
     heading(
         fig,
-        "Eight-L4 CPU router · paired collectives",
-        "BF16  ·  NCCL 2.28.9  ·  three alternating repetitions × ten checked calls",
+        "Eight-L4 UCCL Lite · adaptive collectives",
+        "BF16  ·  local fallback / CPU router paired  ·  NCCL 2.28.9 separate control",
         left=0.075,
     )
     fig.subplots_adjust(left=0.075, right=0.985, top=0.73, bottom=0.15,
@@ -77,6 +98,7 @@ def plot(preview: bool) -> None:
     upper = 0.0
     for row_index, (placement, placement_title, in_place) in enumerate(PLACEMENTS):
         records, decisions = load_placement(placement, in_place)
+        control = load_nccl_control(placement, in_place)
         for column, (operation, title, factor) in enumerate(OPERATIONS):
             ax = axes[row_index, column]
             clean_axis(ax)
@@ -89,7 +111,12 @@ def plot(preview: bool) -> None:
                 ax.set_xlabel("Complete tensor bytes per rank")
             if column == 0:
                 ax.set_ylabel("Bus bandwidth (GB/s) ↑")
-            for backend, color in (("fallback", BASELINE), ("cpu-router", BLUE)):
+            nccl = [bandwidth(size, control[operation, size], factor)
+                    for size in SIZES]
+            upper = max(upper, *nccl)
+            ax.plot(SIZES, nccl, color=BASELINE, linewidth=1.7,
+                    linestyle=(0, (4, 3)), zorder=1)
+            for backend, color in (("fallback", TEAL), ("cpu-router", BLUE)):
                 times = [records[operation, size, backend] for size in SIZES]
                 medians = [bandwidth(size, timing[1], factor)
                            for size, timing in zip(SIZES, times)]
@@ -118,18 +145,20 @@ def plot(preview: bool) -> None:
         ax.set_ylim(0, upper * 1.10)
     fig.legend(
         handles=[
-            Line2D([], [], color=BASELINE, marker="o", markersize=6,
-                   label="NCCL 2.28.9"),
+            Line2D([], [], color=BASELINE,
+                   linestyle=(0, (4, 3)), label="NCCL 2.28.9 · separate control"),
+            Line2D([], [], color=TEAL, marker="o", markersize=6,
+                   label="UCCL Lite local fallback"),
             Line2D([], [], color=BLUE, marker="o", markersize=6,
                    label="CPU router · auto selects"),
             Line2D([], [], color=BLUE, marker="o", markerfacecolor="white",
-                   markersize=6, label="CPU router · auto keeps NCCL"),
+                   markersize=6, label="CPU router · auto keeps local"),
         ],
-        loc="upper left", bbox_to_anchor=(0.075, 0.84), ncol=3,
-        frameon=False, fontsize=9.6,
+        loc="upper left", bbox_to_anchor=(0.075, 0.84), ncol=4,
+        frameon=False, fontsize=8.7,
     )
     fig.text(0.075, 0.035,
-             "Shaded bands: min–max of run medians. CPU router and NCCL are both measured at every size.",
+            "Shaded bands: min–max of paired run medians. NCCL is a separate control in this local/router replay.",
              color=MUTED, fontsize=9)
     save(fig, "cpu-router-8l4", preview)
 

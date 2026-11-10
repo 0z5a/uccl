@@ -1,12 +1,37 @@
 # Validation and limitations
 
-## Eight-L4 CPU-router rerun — November 10, 2026
+## Eight-L4 local fallback and adaptive rerun — November 10, 2026
 
-The current-source hardware probe and BF16 adaptive benchmark ran on eight L4s
+The standalone BF16 example now defaults to a UCCL Lite two-NUMA fallback
+instead of NCCL. Its host-staged AllGather and peer-group reduction paths have
+no NCCL dependency. A dedicated eight-GPU correctness check passed 36 cases
+across AR/AG/RS, in-place/out-of-place layouts, three sizes including a tail,
+and two input generations; it checked every output element and capture
+rejection. The `--fallback nccl` external-control mode also passed a checked
+smoke call.
+
+Both 1-MiB–1-GiB local/router calibrations completed 1,980 checked timed
+calls per placement. Fresh-process automatic replays selected the router at
+30/33 in-place and 31/33 out-of-place keys; the remaining keys are large
+AllGather calls to the UCCL Lite fallback. The [full record](../benchmarks/data/local_fallback_8l4_20261110/README.md)
+includes all paired samples, run-level ranges, profiles and selection logs.
+At 1 GiB, the local AllGather took 178.53 ms in place and 179.32 ms out of
+place, versus 181.22/180.60 ms for the router. The local AR/RS paths are
+slower; their negative results remain in the data. A separate earlier NCCL
+control gives context, not a third automatic backend. Small AllReduce still
+regresses against that control.
+
+This validation is single-node, eager, BF16, and specific to two four-GPU
+NUMA groups with intra-group peer access. It does not establish application
+throughput or a win on every measured size.
+
+## Eight-L4 NCCL control rerun — November 10, 2026
+
+The hardware probe and NCCL-backed BF16 adaptive benchmark ran on eight L4s
 with four GPUs per NUMA node, CUDA 12.9, driver 580.178.04, and NCCL 2.28.9.
 Both in-place and out-of-place 1-MiB–1-GiB doubling sweeps completed all
 checked AR/AG/RS calls: 33 workload keys × two backends × three repetitions ×
-ten timed calls per placement. The fresh-profile automatic replays selected the
+ten timed calls per placement. Their NCCL-backed automatic replays selected the
 router at 24/33 in-place and 20/33 out-of-place keys. A separate 1-GiB
 in-place AllGather fallback replay did not initialize router workers. The
 [full local record](../benchmarks/data/cpu_router_8l4_20261110/README.md)

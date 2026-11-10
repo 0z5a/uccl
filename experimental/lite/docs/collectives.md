@@ -1,6 +1,7 @@
 # Single-node collectives
 
-The implementations assume four GPUs in NUMA pairs `(0,1)` and `(2,3)`.
+The MSCCL++ peer implementations below assume four GPUs in NUMA pairs
+`(0,1)` and `(2,3)`.
 `rank ^ 1` is the intra-socket peer and `rank ^ 2` the cross-socket peer.
 They are standalone float32 benchmark programs with their algorithm kernels
 and bootstrap code in the same translation unit.
@@ -66,6 +67,23 @@ output. The matched NCCL sweep finds AG wins from 1–64 MiB and RS wins mainly
 at 8–32 MiB, with substantial small-message regressions. See the
 [algorithm, full sweep and timing scope](peer-ag-rs.md). This path does not
 replace the separate BF16/no-P2P CPU router.
+
+## Eight-GPU BF16 local fallback
+
+[local_collectives.cu](../src/collectives/local_collectives.cu) provides a
+caller-owned fallback for two four-GPU NUMA groups. It uses pinned host memory
+for cross-group transfers and requires CUDA peer access within each group for
+AllReduce and ReduceScatter. It supports in-place and out-of-place BF16
+AR/AG/RS with one process owning all device streams. Its eager `enqueue`
+completes the streams before returning; `prepare` allocates pinned host and
+GPU scratch outside timing. It does not link NCCL or MSCCL++.
+
+The [paired eight-L4 calibration](../benchmarks/data/local_fallback_8l4_20261110/README.md)
+finds this local AllGather faster than the CPU router at the largest sizes.
+The local AR/RS paths are slower and remain explicit negative results; the
+measurement-gated dispatcher chooses the router for them on this host.
+The earlier NCCL run is a separate control, not an automatic fallback for this
+configuration.
 
 ## Boundaries
 

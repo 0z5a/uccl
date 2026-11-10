@@ -7,11 +7,14 @@ ROUTER_OBJECTS := $(addprefix $(ROUTER_BUILD)/,$(addsuffix .o,$(ROUTER_HOST) $(R
 ROUTER_STATIC := $(ROUTER_BUILD)/libuccl_lite_cpu_router.a
 ROUTER_SHARED := $(ROUTER_BUILD)/libuccl_lite_cpu_router.so
 ROUTER_LIB := $(ROUTER_STATIC) -L$(CUDA_HOME)/lib64 -lcudart -lpthread -ldl -Wl,-rpath,$(CUDA_HOME)/lib64
+LOCAL_STATIC := $(BUILD)/libuccl_lite_local_collectives.a
 ROUTER_CUDA_TESTS := primitives_check primitive_example router_check router_graph_check gpu_reduction_check
 ROUTER_HOST_TESTS := cpu_bf16_check router_core_check dispatcher_check
 
-.PHONY: cpu-router adaptive-collectives router-checks router-policy-check nccl-identity-check
+.PHONY: cpu-router local-collectives adaptive-collectives local-collectives-check router-checks router-policy-check nccl-identity-check
 cpu-router: $(ROUTER_STATIC) $(ROUTER_SHARED)
+local-collectives: $(LOCAL_STATIC)
+local-collectives-check: $(BUILD)/uccl_lite_local_collectives_check
 adaptive-collectives: $(BUILD)/uccl_lite_collectives
 router-policy-check: $(BUILD)/uccl_lite_router_policy_check
 router-checks: cpu-router router-policy-check nccl-identity-check $(addprefix $(BUILD)/uccl_lite_,$(ROUTER_CUDA_TESTS) $(ROUTER_HOST_TESTS))
@@ -35,6 +38,15 @@ $(ROUTER_STATIC): $(ROUTER_OBJECTS)
 $(ROUTER_SHARED): $(ROUTER_OBJECTS)
 	$(CXX) -shared $^ -L$(CUDA_HOME)/lib64 -lcudart -lpthread -ldl -Wl,-rpath,$(CUDA_HOME)/lib64 -o $@
 
+$(BUILD)/local_collectives.o: src/collectives/local_collectives.cu | $(BUILD)
+	$(NVCC) $(NVCC_FLAGS) -std=c++17 -Iinclude -c $< -o $@
+
+$(LOCAL_STATIC): $(BUILD)/local_collectives.o
+	$(AR) rcs $@ $^
+
+$(BUILD)/uccl_lite_local_collectives_check: tests/collectives/local_collectives_check.cu $(LOCAL_STATIC) $(ROUTER_STATIC) | $(BUILD)
+	$(NVCC) $(NVCC_FLAGS) -std=c++17 -Iinclude $< $(LOCAL_STATIC) $(ROUTER_STATIC) -Xcompiler=-pthread -ldl -o $@
+
 $(addprefix $(BUILD)/uccl_lite_,$(ROUTER_HOST_TESTS)): $(BUILD)/uccl_lite_%: tests/cpu_router/%.cc $(ROUTER_STATIC) | $(BUILD)
 	$(CXX) -O3 -std=c++17 -MMD -MP $(ROUTER_INC) $< $(ROUTER_LIB) -o $@
 
@@ -44,7 +56,7 @@ $(addprefix $(BUILD)/uccl_lite_,$(ROUTER_CUDA_TESTS)): $(BUILD)/uccl_lite_%: tes
 $(BUILD)/uccl_lite_router_policy_check: tests/cpu_router/backend_policy_check.cc src/cpu_router/backend_policy.cc include/uccl_lite/backend_policy.hpp | $(BUILD)
 	$(CXX) -O2 -std=c++17 -Iinclude tests/cpu_router/backend_policy_check.cc src/cpu_router/backend_policy.cc -o $@
 
-$(BUILD)/uccl_lite_collectives: benchmarks/cpu_router/collectives_bench.cu $(ROUTER_STATIC) | $(BUILD)
-	$(NVCC) $(NVCC_FLAGS) -std=c++17 $(ROUTER_INC) -I$(NCCL_HOME)/include $< $(ROUTER_STATIC) -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib -Xcompiler=-pthread -ldl -o $@
+$(BUILD)/uccl_lite_collectives: benchmarks/cpu_router/collectives_bench.cu $(LOCAL_STATIC) $(ROUTER_STATIC) | $(BUILD)
+	$(NVCC) $(NVCC_FLAGS) -std=c++17 $(ROUTER_INC) -I$(NCCL_HOME)/include $< $(LOCAL_STATIC) $(ROUTER_STATIC) -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib -Xcompiler=-pthread -ldl -o $@
 
 -include $(wildcard $(ROUTER_BUILD)/*.d)
