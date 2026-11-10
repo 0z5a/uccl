@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot the best measured eight-L4 BF16 UCCL Lite path against NCCL."""
+"""Plot eight-L4 BF16 latency and throughput for each collective."""
 
 import argparse
 import csv
@@ -9,20 +9,19 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.ticker import MaxNLocator
 
-from figure_style import BASELINE, BLUE, GRID, MUTED, ROOT, configure, heading, save
+from figure_style import BASELINE, BLUE, ROOT, clean_axis, configure, heading, save
 
 
 DATA = ROOT / "benchmarks/data/collectives_8l4_20261110.csv"
-OPERATIONS = (("all_reduce", "AllReduce"),
-              ("all_gather", "AllGather"),
-              ("reduce_scatter", "ReduceScatter"),
-              ("all_to_all", "All-to-All"))
-SIZES = ((1 << 20, "1 MiB per rank"),
-         (1 << 26, "64 MiB per rank"),
-         (1 << 30, "1 GiB per rank"))
+OPERATIONS = (
+    ("all_reduce", "AllReduce", "allreduce", 14 / 8, "bus"),
+    ("all_gather", "AllGather", "allgather", 7 / 8, "bus"),
+    ("reduce_scatter", "ReduceScatter", "reducescatter", 7 / 8, "bus"),
+    ("all_to_all", "All-to-All", "alltoall", 7, "aggregate"),
+)
+SMALL_SIZES = [1 << power for power in range(10, 21)]
+LARGE_SIZES = [1 << power for power in range(20, 31)]
 
 
 def load() -> dict[tuple[str, int], dict[str, str]]:
@@ -38,11 +37,62 @@ def load() -> dict[tuple[str, int], dict[str, str]]:
             if not math.isfinite(value) or value <= 0:
                 raise ValueError(f"invalid timing for {key}: {field}")
         result[key] = row
-    expected = {(operation, 1 << power) for operation, _ in OPERATIONS
-                for power in range(20, 31)}
+    expected = {(operation, 1 << power) for operation, *_ in OPERATIONS
+                for power in range(10, 31)}
     if set(result) != expected:
         raise ValueError("incomplete eight-L4 BF16 sweep")
     return result
+
+
+def throughput(size: int, latency_us: float, factor: float) -> float:
+    return factor * size / latency_us / 1000  # decimal GB/s
+
+
+def plot_operation(data, operation, title, filename, factor, bandwidth_kind,
+                   preview):
+    fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.8))
+    heading(fig, f"Eight-L4 single-node {title}",
+            "BF16  ·  complete bytes per rank  ·  slowest-rank CUDA events",
+            left=0.075)
+    fig.subplots_adjust(left=0.085, right=0.985, top=0.70, bottom=0.18,
+                        wspace=0.28)
+    for ax, sizes, measure, panel_title, ylabel, ticks in (
+        (axes[0], SMALL_SIZES, lambda size, us: us,
+         "1 KiB–1 MiB · latency ↓", "Latency (µs)",
+         [1 << power for power in (10, 12, 14, 16, 18, 20)]),
+        (axes[1], LARGE_SIZES, lambda size, us: throughput(size, us, factor),
+         f"1 MiB–1 GiB · {bandwidth_kind} throughput ↑",
+         f"{bandwidth_kind.title()} throughput (GB/s)",
+         [1 << power for power in (20, 22, 24, 26, 28, 30)]),
+    ):
+        clean_axis(ax)
+        ax.set_title(panel_title, loc="left", pad=12)
+        ax.set_xscale("log", base=2)
+        ax.set_xlim(sizes[0] / 1.35, sizes[-1] * 1.35)
+        ax.set_xticks(ticks, [
+            f"{size >> 10}K" if size < 1 << 20 else
+            f"{size >> 20}M" if size < 1 << 30 else "1G"
+            for size in ticks
+        ])
+        ax.set_xlabel("Complete tensor bytes per rank")
+        ax.set_ylabel(ylabel)
+        upper = 0.0
+        for field, label, color in (
+            ("nccl_median_us", "NCCL 2.28.9", BASELINE),
+            ("uccl_median_us", "UCCL Lite best measured path", BLUE),
+        ):
+            values = [measure(size, float(data[operation, size][field]))
+                      for size in sizes]
+            upper = max(upper, *values)
+            ax.plot(sizes, values, color=color, linewidth=2.2, marker="o",
+                    markersize=4.5, markeredgecolor="white",
+                    markeredgewidth=0.6, label=label)
+        ax.set_ylim(0, upper * 1.13)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles[::-1], labels[::-1], loc="upper right",
+               bbox_to_anchor=(0.985, 0.85), ncol=2, frameon=False,
+               fontsize=9.5)
+    save(fig, f"collectives-8l4-{filename}", preview)
 
 
 def main() -> None:
@@ -52,46 +102,9 @@ def main() -> None:
     args = parser.parse_args()
     configure()
     data = load()
-    fig, axes = plt.subplots(1, 3, figsize=(15.4, 5.3))
-    heading(fig, "Eight-L4 single-node collectives",
-            "BF16  ·  AR in place; AG, RS, A2A out of place  ·  slowest-rank CUDA events",
-            left=0.075)
-    fig.subplots_adjust(left=0.11, right=0.985, top=0.70, bottom=0.20,
-                        wspace=0.48)
-    for ax, (size, title) in zip(axes, SIZES):
-        y = np.arange(len(OPERATIONS))
-        uccl = [float(data[operation, size]["uccl_median_us"]) / 1000
-                for operation, _ in OPERATIONS]
-        nccl = [float(data[operation, size]["nccl_median_us"]) / 1000
-                for operation, _ in OPERATIONS]
-        ax.barh(y + 0.18, nccl, height=0.32, color=BASELINE,
-                label="NCCL 2.28.9")
-        ax.barh(y - 0.18, uccl, height=0.32, color=BLUE,
-                label="UCCL Lite best measured path")
-        ax.set_title(title, loc="left", pad=12)
-        ax.set_xlim(0, max(uccl + nccl) * 1.24)
-        ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
-        ax.set_ylim(len(OPERATIONS) - 0.55, -0.55)
-        ax.set_yticks(y, [name for _, name in OPERATIONS])
-        ax.set_xlabel("Latency (ms) ↓")
-        ax.set_axisbelow(True)
-        ax.grid(axis="x", color=GRID, linewidth=0.8)
-        ax.tick_params(axis="both", which="both", length=0, pad=6)
-        for index, (candidate, baseline) in enumerate(zip(uccl, nccl)):
-            offset = max(uccl + nccl) * 0.012
-            label = lambda value: f"{value:.2f}" if value < 10 else f"{value:.1f}"
-            ax.text(candidate + offset, index - 0.18, label(candidate),
-                    va="center", fontsize=8.5)
-            ax.text(baseline + offset, index + 0.18, label(baseline),
-                    va="center", fontsize=8.5)
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles[::-1], labels[::-1], loc="upper right",
-               bbox_to_anchor=(0.985, 0.85), ncol=2, frameon=False,
-               fontsize=9.5)
-    fig.text(0.11, 0.045,
-             "UCCL: CPU router for AR/AG/RS, host staging for A2A. Each panel has its own linear millisecond scale.",
-             fontsize=9, color=MUTED)
-    save(fig, "collectives-8l4", args.preview)
+    for operation, title, filename, factor, bandwidth_kind in OPERATIONS:
+        plot_operation(data, operation, title, filename, factor,
+                       bandwidth_kind, args.preview)
 
 
 if __name__ == "__main__":

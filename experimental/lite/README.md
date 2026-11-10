@@ -62,9 +62,10 @@ the two-node launcher.
 
 ## Measured results
 
-The completed eight-L4 comparison uses **collective latency** throughout.
-The other topology and fusion sections link their earlier records until the
-matching machines can be rerun.
+The completed eight-L4 comparison shows **latency from 1 KiB to 1 MiB** and
+**throughput from 1 MiB to 1 GiB** for each collective. The other topology and
+fusion sections link their earlier records until the matching machines can be
+rerun.
 
 ### Single-node collectives
 
@@ -79,14 +80,21 @@ and [benchmark archive](benchmarks/README.md).
 
 #### Eight L4 (this machine)
 
-This BF16 comparison uses GPUs 0–3 on NUMA node 0 and 4–7 on node 1. The
-fastest measured UCCL Lite path is the **CPU router** for AllReduce,
-AllGather, and ReduceScatter at every measured size; for All-to-All it is
-**NUMA-pinned host staging**. AllReduce is in place; the other three are out
-of place. The path choice is made from UCCL Lite measurements, independent
-of NCCL's result.
+This BF16 comparison uses GPUs 0–3 on NUMA node 0 and 4–7 on node 1.
+AllReduce is in place; the other three are out of place. Each UCCL Lite curve
+uses the fastest measured project-owned path at that size, chosen without
+looking at NCCL. The CPU router is selected for all large AR/AG/RS sizes;
+the small sweep also selects the local path for one AR and one RS size.
+All-to-All uses NUMA-pinned host staging except for one small size where the
+peer+host path is faster.
 
-![Paired eight-L4 BF16 latency bars comparing the best measured UCCL Lite path with NCCL for AllReduce, AllGather, ReduceScatter, and All-to-All](docs/assets/collectives-8l4.svg)
+![Eight-L4 AllReduce: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allreduce.svg)
+
+![Eight-L4 AllGather: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allgather.svg)
+
+![Eight-L4 ReduceScatter: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-reducescatter.svg)
+
+![Eight-L4 All-to-All: 1 KiB–1 MiB latency and 1 MiB–1 GiB aggregate throughput versus NCCL](docs/assets/collectives-8l4-alltoall.svg)
 
 | Collective | UCCL Lite path | 1 MiB UCCL / NCCL | 64 MiB UCCL / NCCL | 1 GiB UCCL / NCCL |
 | --- | --- | ---: | ---: | ---: |
@@ -95,12 +103,18 @@ of NCCL's result.
 | ReduceScatter | CPU router | 0.347 / 0.338 | 10.626 / 12.734 | 171.896 / 202.479 |
 | All-to-All | Host staging | 0.849 / 0.439 | 20.193 / 13.242 | 306.545 / 186.989 |
 
-All times are **milliseconds of slowest-rank CUDA-event latency**. ReduceScatter
-at 1 MiB and All-to-All at all 11 measured sizes lose to NCCL; those losses
-are retained. The complete 1 MiB–1 GiB doubling sweep used BF16, CUDA 12.9,
+The table gives **milliseconds of slowest-rank CUDA-event latency** at selected
+large sizes. The plots use decimal GB/s: AR bus throughput is
+`(14/8) × bytes/rank ÷ seconds`, AG/RS bus throughput is
+`(7/8) × bytes/rank ÷ seconds`, and A2A aggregate nonself throughput is
+`7 × bytes/rank ÷ seconds`. These metrics should only be compared within the
+same collective. The full 1 KiB–1 GiB doubling sweep used BF16, CUDA 12.9,
 driver 580.178.04, and NCCL 2.28.9. Each backend had five warmups and three
 alternating repetitions of ten timed, output-checked calls; fill and
-verification were outside timing. The [full selected-path summary](benchmarks/data/collectives_8l4_20261110.csv),
+verification were outside timing. AR loses at three small sizes, RS loses at
+several sizes, and A2A loses at every size; all are retained. The
+[full selected-path summary](benchmarks/data/collectives_8l4_20261110.csv),
+[small-message measurements](benchmarks/data/collectives_small_8l4_20261110/README.md),
 [paired CPU-router/NCCL runs](benchmarks/data/router_vs_nccl_8l4_20261110/README.md),
 and [All-to-All variants and negative results](benchmarks/data/alltoall_8l4_20261110/README.md)
 provide all sizes, timing ranges, and exact methods. The

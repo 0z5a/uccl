@@ -8,7 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "benchmarks/data"
-SIZES = [1 << power for power in range(20, 31)]
+SMALL_SIZES = [1 << power for power in range(10, 20)]
+LARGE_SIZES = [1 << power for power in range(20, 31)]
 
 
 def rows(path: Path) -> dict[tuple[str, int, str], dict[str, str]]:
@@ -31,6 +32,26 @@ def rows(path: Path) -> dict[tuple[str, int, str], dict[str, str]]:
 
 def main() -> None:
     results = []
+    small_dir = DATA / "collectives_small_8l4_20261110"
+    for operation, placement, prefix in (("all_reduce", "in_place", "ar"),
+                                         ("all_gather", "out_of_place", "out"),
+                                         ("reduce_scatter", "out_of_place", "out")):
+        local = rows(small_dir / f"{prefix}_local.csv")
+        nccl = rows(small_dir / f"{prefix}_nccl.csv")
+        for size in SMALL_SIZES:
+            variants = (
+                ("local", float(local[operation, size, "fallback"]
+                                ["median_us"])),
+                ("cpu-router", float(local[operation, size, "cpu-router"]
+                                     ["median_us"])),
+            )
+            path, candidate = min(variants, key=lambda item: item[1])
+            if path == "cpu-router":
+                candidate = float(nccl[operation, size, "cpu-router"]
+                                  ["median_us"])
+            control = float(nccl[operation, size, "fallback"]["median_us"])
+            results.append((operation, size, placement, path, candidate,
+                            control, control / candidate))
     local_dir = DATA / "local_fallback_8l4_20261110_v3"
     paired_dir = DATA / "router_vs_nccl_8l4_20261110"
     for operation, placement in (("all_reduce", "in_place"),
@@ -38,7 +59,7 @@ def main() -> None:
                                  ("reduce_scatter", "out_of_place")):
         local = rows(local_dir / f"{placement}_calibration.csv")
         paired = rows(paired_dir / f"{placement}_calibration.csv")
-        for size in SIZES:
+        for size in LARGE_SIZES:
             key = operation, size
             router = float(local[operation, size, "cpu-router"]["median_us"])
             fallback = float(local[operation, size, "fallback"]["median_us"])
@@ -49,7 +70,8 @@ def main() -> None:
             results.append((operation, size, placement, "cpu-router", candidate,
                             control, control / candidate))
     alltoall = rows(DATA / "alltoall_8l4_20261110/summary.csv")
-    for size in SIZES:
+    alltoall.update(rows(small_dir / "a2a.csv"))
+    for size in SMALL_SIZES + LARGE_SIZES:
         variants = (
             ("host-staging", float(alltoall["all_to_all", size, "uccl-host"]["median_us"])),
             ("peer-host", float(alltoall["all_to_all", size, "uccl-hybrid"]["median_us"])),
@@ -58,6 +80,9 @@ def main() -> None:
         control = float(alltoall["all_to_all", size, "nccl"]["median_us"])
         results.append(("all_to_all", size, "out_of_place", path, candidate,
                         control, control / candidate))
+    order = {operation: index for index, operation in enumerate(
+        ("all_reduce", "all_gather", "reduce_scatter", "all_to_all"))}
+    results.sort(key=lambda result: (order[result[0]], result[1]))
     output = DATA / "collectives_8l4_20261110.csv"
     with output.open("w", newline="") as stream:
         writer = csv.writer(stream, lineterminator="\n")
