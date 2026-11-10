@@ -58,7 +58,7 @@ and the two-node launcher.
 ## Measured results
 
 Collective figures use **latency for small messages** and **bandwidth for large
-messages**. Fusion figures show complete-operation time or token throughput.
+messages**. Fusion figures show complete-operation latency.
 
 ### Single node: collective schedules
 
@@ -95,15 +95,15 @@ timing ranges, and the complete sweeps.
 
 ### Communication–compute fusion
 
-![Complete-operation latency for three dense fusion kernels at their large reference shapes](docs/assets/dense-fusion.svg)
+![Paired latency bars for three dense fusion kernels at their large reference shapes](docs/assets/dense-fusion.svg)
 
 At the large FP16 reference shapes, fusion changes complete-operation latency
 from **22.87 → 15.58 ms** for AG+GEMM, **22.95 → 18.46 ms** for GEMM+RS, and
 **25.66 → 19.77 ms** for GEMM+AR, compared with cuBLAS + NCCL. The
-[labeled eight-shape plot](docs/fusion.md) retains small-shape regressions;
+[labeled eight-shape latency bars](docs/fusion.md) retain small-shape regressions;
 Flux and no-overlap controls remain in the [measurement record](benchmarks/README.md).
 
-![Expert-parallel MoE full-layer small-batch latency and large-batch token throughput](docs/assets/moe-fusion.svg)
+![Paired full-layer latency bars for expert-parallel MoE from 8 to 32k tokens per rank](docs/assets/moe-fusion.svg)
 
 For DeepSeek-shaped BF16 expert parallelism, the full layer at 32k tokens/rank
 takes **85.28 ms** versus **129.77 ms** for NCCL + grouped cuBLAS. That is

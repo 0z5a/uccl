@@ -25,9 +25,12 @@ and their cuBLAS+NCCL controls in one executable.
 | GEMM + RS, `(4096,12288,49152)` | 22.954 ms | 18.461 ms | 4.493 ms |
 | GEMM + AR, `(4096,12288,49152)` | 25.658 ms | 19.774 ms | 5.884 ms |
 
-![Dense fusion and cuBLAS plus NCCL latency across eight model shapes for each operation](assets/dense-fusion-shapes.svg)
+![Paired latency bars for dense fusion and cuBLAS plus NCCL across eight model shapes per operation](assets/dense-fusion-shapes.svg)
 
-These are favorable large shapes, not averages. The retained
+The paired bars show absolute latency for every shape. The two columns use
+different labeled linear ranges so the sub-millisecond cases remain legible;
+longer bars mean slower operations. The large reference shapes are favorable,
+not averages. The retained
 [shape sweep](../benchmarks/data/dense_fusion.txt) includes regressions, including
 small GEMM+AllReduce cases. Flux uses a separate harness with different timing
 aggregation; approximately 1–2% differences should be treated as ties.
@@ -63,6 +66,8 @@ versus **8.241 ms** for NCCL + grouped cuBLAS; at 32,768 tokens/rank it takes
 **85.283 versus 129.770 ms**, or **384k versus 253k tokens/s/rank**. At small
 token counts, grouped scheduling overhead exceeds
 the communication that can be hidden and fusion loses.
+
+![Paired full-layer latency bars for expert-parallel MoE at each recorded token count](assets/moe-fusion.svg)
 
 The standalone harness constructs routing metadata outside primary timing.
 It is a kernel/layer benchmark, not complete model execution. The separate

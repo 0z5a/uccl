@@ -44,8 +44,9 @@ the graph check passed 1,000 captured mixed collectives across five replays.
 
 ## README figure refresh — November 10, 2026
 
-The README now uses compact line and dot plots with latency for small
-messages and bandwidth for large ones. The historical eight-GPU
+The README uses compact line and dot plots for collectives, with latency for
+small messages and bandwidth for large ones, and paired latency bars for
+fusion. The historical eight-GPU
 primitive figures and labeled dense shape plot live in their detailed design
 pages. Plot scripts read the same committed benchmark data; no kernel or timing
 result changed for this presentation update. All nine SVGs regenerate

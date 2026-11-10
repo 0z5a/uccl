@@ -60,8 +60,8 @@ import the application-side benchmark or imply a fresh validation of the headers
 
 Figures now use absolute metrics. Small collective messages use latency in
 microseconds; large messages use bus or aggregate bandwidth in GB/s. Lower
-latency and higher bandwidth are better. Blue marks UCCL Lite, gray the stated
-baseline, and amber marks a fused regression in the detailed dense plot.
+latency and higher bandwidth are better. Blue marks UCCL Lite and gray the
+stated baseline. The fusion figures use paired latency bars for each shape.
 The recorded min–max timing ranges remain in the CSVs rather than being
 presented as confidence intervals.
 
@@ -69,9 +69,9 @@ Single-node AllReduce, All-to-All, and historical eight-GPU AG/RS figures
 split their recorded sweeps between small-message latency and large-message
 bandwidth. The dense overview compares complete-operation latency at the large
 reference shapes; the [labeled shape plot](../docs/fusion.md) keeps all eight
-shapes, including regressions. MoE shows full-layer small-batch latency and
-large-batch token throughput, computed as tokens per rank divided by measured
-full-layer time. The two-node bandwidth figure selects 64 MiB and 1 GiB, and
+shapes, including regressions. MoE shows full-layer latency at every recorded
+token count, split into three panels with linear millisecond scales. The
+two-node bandwidth figure selects 64 MiB and 1 GiB, and
 the small-latency figure selects readable sizes through 1 MiB. Full AG/RS
 sweeps and the 512-KiB NCCL anomaly remain in the CSVs.
 

@@ -12,7 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from figure_style import AMBER, BASELINE, BLUE, GRID, ROOT, SECOND_BASELINE
+from figure_style import BASELINE, BLUE, GRID, MUTED, ROOT, SECOND_BASELINE
 from figure_style import clean_axis, configure, heading, save
 
 
@@ -216,74 +216,82 @@ def dense_label(model: str, m: int) -> str:
 
 def dense(preview: bool) -> None:
     records = dense_records()
-    overview, ax = plt.subplots(figsize=(9.6, 4.0))
+    overview, ax = plt.subplots(figsize=(9.6, 4.4))
     heading(overview, "Dense fusion · large reference shapes",
-            "4 × L4  ·  FP16  ·  complete operation latency")
-    overview.subplots_adjust(left=0.27, right=0.96, top=0.77, bottom=0.19)
+            "4 × L4  ·  FP16  ·  complete operation latency  ·  lower is better")
+    overview.subplots_adjust(left=0.29, right=0.965, top=0.73, bottom=0.16)
+    operations = (("AG", "AllGather + GEMM"),
+                  ("RS", "GEMM + ReduceScatter"),
+                  ("AR", "GEMM + AllReduce"))
+    y = np.arange(len(operations))
+    baseline = [records[operation][-1][2] for operation, _ in operations]
+    fused = [records[operation][-1][3] for operation, _ in operations]
+    ax.barh(y + 0.18, baseline, height=0.32, color=BASELINE,
+            label="cuBLAS + NCCL")
+    ax.barh(y - 0.18, fused, height=0.32, color=BLUE,
+            label="UCCL Lite fused")
     ax.set_xlim(0, 30)
-    ax.set_ylim(-0.5, 2.5)
     ax.set_xticks(range(0, 31, 5))
-    ax.set_yticks([2, 1, 0],
-                  ["AllGather + GEMM", "GEMM + ReduceScatter", "GEMM + AllReduce"])
+    ax.set_yticks(y, [name for _, name in operations])
+    ax.set_ylim(len(operations) - 0.6, -0.6)
     ax.tick_params(axis="both", which="both", length=0, pad=8)
     ax.set_axisbelow(True)
     ax.grid(axis="x", color=GRID, linewidth=0.8)
-    for operation, center in (("AG", 2), ("RS", 1), ("AR", 0)):
-        _, _, baseline, fused = records[operation][-1]
-        ax.hlines(center, fused, baseline, color=GRID, linewidth=3)
-        ax.scatter(baseline, center, s=90, color=BASELINE,
-                   edgecolor="white", linewidth=0.8, zorder=3)
-        ax.scatter(fused, center, s=100, color=BLUE,
-                   edgecolor="white", linewidth=0.8, zorder=3)
-    ax.set_xlabel("Latency (ms)  ·  lower is better")
-    overview.legend(
-        handles=[plt.Line2D([0], [0], marker="o", linestyle="", color=BLUE,
-                            markersize=8, label="UCCL Lite fused"),
-                 plt.Line2D([0], [0], marker="o", linestyle="", color=BASELINE,
-                            markersize=8, label="cuBLAS + NCCL")],
-        loc="upper right", bbox_to_anchor=(0.965, 0.86), ncol=2,
-        frameon=False, fontsize=9.5,
-    )
+    for row, (base, own) in enumerate(zip(baseline, fused)):
+        ax.text(base + 0.25, row + 0.18, f"{base:.2f}", va="center", fontsize=9)
+        ax.text(own + 0.25, row - 0.18, f"{own:.2f}", va="center", fontsize=9)
+    ax.set_xlabel("Complete-operation latency (ms) ↓")
+    handles, labels = ax.get_legend_handles_labels()
+    overview.legend(handles[::-1], labels[::-1], loc="upper right",
+                    bbox_to_anchor=(0.965, 0.85), ncol=2,
+                    frameon=False, fontsize=9.5)
     save(overview, "dense-fusion", preview)
 
-    fig, axes = plt.subplots(1, 3, figsize=(12.8, 6.0))
+    fig, axes = plt.subplots(3, 2, figsize=(14.8, 12.5))
     heading(fig, "Dense fusion · all recorded shapes",
-            "4 × L4  ·  FP16  ·  complete operation latency", left=0.075)
-    fig.subplots_adjust(left=0.105, right=0.985, top=0.70, bottom=0.13, wspace=0.62)
-    for ax, operation, title in zip(
-        axes,
+            "4 × L4  ·  FP16  ·  complete-operation latency  ·  lower is better",
+            left=0.12)
+    fig.subplots_adjust(left=0.12, right=0.97, top=0.76, bottom=0.08,
+                        hspace=0.66, wspace=0.52)
+    for row, (operation, title) in enumerate(zip(
         ("AG", "RS", "AR"),
         ("AllGather + GEMM", "GEMM + ReduceScatter", "GEMM + AllReduce"),
-    ):
-        points = records[operation]
-        y = np.arange(len(points))
-        ax.set_title(title, loc="left", pad=15)
-        ax.set_xscale("log")
-        ax.set_xlim(0.1, 32)
-        ax.set_ylim(len(points) - 0.4, -0.65)
-        ax.set_xticks([0.1, 1, 10, 30], ["0.1", "1", "10", "30"])
-        ax.set_yticks(y, [dense_label(model, m) for model, m, _, _ in points])
-        ax.tick_params(axis="both", which="both", length=0, pad=5, labelsize=8.5)
-        ax.set_axisbelow(True)
-        ax.grid(axis="x", color=GRID, linewidth=0.8)
-        for index, (_, _, baseline, fused) in enumerate(points):
-            ax.hlines(index, min(baseline, fused), max(baseline, fused),
-                      color=GRID, linewidth=2)
-            ax.scatter(baseline, index, color=BASELINE, s=38, zorder=2,
-                       edgecolor="white", linewidth=0.7)
-            ax.scatter(fused, index, color=BLUE if fused < baseline else AMBER,
-                       s=44, zorder=3, edgecolor="white", linewidth=0.7)
-        ax.set_xlabel("Latency (ms) ↓")
-    fig.legend(
-        handles=[plt.Line2D([0], [0], marker="o", linestyle="", color=BLUE,
-                            markersize=7, label="UCCL Lite fused"),
-                 plt.Line2D([0], [0], marker="o", linestyle="", color=BASELINE,
-                            markersize=7, label="cuBLAS + NCCL"),
-                 plt.Line2D([0], [0], marker="o", linestyle="", color=AMBER,
-                            markersize=7, label="Fused regression")],
-        loc="upper right", bbox_to_anchor=(0.985, 0.84), ncol=3,
-        frameon=False, fontsize=9,
-    )
+    )):
+        for column, group in enumerate((records[operation][:4],
+                                        records[operation][4:])):
+            ax = axes[row, column]
+            y = np.arange(len(group))
+            baseline = [point[2] for point in group]
+            fused = [point[3] for point in group]
+            ax.barh(y + 0.18, baseline, height=0.32, color=BASELINE,
+                    label="cuBLAS + NCCL")
+            ax.barh(y - 0.18, fused, height=0.32, color=BLUE,
+                    label="UCCL Lite fused")
+            ax.set_title(f"{title} · {'smaller' if column == 0 else 'larger'} shapes",
+                         loc="left", pad=12)
+            ax.set_xlim(0, 1.55 if column == 0 else 30)
+            ax.set_xticks([0, 0.5, 1.0, 1.5] if column == 0
+                          else [0, 10, 20, 30])
+            ax.set_ylim(len(group) - 0.55, -0.55)
+            ax.set_yticks(y, [dense_label(model, m) for model, m, _, _ in group])
+            ax.tick_params(axis="both", which="both", length=0, pad=6,
+                           labelsize=9.2)
+            ax.set_axisbelow(True)
+            ax.grid(axis="x", color=GRID, linewidth=0.8)
+            for index, (base, own) in enumerate(zip(baseline, fused)):
+                offset = 0.025 if column == 0 else 0.25
+                ax.text(base + offset, index + 0.18, f"{base:.2f}",
+                        va="center", fontsize=8.5)
+                ax.text(own + offset, index - 0.18, f"{own:.2f}",
+                        va="center", fontsize=8.5)
+            ax.set_xlabel("Complete-operation latency (ms) ↓")
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles[::-1], labels[::-1], loc="upper right",
+               bbox_to_anchor=(0.97, 0.84), ncol=2, frameon=False,
+               fontsize=9.5)
+    fig.text(0.12, 0.035,
+             "Smaller and larger shape columns have different linear latency scales; values are labeled on each bar.",
+             fontsize=9, color=MUTED)
     save(fig, "dense-fusion-shapes", preview)
 
 
@@ -298,35 +306,46 @@ def moe_rows(name: str) -> dict[tuple[int, str], float]:
 
 def moe(preview: bool) -> None:
     points = moe_rows("moe_layer.txt")
-    small = [8, 32, 128, 512, 1024]
-    large = [2048, 4096, 8192, 16384, 32768]
-    fig, axes = two_panels(
-        "Expert-parallel MoE · full layer",
-        "4 × L4  ·  DeepSeek-shaped BF16  ·  routing-plan construction excluded",
-    )
-    for ax, sizes, title, ylabel, ticks, throughput in (
-        (axes[0], small, "Small batches · latency ↓", "Latency (ms)",
-         [8, 32, 128, 1024], False),
-        (axes[1], large, "Large batches · token throughput ↑",
-         "Throughput (k tokens/s/rank)", [2048, 8192, 32768], True),
-    ):
-        values_by_series = []
-        for label, variant, color in (
-            ("UCCL Lite fused", "fused", BLUE),
-            ("NCCL + grouped cuBLAS", "nccl+cublas", BASELINE),
-        ):
-            latencies = [points[size, variant] / 1000 for size in sizes]
-            values = ([size / latency for size, latency in zip(sizes, latencies)]
-                      if throughput else latencies)
-            measured_line(ax, sizes, values, label, color)
-            values_by_series.extend(values)
-        size_axis(ax, sizes, ticks, title, ylabel, max(values_by_series) * 1.16)
-        ax.set_xticks(ticks, [f"{size // 1024}k" if size >= 1024 else str(size)
-                              for size in ticks])
+    groups = (("8–1k tokens", [8, 32, 128, 512, 1024]),
+              ("2k–8k tokens", [2048, 4096, 8192]),
+              ("16k–32k tokens", [16384, 32768]))
+    fig, axes = plt.subplots(1, 3, figsize=(14.2, 5.0),
+                             gridspec_kw={"width_ratios": [1.35, 1, 0.78]})
+    heading(fig, "Expert-parallel MoE · full layer",
+            "4 × L4  ·  DeepSeek-shaped BF16  ·  plan construction excluded",
+            left=0.065)
+    fig.subplots_adjust(left=0.065, right=0.985, top=0.70, bottom=0.20,
+                        wspace=0.30)
+    for ax, (title, sizes) in zip(axes, groups):
+        baseline = [points[size, "nccl+cublas"] / 1000 for size in sizes]
+        fused = [points[size, "fused"] / 1000 for size in sizes]
+        positive(baseline + fused, title)
+        x = np.arange(len(sizes))
+        ax.bar(x - 0.19, baseline, width=0.36, color=BASELINE,
+               label="NCCL + grouped cuBLAS")
+        ax.bar(x + 0.19, fused, width=0.36, color=BLUE,
+               label="UCCL Lite fused")
+        ax.set_title(title, loc="left", pad=12)
+        ax.set_xticks(x, [f"{size // 1024}k" if size >= 1024 else str(size)
+                          for size in sizes])
+        ax.set_ylim(0, max(baseline + fused) * 1.20)
+        ax.set_ylabel("Latency (ms) ↓")
         ax.set_xlabel("Tokens per rank")
-    fig.legend(*axes[0].get_legend_handles_labels(), loc="upper right",
-               bbox_to_anchor=(0.985, 0.855), ncol=2, frameon=False,
+        ax.set_axisbelow(True)
+        ax.grid(axis="y", color=GRID, linewidth=0.8)
+        ax.tick_params(axis="both", which="both", length=0, pad=7)
+        for values, offset in ((baseline, -0.19), (fused, 0.19)):
+            for index, value in enumerate(values):
+                label = f"{value:.2f}" if value < 10 else f"{value:.1f}"
+                ax.text(index + offset, value + max(baseline + fused) * 0.02,
+                        label, ha="center", va="bottom", fontsize=8)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles[::-1], labels[::-1], loc="upper right",
+               bbox_to_anchor=(0.985, 0.85), ncol=2, frameon=False,
                fontsize=9.5)
+    fig.text(0.065, 0.045,
+             "Each panel shows full-layer latency on its own linear millisecond scale.",
+             fontsize=9, color=MUTED)
     save(fig, "moe-fusion", preview)
 
 
