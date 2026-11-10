@@ -1,9 +1,8 @@
 # Experimental reduction placement and destination striping
 
-This experiment targets the no-P2P ReduceScatter bottleneck found in the
-[ThunderEP comparison](thunderep-comparison.md). It is **opt-in**. CPU reduction
-remains the default; no new mode is enabled from GPU count alone. These changes
-do not yet establish a win over ThunderEP or complete-inference acceleration.
+This experiment targets the no-P2P ReduceScatter bottleneck in local tests. It
+is **opt-in**. CPU reduction remains the default; no new mode is enabled from
+GPU count alone. These changes do not establish complete-inference acceleration.
 
 ## The architectural question
 
@@ -65,7 +64,7 @@ arithmetic to the GPU alone solves the problem.
 The 8-MiB packet configuration improves large AllGather: the interleaved-option
 run records 42.438 ms versus its NCCL baseline, a **1.115×** ratio at 1 GiB.
 That is a packet-geometry benefit in the unchanged gather algorithm, not a
-new reduction mechanism or evidence of ThunderEP/end-to-end superiority.
+new reduction mechanism or evidence of end-to-end superiority.
 
 [Raw samples, all summaries and provenance](../benchmarks/data/reduction-placement/ablation_provenance.json)
 include all four full sweeps, the three size-selection probes, and the negative
@@ -134,34 +133,21 @@ rejects flat producer-event stripes, whose readiness semantics do not match
 the new traversal. The new options are C++ only; the C API keeps CPU defaults.
 Rebuild C++ clients and the module together after the options-structure change.
 
-## Build and reproduce
+## Build and inspect archived results
 
-Use the pinned NCCL build from the comparison document, then:
+Use the pinned NCCL build from the local comparison document, then:
 
 ```bash
 make -j2 cpu-router adaptive-collectives router-checks \
   BUILD=build/reduction-striped NCCL_HOME="$PWD/build/nccl-2.30.7/build"
 
-# Each output directory must be new. Default control plus three 8-MiB paths.
-python3 scripts/compare_thunderep.py \
-  --binary build/reduction-striped/uccl_lite_collectives \
-  --output build/reduction-default-new
-python3 scripts/compare_thunderep.py \
-  --binary build/reduction-striped/uccl_lite_collectives \
-  --output build/reduction-cpu-new --packet-bytes 8388608
-python3 scripts/compare_thunderep.py \
-  --binary build/reduction-striped/uccl_lite_collectives \
-  --output build/reduction-flat-new --gpu-reduce --packet-bytes 8388608
-python3 scripts/compare_thunderep.py \
-  --binary build/reduction-striped/uccl_lite_collectives \
-  --output build/reduction-striped-new --interleave-scatter --packet-bytes 8388608
+python3 scripts/plot_reduction_ablation.py --preview
 ```
 
-These are separate paired NCCL/candidate sweeps, not a simultaneous four-way
-randomized trial. Preserve each sweep's own NCCL measurements. Do not select
-the fastest implementation separately at each plotted point without labeling
-that oracle selection. All runs must remain labeled as four-L4 local eager
-experiments, not six-card consumer-GPU or end-to-end results.
+The archived data come from separate paired NCCL/candidate sweeps, not a
+simultaneous four-way randomized trial. Preserve each sweep's own NCCL
+measurements. Do not select the fastest implementation separately at each plotted
+point without labeling that oracle selection.
 
 ## Correctness checks
 
@@ -196,16 +182,10 @@ paths also pass. Configuration-key checks verify that matched profiles are
 recognized, changed P2P settings reject them, and pre-fingerprint local profiles
 are not reused. Compute Sanitizer is not installed on this host.
 
-## Remaining work toward the comparison goal
+## Remaining work
 
-The opt-in GPU packet-progress experiment is now implemented and measured in
+The opt-in GPU packet-progress experiment is measured separately in
 [the baseline comparison](baseline-comparison.md). It removes CPU packet-routing
 workers while preserving input-bank ownership across masks and replay. It does
 not produce a general ReduceScatter win over NCCL. The results above retain the
 earlier CPU-progress configurations and are not rewritten as new measurements.
-
-Also unresolved are NUMA-local CPU partials with destination-GPU merging,
-sender-level compute readiness, and no-P2P MoE overlap using the paper's unchanged
-compute kernels. The current GPU options reject resident GEMM fusion and do not
-provide those capabilities. Matched consumer-GPU hardware, a verified ThunderEP
-baseline and complete model evaluation remain required for the original goal.

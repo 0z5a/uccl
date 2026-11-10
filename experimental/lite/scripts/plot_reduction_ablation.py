@@ -9,7 +9,7 @@ from pathlib import Path
 import statistics
 
 import plot_results as style
-from compare_thunderep import summarize
+from paired_summary import summarize
 
 DATA = style.ROOT / "benchmarks/data/reduction-placement"
 VARIANTS = (
@@ -93,9 +93,9 @@ def main():
             else "No-P2P collectives · reduction-placement ablation"
         ),
         subtitle=(
-            "4 × NVIDIA L4  /  BF16  /  eager calls  /  fixed 8 MiB packets  /  not ThunderEP execution"
+            "4 × NVIDIA L4  /  BF16  /  eager calls  /  fixed 8 MiB packets"
             if args.gpu_progress
-            else "4 × NVIDIA L4  /  BF16  /  eager calls  /  default vs fixed 8 MiB variants  /  not ThunderEP execution"
+            else "4 × NVIDIA L4  /  BF16  /  eager calls  /  default vs fixed 8 MiB variants"
         ),
     )
     for row, operation in enumerate(("allgather", "reducescatter")):
@@ -152,7 +152,7 @@ def main():
             if args.gpu_progress
             else "All 21 sizes retained. One executable; separate paired sweeps, no per-size best-variant selection. AllGather changes only with packet geometry.\n"
         )
-        + "Includes eager host-submission gaps. Different hardware, precision scope, and timing harness from the paper; no model-level performance claim.",
+        + "Includes eager host-submission gaps; no model-level performance claim.",
         args.preview,
     )
 

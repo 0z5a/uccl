@@ -1856,12 +1856,12 @@ L 936.144 491.04
    <text style="font-weight: 700; font-size: 18px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #19324d" x="61.776" y="25.053187" transform="rotate(-0 61.776 25.053187)">No-P2P collectives · GPU progress ablation</text>
   </g>
   <g id="text_80">
-   <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #61758b" x="61.776" y="36.974438" transform="rotate(-0 61.776 36.974438)">4 × NVIDIA L4  /  BF16  /  eager calls  /  fixed 8 MiB packets  /  not ThunderEP execution</text>
+   <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #61758b" x="61.776" y="36.974438" transform="rotate(-0 61.776 36.974438)">4 × NVIDIA L4  /  BF16  /  eager calls  /  fixed 8 MiB packets</text>
   </g>
   <g id="text_81">
    <text style="font-size: 8.5px; font-family: 'DejaVu Sans'; fill: #61758b" transform="translate(61.776 534.126529)">Dashed line: each configuration's paired NCCL 2.30.7 = 1×. Five-run means; whiskers: min–max paired run ratios, not confidence intervals.</text>
    <text style="font-size: 8.5px; font-family: 'DejaVu Sans'; fill: #61758b" transform="translate(61.776 544.328854)">All 21 sizes retained. Same executable and GPU arithmetic; only the progress engine changes. GPU progress creates no packet-routing CPU workers.</text>
-   <text style="font-size: 8.5px; font-family: 'DejaVu Sans'; fill: #61758b" transform="translate(61.776 554.531178)">Includes eager host-submission gaps. Different hardware, precision scope, and timing harness from the paper; no model-level performance claim.</text>
+   <text style="font-size: 8.5px; font-family: 'DejaVu Sans'; fill: #61758b" transform="translate(61.776 554.531178)">Includes eager host-submission gaps; no model-level performance claim.</text>
   </g>
   <g id="legend_1">
    <g id="patch_94">

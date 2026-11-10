@@ -1,7 +1,4 @@
 {
-  "paper_url": "https://arxiv.org/pdf/2609.40093",
-  "paper_setup_reproduced": false,
-  "thunderep_executed": false,
   "end_to_end_executed": false,
   "date_utc": "2026-11-05",
   "hardware": "4 x NVIDIA L4; 2 x Xeon Silver 4410Y; NUMA groups 0,1 and 2,3",
@@ -20,8 +17,7 @@
         "benchmarks/cpu_router/collectives_bench.cu": "dcf9a0c93124a8c0fb2cab6266cde045cb9fb8e3a55d3fde23464e54e029f780",
         "src/cpu_router/packet_pipeline.cu": "0d7a8f22b11d7e19cfcd501cbf15af3bb5cdbf706153b6391cf17a7692accc21",
         "include/uccl_lite/cpu_router/packet_pipeline.hpp": "75fbb9e0770ef5e06f7af197afa0cc576ef47ffe085423cd8a384859182360a4",
-        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb",
-        "scripts/compare_thunderep.py": "1ab8d640965622fcdbc57296e36781b72426c68b59a1632a5ac9a2021665684a"
+        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb"
       },
       "commands": [
         [
@@ -167,8 +163,7 @@
         "benchmarks/cpu_router/collectives_bench.cu": "dcf9a0c93124a8c0fb2cab6266cde045cb9fb8e3a55d3fde23464e54e029f780",
         "src/cpu_router/packet_pipeline.cu": "0d7a8f22b11d7e19cfcd501cbf15af3bb5cdbf706153b6391cf17a7692accc21",
         "include/uccl_lite/cpu_router/packet_pipeline.hpp": "75fbb9e0770ef5e06f7af197afa0cc576ef47ffe085423cd8a384859182360a4",
-        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb",
-        "scripts/compare_thunderep.py": "1ab8d640965622fcdbc57296e36781b72426c68b59a1632a5ac9a2021665684a"
+        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb"
       },
       "commands": [
         [
@@ -314,8 +309,7 @@
         "benchmarks/cpu_router/collectives_bench.cu": "dcf9a0c93124a8c0fb2cab6266cde045cb9fb8e3a55d3fde23464e54e029f780",
         "src/cpu_router/packet_pipeline.cu": "0d7a8f22b11d7e19cfcd501cbf15af3bb5cdbf706153b6391cf17a7692accc21",
         "include/uccl_lite/cpu_router/packet_pipeline.hpp": "75fbb9e0770ef5e06f7af197afa0cc576ef47ffe085423cd8a384859182360a4",
-        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb",
-        "scripts/compare_thunderep.py": "1ab8d640965622fcdbc57296e36781b72426c68b59a1632a5ac9a2021665684a"
+        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb"
       },
       "commands": [
         [
@@ -463,8 +457,7 @@
         "benchmarks/cpu_router/collectives_bench.cu": "dcf9a0c93124a8c0fb2cab6266cde045cb9fb8e3a55d3fde23464e54e029f780",
         "src/cpu_router/packet_pipeline.cu": "0d7a8f22b11d7e19cfcd501cbf15af3bb5cdbf706153b6391cf17a7692accc21",
         "include/uccl_lite/cpu_router/packet_pipeline.hpp": "75fbb9e0770ef5e06f7af197afa0cc576ef47ffe085423cd8a384859182360a4",
-        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb",
-        "scripts/compare_thunderep.py": "1ab8d640965622fcdbc57296e36781b72426c68b59a1632a5ac9a2021665684a"
+        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb"
       },
       "commands": [
         [
@@ -612,8 +605,7 @@
         "benchmarks/cpu_router/collectives_bench.cu": "dcf9a0c93124a8c0fb2cab6266cde045cb9fb8e3a55d3fde23464e54e029f780",
         "src/cpu_router/packet_pipeline.cu": "0d7a8f22b11d7e19cfcd501cbf15af3bb5cdbf706153b6391cf17a7692accc21",
         "include/uccl_lite/cpu_router/packet_pipeline.hpp": "75fbb9e0770ef5e06f7af197afa0cc576ef47ffe085423cd8a384859182360a4",
-        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb",
-        "scripts/compare_thunderep.py": "1ab8d640965622fcdbc57296e36781b72426c68b59a1632a5ac9a2021665684a"
+        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb"
       },
       "commands": [
         [
@@ -741,8 +733,7 @@
         "benchmarks/cpu_router/collectives_bench.cu": "dcf9a0c93124a8c0fb2cab6266cde045cb9fb8e3a55d3fde23464e54e029f780",
         "src/cpu_router/packet_pipeline.cu": "0d7a8f22b11d7e19cfcd501cbf15af3bb5cdbf706153b6391cf17a7692accc21",
         "include/uccl_lite/cpu_router/packet_pipeline.hpp": "75fbb9e0770ef5e06f7af197afa0cc576ef47ffe085423cd8a384859182360a4",
-        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb",
-        "scripts/compare_thunderep.py": "1ab8d640965622fcdbc57296e36781b72426c68b59a1632a5ac9a2021665684a"
+        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb"
       },
       "commands": [
         [
@@ -870,8 +861,7 @@
         "benchmarks/cpu_router/collectives_bench.cu": "dcf9a0c93124a8c0fb2cab6266cde045cb9fb8e3a55d3fde23464e54e029f780",
         "src/cpu_router/packet_pipeline.cu": "0d7a8f22b11d7e19cfcd501cbf15af3bb5cdbf706153b6391cf17a7692accc21",
         "include/uccl_lite/cpu_router/packet_pipeline.hpp": "75fbb9e0770ef5e06f7af197afa0cc576ef47ffe085423cd8a384859182360a4",
-        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb",
-        "scripts/compare_thunderep.py": "1ab8d640965622fcdbc57296e36781b72426c68b59a1632a5ac9a2021665684a"
+        "src/cpu_router/collective_dispatch.cc": "f1ea483ebbc5c21c947af13b69becade7cfe4eca12d8cbfbbc8f41abec7188fb"
       },
       "commands": [
         [
@@ -999,8 +989,7 @@
         "benchmarks/cpu_router/collectives_bench.cu": "56127fe91dd08fd789d9aa2cdb5d930ea0bd01a37e37713843e757981c65a520",
         "src/cpu_router/packet_pipeline.cu": "baf6f10ea3996cafdcd5b215b698135cbe00a75ec97fdbdea03c6d2903bd3655",
         "include/uccl_lite/cpu_router/packet_pipeline.hpp": "75fbb9e0770ef5e06f7af197afa0cc576ef47ffe085423cd8a384859182360a4",
-        "src/cpu_router/collective_dispatch.cc": "cf058927f5bfd67cb8948e75bfb1e0f9cacdac729ab869d1daca26145de63f74",
-        "scripts/compare_thunderep.py": "abfc3624076b790053c248aba1b52cf403ac18951feb09568ebcf6b43275d2a4"
+        "src/cpu_router/collective_dispatch.cc": "cf058927f5bfd67cb8948e75bfb1e0f9cacdac729ab869d1daca26145de63f74"
       },
       "commands": [
         [
@@ -1142,8 +1131,7 @@
         "benchmarks/cpu_router/collectives_bench.cu": "56127fe91dd08fd789d9aa2cdb5d930ea0bd01a37e37713843e757981c65a520",
         "src/cpu_router/packet_pipeline.cu": "baf6f10ea3996cafdcd5b215b698135cbe00a75ec97fdbdea03c6d2903bd3655",
         "include/uccl_lite/cpu_router/packet_pipeline.hpp": "75fbb9e0770ef5e06f7af197afa0cc576ef47ffe085423cd8a384859182360a4",
-        "src/cpu_router/collective_dispatch.cc": "cf058927f5bfd67cb8948e75bfb1e0f9cacdac729ab869d1daca26145de63f74",
-        "scripts/compare_thunderep.py": "abfc3624076b790053c248aba1b52cf403ac18951feb09568ebcf6b43275d2a4"
+        "src/cpu_router/collective_dispatch.cc": "cf058927f5bfd67cb8948e75bfb1e0f9cacdac729ab869d1daca26145de63f74"
       },
       "commands": [
         [
@@ -1287,8 +1275,7 @@
         "benchmarks/cpu_router/collectives_bench.cu": "56127fe91dd08fd789d9aa2cdb5d930ea0bd01a37e37713843e757981c65a520",
         "src/cpu_router/packet_pipeline.cu": "baf6f10ea3996cafdcd5b215b698135cbe00a75ec97fdbdea03c6d2903bd3655",
         "include/uccl_lite/cpu_router/packet_pipeline.hpp": "75fbb9e0770ef5e06f7af197afa0cc576ef47ffe085423cd8a384859182360a4",
-        "src/cpu_router/collective_dispatch.cc": "cf058927f5bfd67cb8948e75bfb1e0f9cacdac729ab869d1daca26145de63f74",
-        "scripts/compare_thunderep.py": "abfc3624076b790053c248aba1b52cf403ac18951feb09568ebcf6b43275d2a4"
+        "src/cpu_router/collective_dispatch.cc": "cf058927f5bfd67cb8948e75bfb1e0f9cacdac729ab869d1daca26145de63f74"
       },
       "commands": [
         [

@@ -1,15 +1,9 @@
-# UCCL Lite versus NCCL and ThunderEP
+# UCCL Lite versus NCCL
 
-**New: an [independent ThunderEP communication reimplementation](thunderep-reimplementation.md)
-now provides executable DMA/SM baselines, sender-ready overlap and device-only
-graph epochs.** Its local comparison is documented there. The author implementation
-and complete vLLM system have not been run here.
+The GPU-progress ablation below records local AllGather wins, but no general
+collective or end-to-end superiority claim.
 
-The earlier GPU-progress ablation below is retained unchanged: some local
-AllGather wins, no general collective or end-to-end superiority claim. Its
-ThunderEP paper numbers are a separate reference, not head-to-head measurements.
-
-## 1. Direct comparison with NCCL
+## Direct comparison with NCCL
 
 Four NVIDIA L4s, two Xeon Silver 4410Y sockets, two NUMA nodes; CUDA 12.9,
 driver 595.58.03, NCCL 2.30.7. NCCL P2P and GPU RDMA are disabled and its
@@ -56,43 +50,7 @@ complete-model timing.
 [Control summary](../benchmarks/data/gpu-progress/control_summary.csv) ·
 [Raw-data checksums, commands and source identities](../benchmarks/data/gpu-progress/ablation_provenance.json)
 
-## 2. ThunderEP reference comparison
-
-At the paper's largest-message endpoint, the authors report these bandwidths
-for six-GPU systems. Ratios below are calculated from each pair of reported
-bandwidths. **Do not rank UCCL Lite against ThunderEP from different testbeds
-or from these independently normalized ratios.** The precise bandwidth
-normalization is not established by our local reproduction.
-[Paper, §5.2, Figures 11–12](https://arxiv.org/pdf/2609.40093).
-
-| Paper testbed | Collective, 1 GB point | NCCL reported | ThunderEP reported | ThunderEP / NCCL |
-| :--- | :--- | ---: | ---: | ---: |
-| 6 × RTX 4090 | AllGather | 20.8 GB/s | 26.5 GB/s | 1.274× |
-| 6 × RTX 5090 | AllGather | 23.0 GB/s | 35.3 GB/s | 1.535× |
-| 6 × RTX 4090 | ReduceScatter | 21.3 GB/s | 21.0 GB/s | 0.986× |
-| 6 × RTX 5090 | ReduceScatter | 23.2 GB/s | 24.5 GB/s | 1.056× |
-
-ThunderEP's small-message averages are 2.30×/2.65× for AllGather and
-1.91×/2.14× for ReduceScatter on 4090/5090 respectively. Its largest reported
-prefill gain is 1.66×. Those are author-reported results, not measurements from
-this repository. [Paper, §§5.2–5.3](https://arxiv.org/pdf/2609.40093).
-
-### What the comparison can and cannot establish
-
-| Requirement | Current status |
-| :--- | :--- |
-| NCCL version, collectives, size-range coverage, five repetitions | Matched locally |
-| Consumer GPUs, six ranks, single-NUMA EPYC host, CUDA 13.0 | Not available here; current hardware is four L4s and dual-NUMA Xeons |
-| Author ThunderEP implementation | Not obtained; exact-name GitHub repository search returned no result on November 5, 2026; this does not prove no public code exists |
-| Exact primitive dtype, inner timing, size rounding and normalization | Some paper details still unresolved; local choices are explicit above |
-| Qwen3-30B-A3B and GPT-OSS-20B/120B inference | Not run with this backend; BF16/MXFP4, framework versions and workloads still need matched evaluation |
-| UCCL Lite versus original-author ThunderEP on one machine | **Unmeasured**; the new [independent communication reimplementation](thunderep-reimplementation.md) is a separately labeled executable baseline |
-
-The full evaluation configuration and outstanding settings are recorded in
-[the comparison specification](thunderep-comparison.md). Application/framework
-integration code remains outside this standalone subtree, as required.
-
-## 3. Implemented change and validation
+## Implemented change and validation
 
 `CpuRouterOptions::gpuProgress` is an explicit C++ option and requires GPU
 reduction. A bounded set of lanes in each leader CTA waits on mapped-host upload
@@ -102,8 +60,7 @@ subsequent operation with a different mask cannot reuse an input bank too soon.
 CPU packet routing jobs are omitted and no routing executor is created. The
 existing CPU path and its default selection behavior are unchanged.
 
-This still waits for the required sources before consumption. It does not
-provide ThunderEP-style per-sender expert-compute overlap. DMA and resident
+This still waits for the required sources before consumption. DMA and resident
 GEMM fusion are not supported with GPU reduction; these paths fail explicitly.
 The progress-engine option has a distinct calibration identity, so CPU-progress
 measurements cannot enable GPU progress. Unknown configurations retain fallback
@@ -115,25 +72,15 @@ senders, masks, in-place calls, uneven tails, and 1,000 captured operations per
 layout including queue wrap. Default CPU and C-API graph regression checks pass,
 as do 31 policy checks, 28 dispatcher checks, eight NCCL configuration identity
 checks, and seven summary tests. This is not a proof of arbitrary-stream race
-freedom or validation on the paper's hardware.
+freedom or validation on other hardware.
 
-## Reproduce the local comparison
+## Inspect the local comparison
 
 ```bash
 make -j2 cpu-router adaptive-collectives router-checks BUILD=build/gpu-progress \
   NCCL_HOME="$PWD/build/nccl-2.30.7/build"
-python3 scripts/compare_thunderep.py \
-  --binary build/gpu-progress/uccl_lite_collectives \
-  --output build/gpu-progress-candidate-new \
-  --gpu-progress --interleave-scatter --packet-bytes 8388608
-python3 scripts/compare_thunderep.py \
-  --binary build/gpu-progress/uccl_lite_collectives \
-  --output build/gpu-progress-control-new \
-  --interleave-scatter --packet-bytes 8388608
 python3 scripts/plot_reduction_ablation.py --gpu-progress --preview
 ```
 
-The independent implementation above follows the subsequent request to implement
-the paper's mechanisms. A paper-configuration comparison still requires the
-six-4090/5090 testbed and resolved evaluation settings. An author-implementation
-claim additionally requires obtaining and running verified author code.
+The plot uses the archived paired local measurements. The original source and
+binary identities remain in the provenance file linked above.

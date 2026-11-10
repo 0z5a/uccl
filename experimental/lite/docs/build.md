@@ -13,12 +13,6 @@ or NCCL. The calibration example additionally needs NCCL for its fallback.
 
 ## Dependencies
 
-The independent [host-staged paper reference](thunderep-reimplementation.md)
-uses `make host-staged-reference host-staged-checks` and requires only CUDA
-12.9+ / C++17. `make host-staged-benchmark` additionally builds CPU-router and
-links NCCL for a matched local comparison. Neither target adds serving-framework
-dependencies or changes the default build.
-
 | Dependency | Used by | Tested configuration |
 | --- | --- | --- |
 | CUDA toolkit | All CUDA sources | CUDA 12.9, L4 / `sm_89` |

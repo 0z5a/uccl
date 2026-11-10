@@ -1,7 +1,4 @@
 {
-  "paper_url": "https://arxiv.org/pdf/2609.40093",
-  "paper_setup_reproduced": false,
-  "thunderep_executed": false,
   "end_to_end_executed": false,
   "date_utc": "2026-11-05",
   "hardware": "4 x NVIDIA L4; 2 x Xeon Silver 4410Y; two NUMA nodes",
@@ -18,8 +15,7 @@
         "benchmarks/cpu_router/nccl_identity.hpp": "6a47be6e9266e2c6e497bb3642902832f33e8859b692e79a5692c11c839cca41",
         "src/cpu_router/packet_pipeline.cu": "96212d0ec04f48e60fe6104fe6b362875aa6b7263a56a64db9757138a013bcdf",
         "include/uccl_lite/cpu_router/packet_pipeline.hpp": "681fa1dadc7c1582e6f0c8f0b70eb642c78212f2a4048293635d6b91cd4567d9",
-        "src/cpu_router/collective_dispatch.cc": "b0af73020bab1f1179912e8ba9395b5db3aa0d73148b367f516dfd89bf0044b5",
-        "scripts/compare_thunderep.py": "90aa6680c8f73b8d95aef99eefe030ae9a59209f6557e325ab67256819d14201"
+        "src/cpu_router/collective_dispatch.cc": "b0af73020bab1f1179912e8ba9395b5db3aa0d73148b367f516dfd89bf0044b5"
       },
       "router_backend": "gpu-progress-striped",
       "router_packet_bytes": 8388608,
@@ -142,8 +138,7 @@
         "benchmarks/cpu_router/nccl_identity.hpp": "6a47be6e9266e2c6e497bb3642902832f33e8859b692e79a5692c11c839cca41",
         "src/cpu_router/packet_pipeline.cu": "96212d0ec04f48e60fe6104fe6b362875aa6b7263a56a64db9757138a013bcdf",
         "include/uccl_lite/cpu_router/packet_pipeline.hpp": "681fa1dadc7c1582e6f0c8f0b70eb642c78212f2a4048293635d6b91cd4567d9",
-        "src/cpu_router/collective_dispatch.cc": "b0af73020bab1f1179912e8ba9395b5db3aa0d73148b367f516dfd89bf0044b5",
-        "scripts/compare_thunderep.py": "90aa6680c8f73b8d95aef99eefe030ae9a59209f6557e325ab67256819d14201"
+        "src/cpu_router/collective_dispatch.cc": "b0af73020bab1f1179912e8ba9395b5db3aa0d73148b367f516dfd89bf0044b5"
       },
       "router_backend": "cpu-router-gpu-striped",
       "router_packet_bytes": 8388608,

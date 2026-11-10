@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 spec = importlib.util.spec_from_file_location(
-    "comparison", Path(__file__).resolve().parents[1] / "scripts/compare_thunderep.py"
+    "comparison", Path(__file__).resolve().parents[1] / "scripts/paired_summary.py"
 )
 comparison = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(comparison)
@@ -99,7 +99,7 @@ class SummaryTest(unittest.TestCase):
         for field, value in (
             ("collective", "reducescatter"),
             ("in_place", "1"),
-            ("backend", "thunderep"),
+            ("backend", "unknown-backend"),
             ("repeat", "5"),
             ("bytes", "2048"),
             ("iteration", "2"),
