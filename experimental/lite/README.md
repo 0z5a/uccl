@@ -102,12 +102,15 @@ two-node testbed. The earlier AR/AG/RS results, including the
 [two-node design record](docs/multinode.md); two-node All-to-All has not yet
 been measured.
 
-### Fusion (earlier measurements; refresh pending)
+### Fusion (four-GPU measurements; eight-GPU port pending)
 
-Dense AG+GEMM, GEMM+RS, GEMM+AR, and expert-parallel MoE results will be
-refreshed on their respective testbeds. The previous
-[latency bar figures and workload definitions](docs/fusion.md), including
-small-shape regressions, remain available until then.
+The dense and expert-parallel MoE fusion benchmarks currently use four ranks
+and CUDA IPC peer links. This 8xL4 GPU host has no peer access between its two
+four-GPU NUMA groups, so the existing binaries cannot produce an eight-GPU
+fusion result. Running them on GPUs 0–3 would still be a four-GPU measurement.
+The earlier four-GPU [latency bar figures and workload definitions](docs/fusion.md),
+including small-shape regressions, remain available while the eight-GPU
+communication path is developed.
 
 ## Optional CPU router
 
