@@ -33,13 +33,18 @@ SHAPES = {
 
 def load():
     samples = defaultdict(list)
-    for run in (1, 2):
-        path = DATA / f"samples_run{run}.csv"
-        with path.open() as stream:
-            for row in csv.DictReader(stream):
-                key = (row["op"], int(row["m"]), int(row["n"]),
-                       int(row["k"]), row["method"])
-                samples[(run, key)].append(float(row["latency_ms"]))
+    for op, prefix in (("gemm-ar", "samples_ar128"),
+                       ("gemm-rs", "samples"),
+                       ("ag-gemm", "samples_ag_tuned")):
+        for run in (1, 2):
+            path = DATA / f"{prefix}_run{run}.csv"
+            with path.open() as stream:
+                for row in csv.DictReader(stream):
+                    if row["op"] != op:
+                        continue
+                    key = (op, int(row["m"]), int(row["n"]),
+                           int(row["k"]), row["method"])
+                    samples[(run, key)].append(float(row["latency_ms"]))
     expected = {(op, *shape, method) for op, shapes in SHAPES.items()
                 for shape in shapes for method, *_ in METHODS}
     if {key for _, key in samples} != expected:

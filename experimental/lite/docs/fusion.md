@@ -4,7 +4,7 @@ Fusion is useful when the first completed piece can be consumed before the
 entire operation finishes. UCCL Lite exposes readiness at the granularity that
 preserves GEMM efficiency: input groups, output shards, or channel stripes.
 
-The [eight-GPU CPU-router experiments](../README.md#fusion-eight-l4)
+The [eight-GPU CPU-router experiments](../README.md#fusion-on-single-8xl4-gpu)
 measure GEMM + AllReduce, GEMM + ReduceScatter, and AllGather + GEMM
 on the two-NUMA host. The refreshed four-GPU direct-peer results
 below use a different testbed and timing scope.

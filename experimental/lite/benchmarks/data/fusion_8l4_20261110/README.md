@@ -25,16 +25,30 @@ on every GPU is checked after every invocation. Each timing is the largest
 CUDA-event duration among the eight ranks; validation is outside the timing
 interval. Each of two independent process runs uses two warmup rounds and
 five measured rounds of ten calls per method. Method order rotates each
-round. The figures use the median of the two run-level medians. All 3,900
-timed calls are in [run 1](samples_run1.csv) and [run 2](samples_run2.csv).
+round. The figures use the median of the two run-level medians.
 
-The `(128,1024,1024)` GEMM + AllReduce shape shows a repeatable fused gain;
-the smaller shape is nearly tied in one run and larger shapes regress. For
-AllGather + GEMM, replacing NCCL with the CPU router helps the
-sequential path, while the resident fused path does not win over that path.
-The fused GEMM + ReduceScatter path wins at several shapes; the largest
-shape is close to the sequential router path.
-The figures retain both findings rather than selecting only favorable shapes.
+The initial 512 KiB packet sweeps contain 3,900 checked calls in
+[run 1](samples_run1.csv) and [run 2](samples_run2.csv). They show large
+GEMM + AllReduce regressions. Packet-size screening identified 128 KiB as a
+better choice for that operation. Two new 128 KiB sweeps contain 1,500 checked
+calls in [run 1](samples_ar128_run1.csv) and [run 2](samples_ar128_run2.csv).
+The fused path beats NCCL at all five measured shapes in both runs.
+
+For AllGather + GEMM, a 32×128 resident tile with K tile 64 and two stages
+improves the two larger shapes; the smallest retains the default 64×128 tile.
+The tuned sweeps contain 900 checked calls in
+[run 1](samples_ag_tuned_run1.csv) and [run 2](samples_ag_tuned_run2.csv).
+The sequential router path remains fastest at all three shapes. The plotted
+GEMM + ReduceScatter data come from the original 512 KiB sweeps. Thus 3,900
+calls feed the three current figures; all 6,300 calls are archived.
+
+The benchmark now defaults to 128 KiB packets for GEMM + AllReduce and
+512 KiB for the other two operations. The original GEMM + AllReduce packet
+setting is reproducible with `--packet-kib 512`; the original large
+AllGather + GEMM tile uses `--tile-m 64 --tile-n 128 --tile-k 32 --stages 4`.
+Tile and packet overrides remain available for tuning. The figures show all
+three paths, including cases where the resident kernel is slower than the
+sequential router path.
 
 ## Reproduce
 

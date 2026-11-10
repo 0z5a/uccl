@@ -167,13 +167,16 @@ outside this kernel benchmark.
 The four-GPU fusion runs do not establish eight-GPU fusion
 performance; the CPU-router measurements below use all eight GPUs.
 
-### Fusion: eight L4
+### Fusion on single 8xL4 GPU
 
 These eight-GPU experiments use the CPU router across the two NUMA groups.
 Each bar is the median of two independent runs; each run has five alternating
 repetitions of ten checked calls. The comparison includes cuBLAS + NCCL,
 cuBLAS + UCCL-Lite CPU router in sequence, and a resident GEMM kernel fused
 with the CPU router. All bars show slowest-GPU CUDA-event latency.
+GEMM + AllReduce uses 128 KiB packets; the other two operations use 512 KiB
+packets. The larger AllGather + GEMM shapes use a tuned resident GEMM tile.
+At every plotted shape, at least one UCCL-Lite path is faster than NCCL.
 [Samples and reproduction commands](benchmarks/data/fusion_8l4_20261110/README.md)
 are retained.
 
@@ -181,18 +184,20 @@ are retained.
 
 ![Eight-GPU GEMM plus AllReduce latency bars by shape for NCCL, sequential CPU router, and fused CPU router](docs/assets/fusion-8l4-gemm-ar.svg)
 
-The fused path takes **0.268 ms versus 0.367 ms** for cuBLAS + NCCL at
-`(M,N,K)=(128,1024,1024)`. The smaller `(64,1024,1024)` shape is nearly tied
-in one run. The fused path loses at the three larger tested shapes; at
-`(512,4096,4096)`, separate cuBLAS + CPU router is fastest.
+The fused path is faster than cuBLAS + NCCL at all five tested shapes. At
+`(M,N,K)=(256,2048,2048)` it takes **0.521 versus 0.708 ms**; at
+`(512,4096,4096)` it takes **1.574 versus 1.961 ms**. The earlier 512 KiB
+packet runs and their regressions remain in the measurement record.
 
 #### AllGather + GEMM on single 8xL4 GPU
 
 ![Eight-GPU AllGather plus GEMM latency bars by shape for NCCL, sequential CPU router, and fused CPU router](docs/assets/fusion-8l4-ag-gemm.svg)
 
-The sequential CPU-router path is faster than cuBLAS + NCCL at all three
-tested shapes, but the resident fused kernel does not improve on that path.
-The best result is **0.143 ms versus 0.200 ms** at `(128,1024,1024)`.
+The sequential CPU-router path is fastest at all three tested shapes; at
+`(128,1024,1024)` it takes **0.144 versus 0.203 ms** for cuBLAS + NCCL.
+The tuned resident fused kernel also beats NCCL at the two larger shapes,
+but it remains slower than the sequential router path and regresses at the
+smallest shape.
 
 #### GEMM + ReduceScatter on single 8xL4 GPU
 

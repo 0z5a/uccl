@@ -68,6 +68,9 @@ int main(int argc, char** argv) {
   try {
     int m = 512, n = 4096, k = 4096, warmup = 2, iterations = 5,
         repeats = 3;
+    int packetKib = 0, tileM = 0, tileN = 0, tileK = 0, stages = 0,
+        transportBlocks = 64, workersPerNode = 23, gemmMGroup = 0,
+        selectedMethod = -1;
     bool gather = false, scatter = false;
     std::string samplePath;
     for (int i = 1; i < argc; ++i) {
@@ -85,6 +88,14 @@ int main(int argc, char** argv) {
         samplePath = argv[i];
         continue;
       }
+      if (arg == "--method") {
+        std::string method = argv[i];
+        if (method == "nccl") selectedMethod = 0;
+        else if (method == "router") selectedMethod = 1;
+        else if (method == "fused") selectedMethod = 2;
+        else throw std::runtime_error("--method must be nccl, router, or fused");
+        continue;
+      }
       int value = std::atoi(argv[i]);
       if (arg == "--m") m = value;
       else if (arg == "--n") n = value;
@@ -92,12 +103,30 @@ int main(int argc, char** argv) {
       else if (arg == "--warmup") warmup = value;
       else if (arg == "--iterations") iterations = value;
       else if (arg == "--repeats") repeats = value;
+      else if (arg == "--packet-kib") packetKib = value;
+      else if (arg == "--tile-m") tileM = value;
+      else if (arg == "--tile-n") tileN = value;
+      else if (arg == "--tile-k") tileK = value;
+      else if (arg == "--stages") stages = value;
+      else if (arg == "--transport-blocks") transportBlocks = value;
+      else if (arg == "--workers-per-node") workersPerNode = value;
+      else if (arg == "--gemm-m-group") gemmMGroup = value;
       else throw std::runtime_error("unknown option " + arg);
     }
     if (m <= 0 || n <= 0 || k <= 0 || n % 8 || k % 8 ||
         (gather && m % 8) || warmup < 0 ||
         iterations < 1 || repeats < 1)
       throw std::runtime_error("invalid shape or repetition count");
+    if (!packetKib) packetKib = gather || scatter ? 512 : 128;
+    if (gather && m >= 512 && k >= 4096 && !tileM && !tileN &&
+        !tileK && !stages) {
+      tileM = 32;
+      tileN = 128;
+      tileK = 64;
+      stages = 2;
+    }
+    if (packetKib < 128 || (packetKib & (packetKib - 1)))
+      throw std::runtime_error("invalid packet size");
     constexpr int ranks = 8;
     int available = 0;
     check(cudaGetDeviceCount(&available));
@@ -150,7 +179,15 @@ int main(int argc, char** argv) {
     check(ncclCommInitAll(comms.data(), ranks, devices.data()));
     for (int r = 0; r < ranks; ++r) rank[r].nccl = comms[r];
     PacketPipelineOptions options;
+    options.packetBytes = size_t(packetKib) << 10;
     options.reduction = ReductionPlacement::Cpu;
+    options.gemmTileM = tileM;
+    options.gemmTileN = tileN;
+    options.gemmTileK = tileK;
+    options.gemmStages = stages;
+    options.transportBlocks = transportBlocks;
+    options.workersPerNode = workersPerNode;
+    options.gemmMGroup = gemmMGroup;
     auto router = std::make_unique<PacketPipeline>(options);
     router->prepare(ports);
     if (gather)
@@ -267,6 +304,7 @@ int main(int argc, char** argv) {
     for (int round = 0; round < warmup + repeats; ++round) {
       for (int order = 0; order < 3; ++order) {
         int method = (round + order) % 3;
+        if (selectedMethod >= 0 && method != selectedMethod) continue;
         for (int iter = 0; iter < (round < warmup ? 1 : iterations); ++iter) {
           double ms = run(method);
           if (round >= warmup) {
@@ -281,10 +319,13 @@ int main(int argc, char** argv) {
     }
     for (int method = 0; method < 3; ++method) {
       auto& v = samples[method];
+      if (v.empty()) continue;
       std::sort(v.begin(), v.end());
-      std::printf("op=%s shape=%dx%dx%d method=%s min_ms=%.4f median_ms=%.4f max_ms=%.4f samples=%zu\n",
-                  operation, m, n, k,
-                  names[method], v.front(), v[v.size() / 2],
+      std::printf("op=%s shape=%dx%dx%d method=%s packet_kib=%d tile=%dx%dx%d stages=%d blocks=%d workers=%d mgroup=%d min_ms=%.4f median_ms=%.4f max_ms=%.4f samples=%zu\n",
+                  operation, m, n, k, names[method], packetKib,
+                  tileM, tileN, tileK, stages, transportBlocks, workersPerNode,
+                  gemmMGroup,
+                  v.front(), v[v.size() / 2],
                   v.back(), v.size());
     }
     router.reset();
