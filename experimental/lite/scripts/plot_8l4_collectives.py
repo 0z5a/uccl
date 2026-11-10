@@ -10,10 +10,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from figure_style import BASELINE, BLUE, ROOT, clean_axis, configure, save
+from figure_style import ROOT, clean_axis, configure, save
 
 
 DATA = ROOT / "benchmarks/data/collectives_8l4_20261110.csv"
+UCCL_COLOR = "#0068B5"
+NCCL_COLOR = "#D65A00"
 OPERATIONS = (
     ("all_reduce", "allreduce", 14 / 8),
     ("all_gather", "allgather", 7 / 8),
@@ -49,7 +51,7 @@ def throughput(size: int, latency_us: float, factor: float) -> float:
 
 def plot_operation(data, operation, filename, factor, preview):
     fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.1))
-    fig.subplots_adjust(left=0.085, right=0.985, top=0.80, bottom=0.20,
+    fig.subplots_adjust(left=0.085, right=0.985, top=0.78, bottom=0.20,
                         wspace=0.28)
     for ax, sizes, measure, ylabel, ticks in (
         (axes[0], SMALL_SIZES, lambda size, us: us,
@@ -70,22 +72,24 @@ def plot_operation(data, operation, filename, factor, preview):
         ax.set_xlabel("Complete tensor bytes per rank")
         ax.set_ylabel(ylabel)
         upper = 0.0
-        for field, label, color in (
-            ("nccl_median_us", "NCCL 2.28.9", BASELINE),
-            ("uccl_median_us", "uccl-lite", BLUE),
+        for field, label, color, marker, linestyle in (
+            ("nccl_median_us", "NCCL 2.28.9", NCCL_COLOR, "s", (0, (5, 2.5))),
+            ("uccl_median_us", "uccl-lite", UCCL_COLOR, "o", "-"),
         ):
             values = [measure(size, float(data[operation, size][field]))
                       for size in sizes]
             upper = max(upper, *values)
-            ax.plot(sizes, values, color=color, linewidth=2.2, marker="o",
-                    markersize=4.5, markeredgecolor="white",
-                    markeredgewidth=0.6, label=label)
+            ax.plot(sizes, values, color=color, linewidth=2.8, marker=marker,
+                    linestyle=linestyle, markersize=6.0,
+                    markeredgecolor="white", markeredgewidth=0.7,
+                    label=label)
         ax.set_ylim(0, upper * 1.13)
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles[::-1], labels[::-1], loc="upper right",
-               bbox_to_anchor=(0.985, 0.98), ncol=2, frameon=False,
-               fontsize=9.5)
-    save(fig, f"collectives-8l4-{filename}-v3", preview)
+    fig.legend(handles[::-1], labels[::-1], loc="upper center",
+               bbox_to_anchor=(0.5, 0.99), ncol=2, frameon=False,
+               fontsize=12.5, handlelength=2.8, columnspacing=3.0,
+               markerscale=1.2)
+    save(fig, f"collectives-8l4-{filename}-v4", preview)
 
 
 def main() -> None:

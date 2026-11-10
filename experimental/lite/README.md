@@ -90,40 +90,15 @@ RS uses the CPU-reduction router at other sizes. Its 256 KiB–4 MiB calls use
 
 ##### AllReduce on single 8xL4 GPU
 
-![8xL4 GPU AllReduce: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allreduce-v3.svg)
+![8xL4 GPU AllReduce: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allreduce-v4.svg)
 
 ##### AllGather on single 8xL4 GPU
 
-![8xL4 GPU AllGather: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allgather-v3.svg)
+![8xL4 GPU AllGather: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allgather-v4.svg)
 
 ##### ReduceScatter on single 8xL4 GPU
 
-![8xL4 GPU ReduceScatter: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-reducescatter-v3.svg)
-
-| Collective | UCCL Lite path | 1 MiB UCCL / NCCL | 64 MiB UCCL / NCCL | 1 GiB UCCL / NCCL |
-| --- | --- | ---: | ---: | ---: |
-| AllReduce | CPU router | 0.495 / 0.594 | 17.451 / 24.052 | 276.811 / 380.392 |
-| AllGather | CPU router | 0.321 / 0.359 | 11.547 / 12.027 | 181.621 / 188.345 |
-| ReduceScatter | CPU router | 0.340 / 0.353 | 10.761 / 13.942 | 172.255 / 220.849 |
-
-The table gives **milliseconds of slowest-rank CUDA-event latency** at selected
-large sizes. The plots use decimal GB/s: AR bus throughput is
-`(14/8) × bytes/rank ÷ seconds`, and AG/RS bus throughput is
-`(7/8) × bytes/rank ÷ seconds`. These metrics should only be compared within the
-same collective. The full 1 KiB–1 GiB doubling sweep used BF16, CUDA 12.9,
-driver 580.178.04, and NCCL 2.28.9. AR/AG use three alternating repetitions,
-and the updated RS sweep uses five; each backend has five warmups and ten timed,
-output-checked calls per repetition. Fill and verification were outside timing.
-AR loses at three small sizes. RS at 64 KiB trails NCCL by 0.5 µs, with
-overlapping five-run ranges. All losses are retained. The
-[full selected-path summary](benchmarks/data/collectives_8l4_20261110.csv),
-[small-message measurements](benchmarks/data/collectives_small_8l4_20261110/README.md),
-[paired CPU-router/NCCL runs](benchmarks/data/router_vs_nccl_8l4_20261110/README.md),
-and [updated ReduceScatter rerun](benchmarks/data/reducescatter_8l4_20261110_v2/README.md)
-provide all sizes, timing ranges, and exact methods. The
-[local/router calibration](benchmarks/data/local_fallback_8l4_20261110_v3/README.md)
-supports the AR/AG path choice; the updated RS record has its own local/router
-calibration. Neither is a third curve in this summary.
+![8xL4 GPU ReduceScatter: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-reducescatter-v4.svg)
 
 ### Multi-node collectives
 
@@ -164,7 +139,7 @@ make -j2 cpu-router local-collectives adaptive-collectives \
   --backend auto --profile build/local-in-place.profile
 ```
 
-The 8xL4 GPU table above reports the fastest **measured** UCCL Lite path.
+The 8xL4 GPU figures above show the fastest **measured** UCCL Lite path at each size.
 Runtime `auto` is more conservative: with its matching local profile, it
 retains local AllGather at 1 GiB because the CPU-router gain is below the 3%
 selection margin. Without a matching profile it uses the local fallback.
