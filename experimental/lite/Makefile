@@ -26,7 +26,7 @@ FUSION_FLAGS := --expt-relaxed-constexpr -diag-suppress 20012,20014
 FUSION_LIB = $(MSCCLPP_LIB) -L$(NCCL_HOME)/lib -lnccl -lcublas -Xlinker -rpath=$(NCCL_HOME)/lib
 
 COLLECTIVES := allreduce alltoall
-MULTINODE := multinode_allreduce multinode_cpu_router tccl_ring_allreduce host_hierarchical_allreduce
+MULTINODE := multinode_allreduce multinode_cpu_router host_hierarchical_allreduce
 FUSION := dense_fusion fused_moe fused_moe_layer fused_moe_layer_qwen
 PROBES := gemm_probe mma_gemm_probe mma_peak_probe moe_overlap_probe cutlass_gemm_probe
 ALL_NAMES := $(COLLECTIVES) $(MULTINODE) host_allreduce $(FUSION) $(PROBES)
@@ -72,7 +72,7 @@ $(BUILD)/header_check.o: benchmarks/header_check.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++17 $(FUSION_FLAGS) $(FUSION_INC) -c $< -o $@
 
 help:
-	@printf '%s\n' 'UCCL Lite targets:' '  make single-node  (default): AllReduce and All-to-All' '  make fusion: dense and expert-parallel MoE benchmarks' '  make probes: standalone GEMM and overlap diagnostics' '  make headers: compile-check reusable MoE headers' '  make all: all of the above' '  make multinode: two-node benchmarks (Open MPI required)' '  make <name>: build one executable, e.g. tccl_ring_allreduce' 'See docs/build.md for dependency paths and launch commands.'
+	@printf '%s\n' 'UCCL Lite targets:' '  make single-node  (default): AllReduce and All-to-All' '  make fusion: dense and expert-parallel MoE benchmarks' '  make probes: standalone GEMM and overlap diagnostics' '  make headers: compile-check reusable MoE headers' '  make all: all of the above' '  make multinode: two-node benchmarks (Open MPI required)' '  make <name>: build one executable, e.g. multinode_allreduce' 'See docs/build.md for dependency paths and launch commands.'
 	@printf '%s\n' '  make cpu-router: optional static/shared CPU-router module' '  make adaptive-collectives: BF16 dispatcher + NCCL calibration benchmark' '  make router-checks: core, policy, eager, and graph correctness executables'
 
 include src/cpu_router/module.mk

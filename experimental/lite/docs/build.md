@@ -114,7 +114,6 @@ export HCA_DEVICES=mlx5_0,mlx5_1
 
 bash scripts/run_multinode.sh multinode_allreduce -b 1024 -e 67108864 -c 1
 bash scripts/run_multinode.sh multinode_cpu_router -k 1048576 -c 1
-bash scripts/run_multinode.sh tccl_ring_allreduce -C 8 -H 1 -S 8 -c 1
 bash scripts/run_multinode.sh host_allreduce -k 4194304 -c 1
 ```
 

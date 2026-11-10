@@ -8,16 +8,16 @@ their timings must not be used as standalone collective measurements.
 
 ## Provenance
 
-The imported [summary](../benchmarks/data/primitives_8l4.csv) is the complete
-matched four-backend rerun committed as
+The [summary](../benchmarks/data/primitives_8l4.csv) retains the CPU-router
+and NCCL rows from the matched historical rerun committed as
 `9d088c97442659a41a3db2225659d71f3bac6ab5` in the source project's history.
 It includes the ReduceScatter fix from `822fdcb`, not the earlier October 10
-baseline or exploratory before/after tuning samples. The same summary remains
-in the separate CPU-router/EP development worktree.
+baseline or exploratory before/after tuning samples. The retained rows are
+historical measurements; no new eight-GPU run was performed for this edit.
 
-The byte-for-byte source CSV SHA-256 is
-`ebd47273efe552d4cd03144c60a8e4d39cf6594f2aa79e0f1805f11eabb2edfe`.
-It contains 576 summary rows: three collectives × two placements × four backends
+The retained CSV SHA-256 is
+`3703360a23ba17b4f1ac22c4cd0a37e425381e56af265823765d914f0f7bebdc`.
+It contains 288 summary rows: three collectives × two placements × two backends
 × 24 sizes. AllReduce rows are retained for completeness; the README uses this
 file only for the eight-GPU standalone AllGather and ReduceScatter figures.
 
@@ -33,24 +33,17 @@ No eight-GPU benchmark was rerun for these figures.
 - One process and one submitting thread pinned to CPU 23.
 - Five warmups, ten timed iterations, three repetitions with backend order
   rotated between repetitions; both in-place and out-of-place are measured.
-- All four backends use the same per-collective unmodified nccl-tests 2.21.1
+- Both retained backends use the same per-collective unmodified nccl-tests 2.21.1
   executable, revision `afd59abab774a6a4b492eb344bd0c845a0b7bb4d`, built against
   NCCL 2.18.3 headers. Buffers use `cudaMalloc`; `-p 1` ensures allocation in
   that version's initialization path.
-- The archived full rerun reports zero wrong values in all 1,728
-  run/size/placement measurements across its 36 sweeps.
+- The retained rows report zero wrong values in all 864
+  run/size/placement measurements across 18 sweeps.
 
 | CSV backend | Figure label | Meaning |
 | --- | --- | --- |
 | `kernel` | CPU-router SM · historical | GPU SM transfer kernels over registered host packets, CPU operators, two-slot ownership protocol |
 | `nccl` | NCCL 2.27.5 | Native newer NCCL reference |
-| `nccl_tccl` | NCCL 2.18.3 (TCCL runtime) | TCCL's shared library with `NCCL_ALGO` and `TCCL_XML_FILE` unset; default NCCL algorithms |
-| `tccl` | TCCL | Same TCCL runtime with its topology-selected algorithm forced |
-
-TCCL uses revision `351d064856e322ec6e4546808e7d1e433d24f941`. Its single-node
-pathfinder was restricted to the eight-GPU topology; the runtime was unmodified.
-The selected ring was `0→6→3→1→4→5→2→7→0` with host-memory staging. This is
-not the two-node TCCL transport experiment elsewhere in this README.
 
 ## Primitive implementation and the ReduceScatter fix
 
@@ -81,10 +74,10 @@ BF16 results cannot be directly ranked against the four-GPU float32 results.
 
 At 1 GiB in-place:
 
-| Collective | CPU-router SM | NCCL 2.27.5 | NCCL 2.18.3 (TCCL runtime) | TCCL |
-| --- | ---: | ---: | ---: | ---: |
-| AllGather | 5.25 GB/s | 5.04 GB/s | 5.09 GB/s | 5.09 GB/s |
-| ReduceScatter | 5.59 GB/s | 4.86 GB/s | 4.89 GB/s | 4.88 GB/s |
+| Collective | CPU-router SM | NCCL 2.27.5 |
+| --- | ---: | ---: |
+| AllGather | 5.25 GB/s | 5.04 GB/s |
+| ReduceScatter | 5.59 GB/s | 4.86 GB/s |
 
 Regenerate both plots, together with the other reference figures, using
 `python3 scripts/plot_results.py --preview`. This redraws committed measurements;

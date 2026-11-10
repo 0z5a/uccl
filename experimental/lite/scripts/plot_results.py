@@ -175,7 +175,6 @@ def allreduce(preview):
     backends = [
         ("nccl218", "NCCL 2.18.3", PALE),
         ("nccl228", "NCCL 2.28.7", LIGHT),
-        ("tccl_kernel", "TCCL", MEDIUM),
         ("uccl_lite_main", "UCCL Lite", NAVY),
     ]
     rows = read_csv("allreduce_single_node.csv")
@@ -211,7 +210,7 @@ def allreduce(preview):
         "allreduce",
         [(b[1], b[2]) for b in backends],
         "Three-run medians; whiskers show min–max. UCCL Lite selects the fastest correct variant per size.\n"
-        "The 32 KiB and 1–4 MiB groups retain sizes where a reference implementation wins.",
+        "The 32 KiB and 4 MiB groups retain sizes where an NCCL implementation wins.",
         preview,
     )
 
@@ -219,11 +218,9 @@ def allreduce(preview):
 def primitive_collectives(preview):
     """Historical eight-GPU CPU-router data, separate from the four-GPU kernels."""
     rows = read_csv("primitives_8l4.csv")
-    assert len(rows) == 576
+    assert len(rows) == 288
     backends = [
-        ("nccl_tccl", "NCCL 2.18.3 (TCCL runtime)", PALE),
         ("nccl", "NCCL 2.27.5", LIGHT),
-        ("tccl", "TCCL", MEDIUM),
         ("kernel", "UCCL Lite · CPU-router SM", NAVY),
     ]
     for collective, name, title in (
@@ -239,7 +236,7 @@ def primitive_collectives(preview):
             selected = [
                 r for r in rows if r["collective"] == collective and r["mode"] == mode
             ]
-            assert len(selected) == 96
+            assert len(selected) == 48
             placement = "In-place" if mode == "in_place" else "Out-of-place"
             for column, sizes, bandwidth, metric in (
                 (0, [1 << n for n in (10, 14, 17, 20)], False, "Latency ↓"),

@@ -146,8 +146,8 @@ performance has not been rerun.
 
 ![AllReduce latency and bus bandwidth on four L4 GPUs](docs/assets/allreduce.svg)
 
-Across 21 doubling sizes from 1 KiB to 1 GiB, UCCL Lite wins **17** against
-the tested NCCL 2.18.3, NCCL 2.28.7, and TCCL configurations. At 1 KiB,
+Across 21 doubling sizes from 1 KiB to 1 GiB, UCCL Lite wins **19** against
+both tested NCCL 2.18.3 and NCCL 2.28.7 configurations. At 1 KiB,
 latency is 6.08 µs versus 17.29/19.54 µs for the two NCCL versions. At 1 GiB,
 bus bandwidth is 20.13 GB/s versus 17.01/18.49 GB/s. Some mid-size differences
 are below 1% and should be treated as ties.
@@ -183,8 +183,7 @@ configuration from the four-GPU float32 benchmarks above.
 At 1 GiB in-place, the CPU-router SM path reaches **5.25 GB/s for AllGather**
 and **5.59 GB/s for ReduceScatter**, versus **5.04 / 4.86 GB/s** for NCCL
 2.27.5. Both placements are shown, with three-run median bars and min–max
-whiskers. The NCCL 2.18.3 baseline uses the TCCL runtime with its default NCCL
-algorithms; it is not the independent NCCL build used in the four-GPU plots.
+whiskers. The figure compares the CPU-router path with NCCL 2.27.5 only.
 
 AllGather size is the complete output per rank; ReduceScatter size is the
 complete input per rank. Neither figure includes GEMM. The full 128 B–1 GiB

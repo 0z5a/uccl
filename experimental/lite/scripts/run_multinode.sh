@@ -5,7 +5,7 @@ set -euo pipefail
 if [[ $# -lt 1 || "$1" == --help ]]; then
   printf '%s\n' \
     'Usage: HOSTS=node0:4,node1:4 bash scripts/run_multinode.sh BACKEND [options]' \
-    'Backends: multinode_allreduce, multinode_cpu_router, tccl_ring_allreduce,' \
+    'Backends: multinode_allreduce, multinode_cpu_router,' \
     '          host_allreduce, host_hierarchical_allreduce' \
     'Optional: MPIRUN, BUILD_DIR, SOCKET_IFNAME, HCA_DEVICES, IBV_MODE.'
   exit 0
@@ -21,7 +21,7 @@ args+=(-x PATH)
 if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then args+=(-x LD_LIBRARY_PATH); fi
 
 case "$backend" in
-  multinode_allreduce|tccl_ring_allreduce)
+  multinode_allreduce)
     # MPI bootstraps the ranks; MSCCL++ owns the IB data path.
     args+=(--mca pml ob1 --mca btl self,vader,tcp)
     if [[ -n "${SOCKET_IFNAME:-}" ]]; then

@@ -11,7 +11,3 @@ copyright notice and BSD-3-Clause terms are reproduced in that header.
 `include/uccl_lite/cpu_router/cutlass_gated_grouped.cuh` is the CPU-router
 branch's resident-GEMM adaptation of the same upstream grouped kernel. Its
 upstream copyright and BSD-3-Clause notice are preserved in the file.
-
-The global-ring benchmark reproduces a topology-specific TCCL schedule using
-MSCCL++ primitives; the TCCL runtime is not vendored here. TCCL measurements in
-the benchmark tables refer to the external reference implementation.

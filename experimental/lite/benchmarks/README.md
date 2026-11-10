@@ -23,10 +23,10 @@ validation is recorded separately in [validation.md](../docs/validation.md).
 | --- | --- |
 | [gpu-progress/ablation_provenance.json](data/gpu-progress/ablation_provenance.json) and linked CSVs | November 5: CPU versus GPU packet progress, same GPU reduction and packet layout; 16,800 checked timings, all 21 AG/RS sizes. [Direct NCCL results](../docs/baseline-comparison.md). |
 | [reduction-placement/ablation_provenance.json](data/reduction-placement/ablation_provenance.json) and linked CSVs | November 5: default CPU, 8-MiB CPU, flat-GPU and interleaved-GPU paths, same executable; 33,600 checked full-sweep timings plus three 1-GiB packet-size probes. AllGather and ReduceScatter, including every regression. [Architecture, blue bar figures and limitations](../docs/reduction-placement.md). |
-| [allreduce_single_node.csv](data/allreduce_single_node.csv) | October 12: 1 KiB–1 GiB, 5 warmups, 10 timed iterations, three runs. NCCL 2.18.3/2.28.7 and TCCL use nccl-tests 2.13.8; UCCL Lite uses its native harness. Fastest correct UCCL Lite variant per size. TCCL uses the corrected 2+2 NUMA map and kernel-only pathfinder policy. |
-| [allreduce_two_node.csv](data/allreduce_two_node.csv) | October 12: three runs, slowest of eight ranks. Hierarchical UCCL Lite selects among 12 piece/distance configurations. CPU router uses 1 MiB pieces. Includes TCCL and an explicit memcpy staging control. |
+| [allreduce_single_node.csv](data/allreduce_single_node.csv) | October 12: 1 KiB–1 GiB, 5 warmups, 10 timed iterations, three runs. NCCL 2.18.3/2.28.7 use nccl-tests 2.13.8; UCCL Lite uses its native harness. Fastest correct UCCL Lite variant per size. |
+| [allreduce_two_node.csv](data/allreduce_two_node.csv) | October 12: three runs, slowest of eight ranks. Hierarchical UCCL Lite selects among 12 piece/distance configurations. CPU router uses 1 MiB pieces. |
 | [cpu_router_4l4_calibration.csv](data/cpu_router_4l4_calibration.csv), [cpu_router_4l4_selection.csv](data/cpu_router_4l4_selection.csv) | New four-L4 BF16 adaptive-module validation against NCCL 2.28.7: three paired repetitions, 5 warmups / 10 iterations, 1–8 MiB AR/AG/RS. All 12 automatic decisions retain the fallback with no router initialization. These are integration calibration results, not the historical peak-throughput sweeps. |
-| [primitives_8l4.csv](data/primitives_8l4.csv) | October 12 matched CPU-router primitive rerun after the ReduceScatter fix. Single node, eight L4s, BF16, no GPU P2P; both placements, four backends, 24 sizes, three runs. Used for standalone AG/RS charts and the explicit reference selection profile. [Provenance and port status](../docs/primitive-collectives.md). |
+| [primitives_8l4.csv](data/primitives_8l4.csv) | October 12 matched CPU-router primitive rerun after the ReduceScatter fix. Single node, eight L4s, BF16, no GPU P2P; both placements, two retained backends, 24 sizes, three runs. Used for standalone AG/RS charts and the explicit reference selection profile. [Provenance and port status](../docs/primitive-collectives.md). |
 | [collectives.csv](data/collectives.csv) | Earlier compact single-node tables. The AllReduce rows are an older sweep; use the newer single-node CSV for the README figure. |
 | [alltoall.txt](data/alltoall.txt), [nccl_alltoall.txt](data/nccl_alltoall.txt) | All-to-All algorithm ladder and the default NCCL transport baseline. |
 | [dense_fusion.txt](data/dense_fusion.txt) | September dense shape sweeps, including NCCL, no-overlap, fusion, and Flux controls. Later blocks supersede earlier exploratory blocks. |
@@ -34,12 +34,10 @@ validation is recorded separately in [validation.md](../docs/validation.md).
 | [moe_layer.txt](data/moe_layer.txt) | Dispatch through combine. Twelve rounds × four iterations, min per variant after settling; not the three-run-median protocol used for the collective plots. |
 | [tp_moe_prefill.csv](data/tp_moe_prefill.csv) | Complete TP=4 / EP=1 BF16 MoE layer, Qwen and DeepSeek shapes. Medians of three seed-run medians (1801/1901/2001); five rotating rounds × ten graph replays, slowest rank. Baseline searches 15 vLLM configurations. `previous_fused_ms` is whole-stripe readiness; `fused_ms` is shard readiness. |
 | [tp_moe_decode.csv](data/tp_moe_decode.csv) | Complete TP-MoE layer at 1/2/4/8/16/32 tokens. Seeds 3201/3301; ten warmups, five rotating rounds × twenty graph replays; baseline tuned in graph mode. `fused-c512` is grouped fusion; `fused-decode` is direct decode. Ranges are paired seed ranges, not confidence intervals. |
-| `tccl_ring_run{1,2,3}.txt` | October 13: final 1 GiB host-staged MSCCL++ global-ring runs, eight channels/eight slots, zero relative error. |
 | [cutlass_gemm_probe.txt](data/cutlass_gemm_probe.txt), [mma_gemm_occupancy.txt](data/mma_gemm_occupancy.txt) | Diagnostic compute experiments referenced by source comments. |
 
 The CSVs preserve aggregate medians and ranges rather than the complete original
-run archive. The new global-ring implementation's 19.21 GB/s result is separate
-from the hierarchical `uccl_lite` curve in `allreduce_two_node.csv`.
+run archive.
 
 The dense and MoE benchmarks include their own baseline implementations. Large
 fusion speedups are specific to those workloads; small cases can regress. The
