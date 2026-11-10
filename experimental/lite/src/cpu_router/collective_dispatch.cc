@@ -144,16 +144,6 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
   if (options_.gpuProgress &&
       options_.reduction != cpu_router::ReductionPlacement::Gpu)
     throw std::invalid_argument("GPU progress requires GPU reduction");
-  topology_.referenceRouterOptions =
-      options_.reduction == cpu_router::ReductionPlacement::Cpu &&
-      options_.packetBytes == (512UL << 10) &&
-      options_.minPacketBytes == (128UL << 10) &&
-      options_.transportBlocks == 64 && options_.transportThreads == 256 &&
-      options_.transportGrainBytes == (16UL << 10) &&
-      options_.workersPerNode == 23 && options_.scatterWorkersPerNode == 16 &&
-      options_.grainElements == 8192 && options_.workerCpus.empty() &&
-      options_.numaNodes.empty() && options_.replayCpu == -1 &&
-      !options_.inlineReplay && !options_.concurrentProducer;
   std::ostringstream key;
   // maxTensorBytes is a validation bound, not packet geometry or an allocation
   // size.
@@ -176,7 +166,6 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
                            "UCCL_LITE_GPU_TIMELINE_PATH"}) {
     bool enabled = std::getenv(knob) != nullptr;
     topology_.identity += std::string(";") + knob + "=" + (enabled ? "1" : "0");
-    if (enabled) topology_.referenceRouterOptions = false;
   }
   // Use only the caller's currently permitted affinity, not the whole host
   // pool.

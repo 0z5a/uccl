@@ -58,6 +58,15 @@ traffic, `12*(bytes_per_rank/4)/seconds`, not per-GPU bus bandwidth. NCCL's defa
 path on that testbed stages through host memory; forcing GPU P2P produces a
 different, much weaker baseline and must be labeled separately.
 
+## Direct peer AllGather and ReduceScatter
+
+[peer_ag_rs.cu](../src/collectives/peer_ag_rs.cu) adds standalone four-GPU
+float32 AG and RS paths using source-side peer writes and destination-owned
+output. The matched NCCL sweep finds AG wins from 1–64 MiB and RS wins mainly
+at 8–32 MiB, with substantial small-message regressions. See the
+[algorithm, full sweep and timing scope](peer-ag-rs.md). This path does not
+replace the separate BF16/no-P2P CPU router.
+
 ## Boundaries
 
 These are specialized algorithms, not an NCCL compatibility layer. Their

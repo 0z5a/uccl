@@ -57,21 +57,18 @@ placement, topology identity, and the identity of the caller's fallback.
 No interpolation or best-neighbor size policy is applied.
 
 1. Unsupported dtype/topology/capacity retains the existing backend.
-2. The newest exact local calibration record takes precedence, including
-   records showing a regression.
-3. If explicitly loaded, the historical profile can apply to its reference
-   topology: eight L4s in device order 0–7, NUMA map 4+4, no GPU peer access,
-   mapped host support, 24 permitted CPUs per NUMA node, CUDA 12.9, driver
-   580.178.04, default router geometry, and fallback identity `nccl:22705`.
-4. A candidate is selected only when it passed correctness, has at least three
+2. Only an exact local calibration record can enable the router. A newer
+   matching record showing a regression disables it.
+3. A candidate is selected only when it passed correctness, has at least three
    repetitions, median speedup is at least 1.03×, and its slowest run is faster
    than the fallback's fastest run. Overlapping ranges retain the fallback.
-5. Unknown configurations and unmeasured sizes retain the existing backend.
+4. Unknown configurations and unmeasured sizes retain the existing backend.
 
-This reference profile describes a measured hardware/software configuration;
-it is not a guarantee for every machine with the same model names. Local paired
-calibration is preferable, particularly when CPU, memory, or workload conditions
-change. Profiling-enabled runs do not inherit the historical profile.
+The archived eight-L4 profile describes its recorded hardware/software
+configuration, but cannot capture a new host's PCIe contention, memory setup,
+CPU model, or every NCCL setting. It remains a performance reference and is not
+accepted as automatic routing evidence. Recalibrate when CPU, memory, or
+workload conditions change.
 
 The four-L4 host cannot match eight-GPU historical records. With no local
 evidence, it stays on its existing backend and does not allocate router buffers
@@ -132,10 +129,6 @@ backend ordering between repetitions, and records the slowest-rank CUDA-event
 latency. Three run-level medians form the decision's min/median/max range.
 
 ```bash
-# Explicit historical evidence; useful only when all reference conditions match.
-./build/uccl_lite_collectives --gpus 8 --backend auto \
-  --reference benchmarks/data/primitives_8l4.csv --op all
-
 # Local paired measurement. The output must be a new file.
 ./build/uccl_lite_collectives --gpus 4 --op all \
   --begin 1048576 --end 8388608 --warmup 5 --iterations 10 --repeats 3 \

@@ -21,12 +21,15 @@ validation is recorded separately in [validation.md](../docs/validation.md).
 
 | File | Scope and method |
 | --- | --- |
+| [hardware_profile_4l4_20261110_summary.csv](data/hardware_profile_4l4_20261110_summary.csv) and [raw runs](data/hardware_profile_4l4_20261110_run1.txt) | November 10: standalone GPU topology, directed and four-GPU concurrent peer copies, concurrent H2D/D2H, and NUMA CPU copy/BF16 reduction. Three complete runs × three repetitions, useful-byte bandwidth; no NCCL baseline or collective timing. [Method and limits](../docs/hardware-profiler.md). |
+| [peer_ag_rs_4l4_20261110.txt](data/peer_ag_rs_4l4_20261110.txt) | November 10: four-L4 float32 direct-peer AG/RS versus NCCL 2.28.7, 1 KiB–64 MiB. Three alternating repetitions; slowest-rank CUDA events; every output checked. [Design and negative results](../docs/peer-ag-rs.md). |
+| [multinode_peer_20261110/summary.csv](data/multinode_peer_20261110/summary.csv), [summary_large.csv](data/multinode_peer_20261110/summary_large.csv), [summary_ar.csv](data/multinode_peer_20261110/summary_ar.csv) | November 10: two nodes × four L4, standard-layout float32 AG/RS (out of place) and AR (in place) versus NCCL 2.28.7, up to 1 GiB. Three paired alternating runs, ten calls each, slowest-rank CUDA events; full min/median/max and regressions. [Raw logs and excluded prototypes](data/multinode_peer_20261110/README.md), [design and figure](../docs/multinode.md). |
 | [gpu-progress/ablation_provenance.json](data/gpu-progress/ablation_provenance.json) and linked CSVs | November 5: CPU versus GPU packet progress, same GPU reduction and packet layout; 16,800 checked timings, all 21 AG/RS sizes. [Direct NCCL results](../docs/baseline-comparison.md). |
 | [reduction-placement/ablation_provenance.json](data/reduction-placement/ablation_provenance.json) and linked CSVs | November 5: default CPU, 8-MiB CPU, flat-GPU and interleaved-GPU paths, same executable; 33,600 checked full-sweep timings plus three 1-GiB packet-size probes. AllGather and ReduceScatter, including every regression. [Architecture, blue bar figures and limitations](../docs/reduction-placement.md). |
 | [allreduce_single_node.csv](data/allreduce_single_node.csv) | October 12: 1 KiB–1 GiB, 5 warmups, 10 timed iterations, three runs. NCCL 2.18.3/2.28.7 use nccl-tests 2.13.8; UCCL Lite uses its native harness. Fastest correct UCCL Lite variant per size. |
 | [allreduce_two_node.csv](data/allreduce_two_node.csv) | October 12: three runs, slowest of eight ranks. Hierarchical UCCL Lite selects among 12 piece/distance configurations. CPU router uses 1 MiB pieces. |
 | [cpu_router_4l4_calibration.csv](data/cpu_router_4l4_calibration.csv), [cpu_router_4l4_selection.csv](data/cpu_router_4l4_selection.csv) | New four-L4 BF16 adaptive-module validation against NCCL 2.28.7: three paired repetitions, 5 warmups / 10 iterations, 1–8 MiB AR/AG/RS. All 12 automatic decisions retain the fallback with no router initialization. These are integration calibration results, not the historical peak-throughput sweeps. |
-| [primitives_8l4.csv](data/primitives_8l4.csv) | October 12 matched CPU-router primitive rerun after the ReduceScatter fix. Single node, eight L4s, BF16, no GPU P2P; both placements, two retained backends, 24 sizes, three runs. Used for standalone AG/RS charts and the explicit reference selection profile. [Provenance and port status](../docs/primitive-collectives.md). |
+| [primitives_8l4.csv](data/primitives_8l4.csv) | October 12 matched CPU-router primitive rerun after the ReduceScatter fix. Single node, eight L4s, BF16, no GPU P2P; both placements, two retained backends, 24 sizes, three runs. Used for standalone AG/RS charts, not automatic backend selection. [Provenance and port status](../docs/primitive-collectives.md). |
 | [collectives.csv](data/collectives.csv) | Earlier compact single-node tables. The AllReduce rows are an older sweep; use the newer single-node CSV for the README figure. |
 | [alltoall.txt](data/alltoall.txt), [nccl_alltoall.txt](data/nccl_alltoall.txt) | All-to-All algorithm ladder and the default NCCL transport baseline. |
 | [dense_fusion.txt](data/dense_fusion.txt) | September dense shape sweeps, including NCCL, no-overlap, fusion, and Flux controls. Later blocks supersede earlier exploratory blocks. |
@@ -65,19 +68,22 @@ exploratory numbers. Flux latencies are normalized to the same cuBLAS+NCCL
 baseline as UCCL Lite, while retaining the different-harness caveat. The EP-MoE
 panels show their full available token ranges, which differ between the two logs.
 
-## Regenerate all README figures
+## Regenerate README figures
 
 ```bash
 python3 scripts/plot_results.py
+python3 scripts/plot_multinode_peer.py
 ```
 
-Requires Matplotlib and NumPy. The script reads the committed CSV/text data and
-regenerates six SVGs under `docs/assets/`: four-GPU AllReduce, eight-GPU
+Requires Matplotlib and NumPy. `plot_results.py` reads the committed CSV/text
+data and regenerates the original six SVGs under `docs/assets/`: four-GPU AllReduce, eight-GPU
 standalone AllGather and ReduceScatter (each showing both placements), All-to-All,
 dense fusion, and EP-MoE. It performs no GPU work and runs no benchmarks.
-Historical TP-MoE and two-node records remain archived above but are not part of
-the README results gallery or figure generation.
+`plot_multinode_peer.py` draws the seventh SVG from the validated paired
+two-node AG/RS summary. Historical TP-MoE and older two-node AR records remain
+archived without README figures.
 Use `python3 scripts/plot_results.py --preview` to also export PNG and PDF copies
 under ignored `build/figures/` for inspection or reuse in a technical report.
+`python3 scripts/plot_multinode_peer.py --preview` exports its PNG there.
 For fresh measurements, use the commands in [build.md](../docs/build.md), keep
 correctness enabled, and save the complete run configuration with each result.

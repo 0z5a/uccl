@@ -71,6 +71,7 @@ struct Layout {
   size_t localScratch;
   size_t ibSend;
   size_t ibScratch;
+  size_t immutableInput;
 };
 
 __device__ __forceinline__ void addOut(float* dst, float const* a,
@@ -117,7 +118,7 @@ __device__ __forceinline__ void publish() { gMultiNodeSyncer.sync(gridDim.x); }
 __device__ void localReduceScatterPiece(
     PortChan send, PortChan recv, float* data, float* scratch, float* ibSend,
     size_t nelem, int pos, size_t pieceOff, size_t pieceLen, size_t chunkElems,
-    size_t scratchByteOffset, int tid, int nth) {
+    size_t dataByteOffset, size_t scratchByteOffset, int tid, int nth) {
   const size_t chunkBytes = chunkElems * sizeof(float);
   for (int step = 0; step < kLocalRanks - 1; step++) {
     int cSend = (pos - step + kLocalRanks) % kLocalRanks;
@@ -131,7 +132,8 @@ __device__ void localReduceScatterPiece(
     if (tid == 0)
       send.putWithSignal(scratchByteOffset + (size_t)step * chunkBytes +
                              pieceOff * sizeof(float),
-                         sendOff * sizeof(float), sendLen * sizeof(float));
+                         dataByteOffset + sendOff * sizeof(float),
+                         sendLen * sizeof(float));
     if (tid == 0) recv.wait();
     gMultiNodeSyncer.sync(gridDim.x);
     if (recvLen) {
@@ -143,6 +145,47 @@ __device__ void localReduceScatterPiece(
         addInto(data + recvOff, scratch + (size_t)step * chunkElems + pieceOff,
                 recvLen, tid, nth);
     }
+    gMultiNodeSyncer.sync(gridDim.x);
+  }
+}
+
+// Three receive slots per half preserve each outbound partial until the local
+// proxy has finished reading it. The original standard-layout input is never
+// modified, so the next collective may use it without a reset or repack.
+__device__ void localReduceScatterDirectHalf(
+    PortChan send, PortChan recv, float const* input, float* scratch,
+    float* partial, size_t shard, int half, int ringPos, size_t pieceOff,
+    size_t pieceLen, Layout layout, int tid, int nth) {
+  constexpr int ownerForChunk[kLocalRanks] = {2, 0, 1, 3};
+  size_t bytes = pieceLen * sizeof(float);
+  for (int step = 0; step < kLocalRanks - 1; ++step) {
+    int cSend = (ringPos - step + kLocalRanks) % kLocalRanks;
+    int cRecv = (cSend - 1 + kLocalRanks) % kLocalRanks;
+    size_t receiveOffset =
+        size_t(half * (kLocalRanks - 1) + step) * shard + pieceOff;
+    size_t sourceOffset =
+        step == 0
+            ? size_t(ownerForChunk[cSend] + half * kLocalRanks) * shard +
+                  pieceOff
+            : size_t(half * (kLocalRanks - 1) + step - 1) * shard + pieceOff;
+    size_t sourceBase = step == 0 ? layout.data : layout.localScratch;
+    publish();
+    if (tid == 0) {
+      send.putWithSignal(layout.localScratch +
+                             receiveOffset * sizeof(float),
+                         sourceBase + sourceOffset * sizeof(float), bytes);
+      recv.wait();
+    }
+    gMultiNodeSyncer.sync(gridDim.x);
+    float const* own =
+        input + size_t(ownerForChunk[cRecv] + half * kLocalRanks) * shard +
+        pieceOff;
+    float* received = scratch + receiveOffset;
+    if (step == kLocalRanks - 2)
+      addOut(partial + size_t(half) * shard + pieceOff, own, received,
+             pieceLen, tid, nth);
+    else
+      addInto(received, own, pieceLen, tid, nth);
     gMultiNodeSyncer.sync(gridDim.x);
   }
 }
@@ -221,7 +264,7 @@ __global__ void __launch_bounds__(1024)
       size_t len = off >= ownLen ? 0 : min(pieceElems, ownLen - off);
       localReduceScatterPiece(localSend, localRecv, data, localScratch, ibSend,
                               nelem, ringPos, off, len, chunkElems,
-                              layout.localScratch, tid, nth);
+                              layout.data, layout.localScratch, tid, nth);
       // The final local RS step writes directly into the immutable IB slot, so
       // no extra staging copy is needed and inbound reduction cannot race the
       // outbound RDMA read.
@@ -258,9 +301,331 @@ __global__ void __launch_bounds__(1024)
   }
 }
 
+// Every node receives one remote shard per local rank over IB, then spreads
+// those four shards over local CUDA-IPC channels. Each global-rank output
+// interval has one writer, and the input slot stays immutable until flush.
+__global__ void __launch_bounds__(1024)
+    hierarchicalAllGather(LocalAgChans localAg, PortChan ib, float* base,
+                          size_t nelem, Layout layout, int rank,
+                          int localRank) {
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  int nth = gridDim.x * blockDim.x;
+  size_t shard = nelem / kWorld;
+  size_t ownOff = size_t(rank) * shard;
+  size_t remoteOff = size_t(rank ^ kLocalRanks) * shard;
+  float* output =
+      reinterpret_cast<float*>(reinterpret_cast<char*>(base) + layout.data);
+  float* input =
+      reinterpret_cast<float*>(reinterpret_cast<char*>(base) + layout.ibSend);
+  for (size_t i = tid; i < shard; i += nth) output[ownOff + i] = input[i];
+  publish();
+  if (tid == 0) {
+    size_t bytes = shard * sizeof(float);
+    ib.putWithSignal(layout.data + ownOff * sizeof(float), layout.ibSend,
+                     bytes);
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank)
+        localAg.c[peer].putWithSignal(layout.data + ownOff * sizeof(float),
+                                      layout.ibSend, bytes);
+    ib.wait();
+  }
+  gMultiNodeSyncer.sync(gridDim.x);
+  publish();
+  if (tid == 0) {
+    size_t bytes = shard * sizeof(float);
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank)
+        localAg.c[peer].putWithSignal(layout.data + remoteOff * sizeof(float),
+                                      layout.data + remoteOff * sizeof(float),
+                                      bytes);
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank) {
+        localAg.c[peer].wait();
+        localAg.c[peer].wait();
+      }
+    ib.flush();
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank) localAg.c[peer].flush();
+  }
+}
+
+__device__ void gatherFourRing(PortChan send, PortChan recv, size_t baseOffset,
+                               size_t shard, int nodeBase, int ringPos,
+                               int tid) {
+  constexpr int order[kLocalRanks] = {0, 1, 3, 2};
+  for (int step = 0; step < kLocalRanks - 1; ++step) {
+    int owner = order[(ringPos - step + kLocalRanks) % kLocalRanks];
+    size_t off = size_t(nodeBase + owner) * shard * sizeof(float);
+    publish();
+    if (tid == 0) {
+      send.putWithSignal(baseOffset + off, baseOffset + off,
+                         shard * sizeof(float));
+      recv.wait();
+    }
+    gMultiNodeSyncer.sync(gridDim.x);
+  }
+}
+
+// Ring forwarding avoids the flat multicast's simultaneous fan-out. The
+// first local ring runs while the partner rank's IB transfer is in flight.
+__global__ void __launch_bounds__(1024)
+    hierarchicalAllGatherRing(PortChan localSend, PortChan localRecv,
+                              PortChan ib, float* base, size_t nelem,
+                              Layout layout, int rank, int localRank,
+                              int ringPos) {
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  int nth = gridDim.x * blockDim.x;
+  size_t shard = nelem / kWorld;
+  int nodeBase = rank - localRank;
+  int remoteBase = nodeBase ^ kLocalRanks;
+  float* output =
+      reinterpret_cast<float*>(reinterpret_cast<char*>(base) + layout.data);
+  float* input =
+      reinterpret_cast<float*>(reinterpret_cast<char*>(base) + layout.ibSend);
+  for (size_t i = tid; i < shard; i += nth)
+    output[size_t(rank) * shard + i] = input[i];
+  publish();
+  if (tid == 0)
+    ib.putWithSignal(layout.data + size_t(rank) * shard * sizeof(float),
+                     layout.ibSend, shard * sizeof(float));
+  gatherFourRing(localSend, localRecv, layout.data, shard, nodeBase, ringPos,
+                 tid);
+  if (tid == 0) ib.wait();
+  gMultiNodeSyncer.sync(gridDim.x);
+  gatherFourRing(localSend, localRecv, layout.data, shard, remoteBase, ringPos,
+                 tid);
+  if (tid == 0) {
+    ib.flush();
+    localSend.flush();
+  }
+}
+
+// First reduce both nodes' destination shards among the four local sources.
+// The two half-shards owned by local rank r represent global destinations r
+// and r+4. Exchange the remote-owned half with the partner rank on the other
+// node, then add its partial to the local-owned half in place.
+__global__ void __launch_bounds__(1024)
+    hierarchicalReduceScatter(LocalAgChans localAg, PortChan ib, float* base,
+                              size_t nelem, Layout layout, int rank,
+                              int localRank) {
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  int nth = gridDim.x * blockDim.x;
+  size_t shard = nelem / kWorld;
+  size_t bytes = shard * sizeof(float);
+  float* input =
+      reinterpret_cast<float*>(reinterpret_cast<char*>(base) + layout.data);
+  float* scratch = reinterpret_cast<float*>(reinterpret_cast<char*>(base) +
+                                            layout.localScratch);
+  float* partial = reinterpret_cast<float*>(reinterpret_cast<char*>(base) +
+                                            layout.ibSend);
+  float* remote = reinterpret_cast<float*>(reinterpret_cast<char*>(base) +
+                                           layout.ibScratch);
+  publish();
+  if (tid == 0) {
+    for (int dest = 0; dest < kLocalRanks; ++dest)
+      if (dest != localRank)
+        for (int half = 0; half < kNodes; ++half)
+          localAg.c[dest].putWithSignal(
+              layout.localScratch +
+                  size_t(localRank * kNodes + half) * bytes,
+              layout.data + size_t(dest + half * kLocalRanks) * bytes, bytes);
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank) {
+        localAg.c[peer].wait();
+        localAg.c[peer].wait();
+      }
+  }
+  gMultiNodeSyncer.sync(gridDim.x);
+  for (int half = 0; half < kNodes; ++half)
+    for (size_t i = tid; i < shard; i += nth) {
+      float sum = 0;
+      for (int source = 0; source < kLocalRanks; ++source) {
+        float value = source == localRank
+                          ? input[size_t(localRank + half * kLocalRanks) *
+                                      shard +
+                                  i]
+                          : scratch[size_t(source * kNodes + half) * shard +
+                                    i];
+        sum += value;
+      }
+      partial[size_t(half) * shard + i] = sum;
+    }
+  publish();
+  int ownHalf = rank < kLocalRanks ? 0 : 1;
+  if (tid == 0) {
+    int sendHalf = ownHalf ^ 1;
+    ib.putWithSignal(layout.ibScratch,
+                     layout.ibSend + size_t(sendHalf) * bytes, bytes);
+    ib.wait();
+  }
+  gMultiNodeSyncer.sync(gridDim.x);
+  for (size_t i = tid; i < shard; i += nth)
+    partial[size_t(ownHalf) * shard + i] += remote[i];
+  gMultiNodeSyncer.sync(gridDim.x);
+  if (tid == 0) {
+    ib.flush();
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank) localAg.c[peer].flush();
+  }
+}
+
+// Reorder a standard rank-ordered tensor into the ring's four owner chunks.
+// Each block handles one contiguous source and destination interval.
+__global__ void packReduceScatterRing(float const* input, float* packed,
+                                      size_t shard) {
+  constexpr int ownerForChunk[kLocalRanks] = {2, 0, 1, 3};
+  int segment = blockIdx.y;
+  int chunk = segment / kNodes;
+  int half = segment % kNodes;
+  size_t source = size_t(ownerForChunk[chunk] + half * kLocalRanks) * shard;
+  size_t destination = size_t(segment) * shard;
+  for (size_t i = size_t(blockIdx.x) * blockDim.x + threadIdx.x; i < shard;
+       i += size_t(gridDim.x) * blockDim.x)
+    packed[destination + i] = input[source + i];
+}
+
+// The immutable standard-layout source is separate from the mutable ring
+// chunks so repeated invocations cannot consume a prior reduction's output.
+__global__ void __launch_bounds__(1024)
+    hierarchicalReduceScatterRing(PortChan localSend, PortChan localRecv,
+                                  PortChan ib, float* base, size_t nelem,
+                                  Layout layout, int rank, int ringPos,
+                                  bool packedReady, int pieces) {
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  int nth = gridDim.x * blockDim.x;
+  size_t shard = nelem / kWorld;
+  size_t chunkElems = 2 * shard;
+  float const* input = reinterpret_cast<float const*>(
+      reinterpret_cast<char*>(base) + layout.immutableInput);
+  float* packed = reinterpret_cast<float*>(reinterpret_cast<char*>(base) +
+                                           layout.localScratch);
+  float* scratch =
+      reinterpret_cast<float*>(reinterpret_cast<char*>(base) + layout.data);
+  float* partial = reinterpret_cast<float*>(reinterpret_cast<char*>(base) +
+                                            layout.ibSend);
+  float* remote = reinterpret_cast<float*>(reinterpret_cast<char*>(base) +
+                                           layout.ibScratch);
+  if (!packedReady) {
+    constexpr int ownerForChunk[kLocalRanks] = {2, 0, 1, 3};
+    for (size_t i = tid; i < nelem; i += nth) {
+      int chunk = int(i / chunkElems);
+      size_t inChunk = i % chunkElems;
+      int half = int(inChunk / shard);
+      size_t inShard = inChunk % shard;
+      packed[i] = input[size_t(ownerForChunk[chunk] + half * kLocalRanks) *
+                            shard +
+                        inShard];
+    }
+    gMultiNodeSyncer.sync(gridDim.x);
+  }
+  int ownHalf = rank < kLocalRanks ? 0 : 1;
+  int sendHalf = ownHalf ^ 1;
+  if (pieces == 1) {
+    localReduceScatterPiece(localSend, localRecv, packed, scratch, partial,
+                            nelem, ringPos, 0, chunkElems, chunkElems,
+                            layout.localScratch, layout.data, tid, nth);
+    publish();
+    if (tid == 0) {
+      ib.putWithSignal(layout.ibScratch,
+                       layout.ibSend + size_t(sendHalf) * shard * sizeof(float),
+                       shard * sizeof(float));
+      ib.wait();
+    }
+    gMultiNodeSyncer.sync(gridDim.x);
+    for (size_t i = tid; i < shard; i += nth)
+      partial[size_t(ownHalf) * shard + i] += remote[i];
+    gMultiNodeSyncer.sync(gridDim.x);
+  } else {
+    size_t pieceElems = ((shard + pieces - 1) / pieces + 31) & ~(size_t)31;
+    for (int p = 0; p < pieces; ++p) {
+      size_t off = size_t(p) * pieceElems;
+      if (off >= shard) break;
+      size_t len = min(pieceElems, shard - off);
+      size_t sendOff = size_t(sendHalf) * shard + off;
+      size_t ownOff = size_t(ownHalf) * shard + off;
+      localReduceScatterPiece(localSend, localRecv, packed, scratch, partial,
+                              nelem, ringPos, sendOff, len, chunkElems,
+                              layout.localScratch, layout.data, tid, nth);
+      publish();
+      if (tid == 0)
+        ib.putWithSignal(layout.ibScratch + off * sizeof(float),
+                         layout.ibSend + sendOff * sizeof(float),
+                         len * sizeof(float));
+      localReduceScatterPiece(localSend, localRecv, packed, scratch, partial,
+                              nelem, ringPos, ownOff, len, chunkElems,
+                              layout.localScratch, layout.data, tid, nth);
+      if (tid == 0) ib.wait();
+      gMultiNodeSyncer.sync(gridDim.x);
+      for (size_t i = tid; i < len; i += nth)
+        partial[ownOff + i] += remote[off + i];
+      gMultiNodeSyncer.sync(gridDim.x);
+    }
+  }
+  if (tid == 0) {
+    ib.flush();
+    localSend.flush();
+  }
+}
+
+__global__ void __launch_bounds__(1024)
+    hierarchicalReduceScatterDirectRing(PortChan localSend,
+                                        PortChan localRecv, PortChan ib,
+                                        float* base, size_t nelem, Layout layout,
+                                        int rank, int ringPos, int pieces) {
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  int nth = gridDim.x * blockDim.x;
+  size_t shard = nelem / kWorld;
+  float const* input = reinterpret_cast<float const*>(
+      reinterpret_cast<char*>(base) + layout.data);
+  float* scratch = reinterpret_cast<float*>(reinterpret_cast<char*>(base) +
+                                            layout.localScratch);
+  float* partial = reinterpret_cast<float*>(reinterpret_cast<char*>(base) +
+                                            layout.ibSend);
+  float* remote = reinterpret_cast<float*>(reinterpret_cast<char*>(base) +
+                                           layout.ibScratch);
+  int ownHalf = rank < kLocalRanks ? 0 : 1;
+  int sendHalf = ownHalf ^ 1;
+  size_t pieceElems = ((shard + pieces - 1) / pieces + 31) & ~(size_t)31;
+  for (int p = 0; p < pieces; ++p) {
+    size_t off = size_t(p) * pieceElems;
+    if (off >= shard) break;
+    size_t len = min(pieceElems, shard - off);
+    localReduceScatterDirectHalf(localSend, localRecv, input, scratch, partial,
+                                 shard, sendHalf, ringPos, off, len, layout,
+                                 tid, nth);
+    publish();
+    if (tid == 0)
+      ib.putWithSignal(layout.ibScratch + off * sizeof(float),
+                       layout.ibSend +
+                           (size_t(sendHalf) * shard + off) * sizeof(float),
+                       len * sizeof(float));
+    localReduceScatterDirectHalf(localSend, localRecv, input, scratch, partial,
+                                 shard, ownHalf, ringPos, off, len, layout,
+                                 tid, nth);
+    if (tid == 0) ib.wait();
+    gMultiNodeSyncer.sync(gridDim.x);
+    for (size_t i = tid; i < len; i += nth)
+      partial[size_t(ownHalf) * shard + off + i] += remote[off + i];
+    gMultiNodeSyncer.sync(gridDim.x);
+  }
+  if (tid == 0) {
+    ib.flush();
+    localSend.flush();
+  }
+}
+
 __global__ void nullKernel() {}
 
 struct Config {
+  bool allGather = false;
+  bool reduceScatter = false;
+  bool agRing = false;
+  bool rsRing = false;
+  bool rsFastPack = false;
+  bool rsDirectRing = false;
+  int rsPieces = 1;
+  size_t rsTargetPieceBytes = 0;
+  bool gpuTiming = false;
   size_t minBytes = 1UL << 10;
   size_t maxBytes = 1UL << 30;
   int warmup = 10;
@@ -357,11 +722,78 @@ int main(int argc, char** argv) {
         cfg.check = std::atoi(next()) != 0;
       else if (key == "--rail-map")
         cfg.railMap = parseRailMap(next());
+      else if (key == "--op") {
+        std::string op = next();
+        cfg.allGather = op == "allgather";
+        cfg.reduceScatter = op == "reducescatter";
+        if (op != "allreduce" && !cfg.allGather && !cfg.reduceScatter)
+          throw std::runtime_error(
+              "--op must be allreduce, allgather, or reducescatter");
+      } else if (key == "--ag-ring")
+        cfg.agRing = std::atoi(next()) != 0;
+      else if (key == "--rs-ring")
+        cfg.rsRing = std::atoi(next()) != 0;
+      else if (key == "--rs-fast-pack")
+        cfg.rsFastPack = std::atoi(next()) != 0;
+      else if (key == "--rs-direct-ring")
+        cfg.rsDirectRing = std::atoi(next()) != 0;
+      else if (key == "--rs-pieces")
+        cfg.rsPieces = std::atoi(next());
+      else if (key == "--rs-piece-bytes")
+        cfg.rsTargetPieceBytes = std::strtoull(next(), nullptr, 0);
+      else if (key == "--gpu-timing")
+        cfg.gpuTiming = std::atoi(next()) != 0;
       else
         throw std::runtime_error("unknown argument " + key);
     }
   } catch (std::exception const& e) {
     if (rank == 0) std::fprintf(stderr, "%s\n", e.what());
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
+  if (cfg.agRing && !cfg.allGather) {
+    if (rank == 0)
+      std::fprintf(stderr, "--ag-ring is only valid for --op allgather\n");
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
+  if (cfg.rsRing && !cfg.reduceScatter) {
+    if (rank == 0)
+      std::fprintf(stderr,
+                   "--rs-ring is only valid for --op reducescatter\n");
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
+  if (cfg.rsFastPack && !cfg.rsRing) {
+    if (rank == 0)
+      std::fprintf(stderr, "--rs-fast-pack requires --rs-ring 1\n");
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
+  if (cfg.rsDirectRing && (!cfg.rsRing || cfg.rsFastPack)) {
+    if (rank == 0)
+      std::fprintf(stderr,
+                   "--rs-direct-ring requires --rs-ring 1 and no fast pack\n");
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
+  if (cfg.rsPieces < 1 || cfg.rsPieces > 32 ||
+      (cfg.rsPieces > 1 && !cfg.rsRing)) {
+    if (rank == 0)
+      std::fprintf(stderr, "--rs-pieces must be 1..32 and requires ring\n");
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
+  if (cfg.rsTargetPieceBytes &&
+      (!cfg.rsDirectRing || cfg.rsPieces != 1 ||
+       cfg.rsTargetPieceBytes < 512 || cfg.rsTargetPieceBytes % 512)) {
+    if (rank == 0)
+      std::fprintf(stderr,
+                   "--rs-piece-bytes requires direct ring, default "
+                   "--rs-pieces, and 512-byte alignment\n");
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
+  if (cfg.minBytes < 1024 || cfg.maxBytes < cfg.minBytes ||
+      cfg.minBytes % 512 || cfg.maxBytes % 512 || cfg.warmup < 0 ||
+      cfg.iters < 1 || cfg.blocks < 1 || cfg.threads < 1 ||
+      cfg.threads > 1024 || cfg.pieceBytes < 512 ||
+      cfg.pipelineDistance < 1) {
+    if (rank == 0)
+      std::fprintf(stderr, "invalid size, launch, or iteration settings\n");
     MPI_Abort(MPI_COMM_WORLD, 2);
   }
 
@@ -377,6 +809,38 @@ int main(int argc, char** argv) {
     MPI_Abort(MPI_COMM_WORLD, 2);
   }
   CUDACHECK(cudaSetDevice(localRank));
+  cudaDeviceProp localProperty{};
+  CUDACHECK(cudaGetDeviceProperties(&localProperty, localRank));
+  int residentBlocks = 0;
+  if (cfg.allGather) {
+    if (cfg.agRing)
+      CUDACHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &residentBlocks, hierarchicalAllGatherRing, cfg.threads, 0));
+    else
+      CUDACHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &residentBlocks, hierarchicalAllGather, cfg.threads, 0));
+  } else if (cfg.reduceScatter) {
+    if (cfg.rsDirectRing)
+      CUDACHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &residentBlocks, hierarchicalReduceScatterDirectRing, cfg.threads,
+          0));
+    else if (cfg.rsRing)
+      CUDACHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &residentBlocks, hierarchicalReduceScatterRing, cfg.threads, 0));
+    else
+      CUDACHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &residentBlocks, hierarchicalReduceScatter, cfg.threads, 0));
+  } else
+    CUDACHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &residentBlocks, hierarchicalAllReduce, cfg.threads, 0));
+  if (cfg.blocks > residentBlocks * localProperty.multiProcessorCount) {
+    std::fprintf(stderr,
+                 "rank %d: grid %d blocks exceeds resident limit %d for "
+                 "this cooperative kernel\n",
+                 rank, cfg.blocks,
+                 residentBlocks * localProperty.multiProcessorCount);
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
 
   int rail = cfg.railMap[localRank];
   int nIb = mscclpp::getIBDeviceCount();
@@ -399,8 +863,12 @@ int main(int argc, char** argv) {
   size_t localScratchBytes = dataBytes;
   size_t ibSlotBytes = (dataBytes + kLocalRanks - 1) / kLocalRanks + 4096;
   Layout layout{0, dataBytes, dataBytes + localScratchBytes,
-                dataBytes + localScratchBytes + ibSlotBytes};
+                dataBytes + localScratchBytes + ibSlotBytes, 0};
   size_t bufferBytes = layout.ibScratch + ibSlotBytes;
+  if (cfg.rsRing && !cfg.rsDirectRing) {
+    layout.immutableInput = bufferBytes;
+    bufferBytes += dataBytes;
+  }
   if (bufferBytes >= (1ULL << 32)) {
     if (rank == 0)
       std::fprintf(
@@ -484,31 +952,72 @@ int main(int argc, char** argv) {
 
   cudaStream_t stream;
   CUDACHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+  cudaEvent_t timingStart = nullptr, timingEnd = nullptr;
+  if (cfg.gpuTiming) {
+    CUDACHECK(cudaEventCreate(&timingStart));
+    CUDACHECK(cudaEventCreate(&timingEnd));
+  }
   std::vector<float> hostIn, hostOut;
 
-  auto fill = [&](size_t count) {
-    hostIn.resize(count);
-    for (size_t i = 0; i < count; i++)
-      hostIn[i] = (float)(rank + 1) * (float)(1 + i % 97);
-    CUDACHECK(cudaMemcpyAsync(buffer, hostIn.data(), count * sizeof(float),
+  auto fill = [&](size_t count, int generation) {
+    size_t inputCount = cfg.allGather ? count / kWorld : count;
+    hostIn.resize(inputCount);
+    for (size_t i = 0; i < inputCount; i++) {
+      hostIn[i] = (float)(rank + 1 + generation * kWorld) *
+                  (float)(1 + i % 97);
+    }
+    if (cfg.allGather)
+      CUDACHECK(cudaMemsetAsync(buffer + layout.data, 0xff,
+                                count * sizeof(float), stream));
+    CUDACHECK(cudaMemcpyAsync(buffer + (cfg.allGather ? layout.ibSend :
+                                 cfg.rsRing && !cfg.rsDirectRing
+                                     ? layout.immutableInput :
+                                              layout.data),
+                              hostIn.data(), inputCount * sizeof(float),
                               cudaMemcpyHostToDevice, stream));
     CUDACHECK(cudaStreamSynchronize(stream));
   };
-  auto verify = [&](size_t count) {
-    hostOut.resize(count);
-    CUDACHECK(cudaMemcpy(hostOut.data(), buffer, count * sizeof(float),
+  auto verify = [&](size_t count, int generation) {
+    size_t outputCount = cfg.reduceScatter ? count / kWorld : count;
+    char* output = buffer;
+    if (cfg.reduceScatter)
+      output += layout.ibSend +
+                size_t(rank < kLocalRanks ? 0 : 1) * outputCount *
+                    sizeof(float);
+    hostOut.resize(outputCount);
+    CUDACHECK(cudaMemcpy(hostOut.data(), output,
+                         outputCount * sizeof(float),
                          cudaMemcpyDeviceToHost));
     double worst = 0.0;
-    size_t firstBad = count;
-    constexpr double rankSum = (double)kWorld * (kWorld + 1) / 2.0;
-    for (size_t i = 0; i < count; i++) {
-      double want = rankSum * (double)(1 + i % 97);
+    size_t firstBad = outputCount;
+    double rankSum = (double)kWorld * (kWorld + 1) / 2.0 +
+                     generation * kWorld * kWorld;
+    for (size_t i = 0; i < outputCount; i++) {
+      double want = cfg.allGather
+                        ? (double)(i / (count / kWorld) + 1 +
+                                   generation * kWorld) *
+                              (double)(1 + (i % (count / kWorld)) % 97)
+                    : cfg.reduceScatter
+                        ? rankSum *
+                              (double)(1 +
+                                       (size_t(rank) * outputCount + i) % 97)
+                        : rankSum * (double)(1 + i % 97);
       double error = std::fabs((double)hostOut[i] - want) / want;
-      if (error > 1e-5 && firstBad == count) firstBad = i;
-      worst = std::max(worst, error);
+      if ((!std::isfinite(error) || error > 1e-5) && firstBad == outputCount)
+        firstBad = i;
+      worst = std::max(worst, std::isfinite(error) ? error : INFINITY);
     }
-    if (firstBad != count) {
-      double want = rankSum * (double)(1 + firstBad % 97);
+    if (firstBad != outputCount) {
+      double want = cfg.allGather
+                        ? (double)(firstBad / (count / kWorld) + 1 +
+                                   generation * kWorld) *
+                              (double)(1 + (firstBad % (count / kWorld)) % 97)
+                    : cfg.reduceScatter
+                        ? rankSum *
+                              (double)(1 + (size_t(rank) * outputCount +
+                                            firstBad) %
+                                           97)
+                        : rankSum * (double)(1 + firstBad % 97);
       std::fprintf(
           stderr,
           "rank %d first bad index %zu got %.1f want %.1f relerr %.3e\n", rank,
@@ -518,6 +1027,53 @@ int main(int argc, char** argv) {
     return worst;
   };
   auto launch = [&](size_t count, size_t bytes) {
+    CUDACHECK(cudaSetDevice(localRank));
+    if (cfg.allGather) {
+      if (cfg.agRing)
+        hierarchicalAllGatherRing<<<cfg.blocks, cfg.threads, 0, stream>>>(
+            localSend, localRecv, ib, reinterpret_cast<float*>(buffer), count,
+            layout, rank, localRank, ringPosition(localRank));
+      else
+        hierarchicalAllGather<<<cfg.blocks, cfg.threads, 0, stream>>>(
+            localAg, ib, reinterpret_cast<float*>(buffer), count, layout,
+            rank, localRank);
+      return;
+    }
+    if (cfg.reduceScatter) {
+      if (cfg.rsDirectRing) {
+        int availablePieces =
+            int(std::max<size_t>(1, count / kWorld / 32));
+        int requestedPieces = cfg.rsTargetPieceBytes
+                                  ? int(std::max<size_t>(
+                                        2, (bytes / kWorld +
+                                            cfg.rsTargetPieceBytes - 1) /
+                                               cfg.rsTargetPieceBytes))
+                                  : cfg.rsPieces;
+        int pieces = std::min(requestedPieces, availablePieces);
+        hierarchicalReduceScatterDirectRing<<<cfg.blocks, cfg.threads, 0,
+                                              stream>>>(
+            localSend, localRecv, ib, reinterpret_cast<float*>(buffer), count,
+            layout, rank, ringPosition(localRank), pieces);
+      } else if (cfg.rsRing) {
+        int availablePieces =
+            int(std::max<size_t>(1, count / kWorld / 32));
+        int pieces = std::min(cfg.rsPieces, availablePieces);
+        if (cfg.rsFastPack) {
+          size_t shard = count / kWorld;
+          int blocks = int(std::min<size_t>(128, (shard + 255) / 256));
+          packReduceScatterRing<<<dim3(blocks, kWorld), 256, 0, stream>>>(
+              reinterpret_cast<float*>(buffer + layout.immutableInput),
+              reinterpret_cast<float*>(buffer + layout.localScratch), shard);
+        }
+        hierarchicalReduceScatterRing<<<cfg.blocks, cfg.threads, 0, stream>>>(
+            localSend, localRecv, ib, reinterpret_cast<float*>(buffer), count,
+            layout, rank, ringPosition(localRank), cfg.rsFastPack, pieces);
+      } else
+        hierarchicalReduceScatter<<<cfg.blocks, cfg.threads, 0, stream>>>(
+            localAg, ib, reinterpret_cast<float*>(buffer), count, layout,
+            rank, localRank);
+      return;
+    }
     size_t shardBytes = (bytes + kLocalRanks - 1) / kLocalRanks;
     int pieces =
         bytes >= cfg.pipelineMinBytes
@@ -536,25 +1092,44 @@ int main(int argc, char** argv) {
   char host[MPI_MAX_PROCESSOR_NAME];
   int hostLen = 0;
   MPI_Get_processor_name(host, &hostLen);
-  cudaDeviceProp prop{};
-  CUDACHECK(cudaGetDeviceProperties(&prop, localRank));
   char line[512]{};
   std::snprintf(line, sizeof(line),
                 "# rank %d node %.*s gpu %d %s rail %d (%s)\n", rank, hostLen,
-                host, localRank, prop.name, rail,
+                host, localRank, localProperty.name, rail,
                 mscclpp::getIBDeviceName(ibTransport(rail)).c_str());
   std::vector<char> lines(rank == 0 ? world * sizeof(line) : 0);
   MPICHECK(MPI_Gather(line, sizeof(line), MPI_BYTE, lines.data(), sizeof(line),
                       MPI_BYTE, 0, MPI_COMM_WORLD));
   if (rank == 0) {
-    std::printf("# UCCL Lite two-node hierarchical AllReduce, float32\n");
+    std::printf("# UCCL Lite two-node hierarchical %s, float32\n",
+                cfg.allGather      ? "AllGather"
+                : cfg.reduceScatter ? "ReduceScatter"
+                                    : "AllReduce");
+    std::printf("# timing=%s; slowest of eight ranks\n",
+                cfg.gpuTiming ? "CUDA event" : "host enqueue+completion");
     for (int r = 0; r < world; r++)
       std::fputs(lines.data() + r * sizeof(line), stdout);
-    std::printf(
-        "# local ring 0->1->3->2->0; AG %s; rail map %d,%d,%d,%d; piece %zu B; "
-        "pipeline >= %zu B\n",
-        cfg.flatAg ? "flat" : "ring", cfg.railMap[0], cfg.railMap[1],
-        cfg.railMap[2], cfg.railMap[3], cfg.pieceBytes, cfg.pipelineMinBytes);
+    if (cfg.allGather || cfg.reduceScatter)
+      std::printf("# local %s, remote-rank IB exchange; rail map "
+                  "%d,%d,%d,%d; RS pieces %d\n",
+                  cfg.allGather ? (cfg.agRing ? "ring" : "multicast")
+                                : (cfg.rsDirectRing ? "direct ring reduction"
+                                   : cfg.rsRing ? (cfg.rsFastPack
+                                                    ? "ring reduction + GPU pack"
+                                                    : "ring reduction")
+                                              : "flat reduction"),
+                  cfg.railMap[0], cfg.railMap[1], cfg.railMap[2],
+                  cfg.railMap[3], cfg.rsPieces);
+    if (cfg.rsTargetPieceBytes && rank == 0)
+      std::printf("# RS target piece %zu B per destination shard\n",
+                  cfg.rsTargetPieceBytes);
+    else
+      std::printf(
+          "# local ring 0->1->3->2->0; AG %s; rail map %d,%d,%d,%d; "
+          "piece %zu B; pipeline >= %zu B\n",
+          cfg.flatAg ? "flat" : "ring", cfg.railMap[0], cfg.railMap[1],
+          cfg.railMap[2], cfg.railMap[3], cfg.pieceBytes,
+          cfg.pipelineMinBytes);
     std::printf("# %12s %12s %8s %10s %10s %10s %10s\n", "size(B)", "count",
                 "pieces", "time(us)", "algbw", "busbw", "maxrelerr");
   }
@@ -565,39 +1140,73 @@ int main(int argc, char** argv) {
     size_t count = bytes / sizeof(float);
     size_t shardBytes = bytes / kLocalRanks;
     int pieces =
-        bytes >= cfg.pipelineMinBytes
+        cfg.rsRing
+            ? std::min(
+                  cfg.rsTargetPieceBytes
+                      ? int(std::max<size_t>(
+                            2, (bytes / kWorld +
+                                cfg.rsTargetPieceBytes - 1) /
+                                   cfg.rsTargetPieceBytes))
+                      : cfg.rsPieces,
+                  int(std::max<size_t>(1, count / kWorld / 32)))
+        : (cfg.allGather || cfg.reduceScatter) ? 1
+        : bytes >= cfg.pipelineMinBytes
             ? (int)std::max<size_t>(
                   2, std::min<size_t>(32, (shardBytes + cfg.pieceBytes - 1) /
                                               cfg.pieceBytes))
             : 1;
     double relerr = -1.0;
     if (cfg.check) {
-      fill(count);
-      MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
-      launch(count, bytes);
-      CUDACHECK(cudaStreamSynchronize(stream));
-      relerr = verify(count);
-      MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+      int generations = (cfg.allGather || cfg.reduceScatter) ? 2 : 1;
+      for (int generation = 0; generation < generations; ++generation) {
+        fill(count, generation);
+        MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+        launch(count, bytes);
+        CUDACHECK(cudaStreamSynchronize(stream));
+        relerr = std::max(relerr, verify(count, generation));
+        MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+      }
     }
 
-    fill(count);
+    fill(count, (cfg.allGather || cfg.reduceScatter) ? 1 : 0);
     for (int i = 0; i < cfg.warmup; i++) launch(count, bytes);
     CUDACHECK(cudaStreamSynchronize(stream));
     MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+    if (cfg.gpuTiming) CUDACHECK(cudaEventRecord(timingStart, stream));
     auto begin = std::chrono::steady_clock::now();
     for (int i = 0; i < cfg.iters; i++) launch(count, bytes);
+    if (cfg.gpuTiming) CUDACHECK(cudaEventRecord(timingEnd, stream));
     CUDACHECK(cudaStreamSynchronize(stream));
     auto end = std::chrono::steady_clock::now();
+    if (cfg.check && (cfg.allGather || cfg.reduceScatter)) {
+      relerr = std::max(relerr, verify(count, 1));
+      fill(count, 2);
+      MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+      launch(count, bytes);
+      CUDACHECK(cudaStreamSynchronize(stream));
+      relerr = std::max(relerr, verify(count, 2));
+      MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+    }
     double us = std::chrono::duration<double, std::micro>(end - begin).count() /
                 cfg.iters;
+    if (cfg.gpuTiming) {
+      float ms = 0;
+      CUDACHECK(cudaEventElapsedTime(&ms, timingStart, timingEnd));
+      us = double(ms) * 1000 / cfg.iters;
+    }
     double worstUs = 0.0, worstErr = 0.0;
     MPICHECK(
         MPI_Reduce(&us, &worstUs, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD));
     MPICHECK(MPI_Reduce(&relerr, &worstErr, 1, MPI_DOUBLE, MPI_MAX, 0,
                         MPI_COMM_WORLD));
+    int failed = rank == 0 && cfg.check && worstErr > 1e-5;
+    MPICHECK(MPI_Bcast(&failed, 1, MPI_INT, 0, MPI_COMM_WORLD));
+    if (failed) MPI_Abort(MPI_COMM_WORLD, 1);
     if (rank == 0) {
       double algbw = (double)bytes / (worstUs * 1e-6) / 1e9;
-      double busbw = algbw * 2.0 * (kWorld - 1) / kWorld;
+      double busbw = algbw *
+                     ((cfg.allGather || cfg.reduceScatter) ? 1.0 : 2.0) *
+                     (kWorld - 1) / kWorld;
       std::printf("  %12zu %12zu %8d %10.2f %10.2f %10.2f %10.1e\n", bytes,
                   count, pieces, worstUs, algbw, busbw, worstErr);
       std::fflush(stdout);
@@ -610,6 +1219,8 @@ int main(int argc, char** argv) {
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
   ibProxy->stopProxy();
   localProxy->stopProxy();
+  if (timingEnd) CUDACHECK(cudaEventDestroy(timingEnd));
+  if (timingStart) CUDACHECK(cudaEventDestroy(timingStart));
   CUDACHECK(cudaStreamDestroy(stream));
   CUDACHECK(cudaFree(buffer));
   MPI_Comm_free(&localComm);

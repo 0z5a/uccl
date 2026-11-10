@@ -36,17 +36,19 @@ because the measured CUDA 12.9 compiler had a frontend failure with C++20.
 ```bash
 # Required paths can be supplied on every make invocation.
 make -j2 single-node MSCCLPP_HOME=/path/to/mscclpp
+make peer_ag_rs NCCL_HOME=/path/to/nccl/build
 make -j2 fusion MSCCLPP_HOME=/path/to/mscclpp \
   CUTLASS_HOME=/path/to/cutlass NCCL_HOME=/path/to/nccl/build
 make -j2 probes CUTLASS_HOME=/path/to/cutlass
+make hardware_profiler  # standalone CUDA topology and bandwidth probe
 make headers MSCCLPP_HOME=/path/to/mscclpp CUTLASS_HOME=/path/to/cutlass
 ```
 
-`make all` builds single-node collectives, fusion, probes, and the reusable-header
+`make all` builds single-node and peer collectives, fusion, probes, and the reusable-header
 compile check. Multi-node targets are separate. Individual target names are
-`allreduce`, `alltoall`, `dense_fusion`, `fused_moe`, `fused_moe_layer`,
+`allreduce`, `alltoall`, `peer_ag_rs`, `dense_fusion`, `fused_moe`, `fused_moe_layer`,
 `fused_moe_layer_qwen`, `gemm_probe`, `mma_gemm_probe`, `mma_peak_probe`,
-`moe_overlap_probe`, and `cutlass_gemm_probe`. Executables have an `uccl_lite_`
+`moe_overlap_probe`, `cutlass_gemm_probe`, and `hardware_profiler`. Executables have an `uccl_lite_`
 prefix, for example `build/uccl_lite_dense_fusion`.
 
 Override `CUDA_HOME`, `NVCC`, `CUDA_ARCH`, `MSCCLPP_BUILD`, and
@@ -64,6 +66,7 @@ CUDA initialization; **do not launch them with mpirun or torchrun**.
 ```bash
 ./build/uccl_lite_allreduce -b 1024 -e 16777216 -w 2 -n 3
 ./build/uccl_lite_alltoall -b 1024 -e 1048576 -w 2 -n 3
+./build/uccl_lite_peer_ag_rs -b 1008 -e 1008 -w 2 -n 10 -r 3
 
 ./build/uccl_lite_dense_fusion \
   --ag-m 128 --ag-n 1024 --ag-k 512 \
@@ -113,6 +116,11 @@ export SOCKET_IFNAME=your_network_interface
 export HCA_DEVICES=mlx5_0,mlx5_1
 
 bash scripts/run_multinode.sh multinode_allreduce -b 1024 -e 67108864 -c 1
+bash scripts/run_multinode.sh multinode_allreduce --op allgather \
+  --ag-ring 1 --gpu-timing 1 -b 1024 -e 67108864 -c 1
+bash scripts/run_multinode.sh multinode_allreduce --op reducescatter \
+  --rs-ring 1 --rs-direct-ring 1 --rs-piece-bytes 8388608 -B 96 -T 512 \
+  --gpu-timing 1 -b 1024 -e 67108864 -c 1
 bash scripts/run_multinode.sh multinode_cpu_router -k 1048576 -c 1
 bash scripts/run_multinode.sh host_allreduce -k 4194304 -c 1
 ```
@@ -120,4 +128,8 @@ bash scripts/run_multinode.sh host_allreduce -k 4194304 -c 1
 The launcher uses eight MPI ranks and four ranks per node. It uses TCP/shared
 memory for MPI bootstrap when MSCCL++ owns the IB data path, and UCX for the
 host-router paths. Set `BUILD_DIR` if executables live outside the default
-directory. See [multi-node design](multinode.md) for tuning and constraints.
+directory. On hosts with multiple IP addresses on one interface, use an
+interface with one address for `SOCKET_IFNAME`; the recorded two-node AG/RS
+comparison used `ibp55s0f0`. The same executable and MSCCL++ library must be
+present on both hosts. See [multi-node design](multinode.md) for tuning,
+matched NCCL commands and constraints.

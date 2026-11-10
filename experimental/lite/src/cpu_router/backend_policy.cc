@@ -46,25 +46,6 @@ bool capable(Topology const& t, Workload const& w) {
   }
   return true;
 }
-bool matchesReference(Topology const& t) {
-  if (t.devices.size() != 8 || !t.referenceRouterOptions ||
-      t.cudaRuntimeVersion != 12090 || t.driverVersion != "580.178.04")
-    return false;
-  std::map<int, int> ranksPerNode;
-  for (size_t r = 0; r < 8; ++r) {
-    if (t.gpuNames[r] != "NVIDIA L4" || t.devices[r] != int(r) ||
-        t.numaNodes[r] != int(r / 4))
-      return false;
-    ++ranksPerNode[t.numaNodes[r]];
-    for (size_t p = 0; p < 8; ++p)
-      if (p != r && t.peerAccess[r * 8 + p]) return false;
-  }
-  if (ranksPerNode.size() != 2) return false;
-  for (auto const& entry : ranksPerNode)
-    if (entry.second != 4 || t.permittedCpusPerNode.at(entry.first) != 24)
-      return false;
-  return true;
-}
 BackendDecision evaluate(Measurement const& m, double threshold,
                          char const* source) {
   validate(m);
@@ -125,20 +106,15 @@ BackendDecision BackendPolicy::select(Topology const& topology,
   }
   if (mode == RouterMode::Force)
     return {true, "CPU-router explicitly forced; no performance claim"};
-  // Newest exact local evidence overrides historical evidence, including
-  // regressions.
+  // Only an exact local calibration may enable the router. A historical
+  // machine description cannot capture PCIe contention, memory configuration,
+  // CPU model, or every NCCL setting that affects the crossover.
   if (!topology.identity.empty())
     for (auto it = measurements.rbegin(); it != measurements.rend(); ++it)
       if (it->topologyIdentity == topology.identity &&
           it->fallbackIdentity == fallbackIdentity &&
           sameWorkload(it->workload, workload))
         return evaluate(*it, minimumSpeedup, "local calibration");
-  if (matchesReference(topology) && fallbackIdentity == "nccl:22705")
-    for (auto const& m : measurements)
-      if (m.topologyIdentity == kReference &&
-          m.fallbackIdentity == fallbackIdentity &&
-          sameWorkload(m.workload, workload))
-        return evaluate(m, minimumSpeedup, "matched eight-L4 reference");
   return {
       false,
       "no matching measurement; keep existing backend (calibrate to opt in)"};

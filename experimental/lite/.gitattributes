@@ -1,2 +1,2 @@
-# Unified diffs require a space prefix on blank context lines.
-patches/*.patch whitespace=-blank-at-eol
+# Preserve raw benchmark stdout exactly as captured by NCCL and MPI.
+benchmarks/data/multinode_peer_20261110/** -whitespace

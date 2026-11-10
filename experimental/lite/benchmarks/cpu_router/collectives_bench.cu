@@ -52,7 +52,7 @@ struct Config {
   bool gpuReduce = false;
   bool gpuProgress = false;
   bool interleaveScatter = false;
-  std::string operation = "all", profile, reference, calibrate, samples;
+  std::string operation = "all", profile, calibrate, samples;
   RouterMode mode = RouterMode::Auto;
 };
 struct Buffers {
@@ -206,8 +206,6 @@ int main(int argc, char** argv) {
         cfg.mode = parseRouterMode(next());
       else if (arg == "--profile")
         cfg.profile = next();
-      else if (arg == "--reference")
-        cfg.reference = next();
       else if (arg == "--calibrate")
         cfg.calibrate = next();
       else if (arg == "--samples")
@@ -234,7 +232,7 @@ int main(int argc, char** argv) {
             "  --gpus N | --devices 0,1,...\n  --op "
             "all|allreduce|allgather|reducescatter\n"
             "  --backend auto|off|force  --begin BYTES --end BYTES --in-place\n"
-            "  --reference CSV  --profile FILE  --calibrate NEW_FILE\n"
+            "  --profile FILE  --calibrate NEW_FILE\n"
             "  --samples NEW_CSV (checked per-invocation timing records)\n"
             "  --gpu-reduce (experimental destination-GPU Sum arithmetic)\n"
             "  --gpu-progress (GPU upload/credit handoff; implies GPU "
@@ -281,7 +279,7 @@ int main(int argc, char** argv) {
     }
     auto topology = inspectTopology(cfg.devices);
     // Invalidate pre-fingerprint local profiles even when this invocation has
-    // no NCCL overrides. Historical reference matching is a separate opt-in.
+    // no NCCL overrides.
     topology.identity += ";benchmark-nccl-config-v1";
     int ncclVersion;
     ncclCheck(ncclGetVersion(&ncclVersion));
@@ -289,8 +287,6 @@ int main(int argc, char** argv) {
     policy.mode = cfg.mode;
     policy.fallbackIdentity = benchmark::ncclFallbackIdentity(
         ncclVersion, benchmark::ncclConfiguration(environ));
-    if (!cfg.reference.empty())
-      policy.measurements = loadL4ReferenceProfile(cfg.reference);
     if (!cfg.profile.empty()) {
       auto local = loadRouterProfile(cfg.profile);
       policy.measurements.insert(policy.measurements.end(), local.begin(),

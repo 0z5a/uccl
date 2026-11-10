@@ -26,15 +26,17 @@ FUSION_FLAGS := --expt-relaxed-constexpr -diag-suppress 20012,20014
 FUSION_LIB = $(MSCCLPP_LIB) -L$(NCCL_HOME)/lib -lnccl -lcublas -Xlinker -rpath=$(NCCL_HOME)/lib
 
 COLLECTIVES := allreduce alltoall
+PEER_COLLECTIVES := peer_ag_rs
 MULTINODE := multinode_allreduce multinode_cpu_router host_hierarchical_allreduce
 FUSION := dense_fusion fused_moe fused_moe_layer fused_moe_layer_qwen
-PROBES := gemm_probe mma_gemm_probe mma_peak_probe moe_overlap_probe cutlass_gemm_probe
-ALL_NAMES := $(COLLECTIVES) $(MULTINODE) host_allreduce $(FUSION) $(PROBES)
+PROBES := gemm_probe mma_gemm_probe mma_peak_probe moe_overlap_probe cutlass_gemm_probe hardware_profiler
+ALL_NAMES := $(COLLECTIVES) $(PEER_COLLECTIVES) $(MULTINODE) host_allreduce $(FUSION) $(PROBES)
 BIN = $(addprefix $(BUILD)/uccl_lite_,$(1))
 
-.PHONY: all single-node fusion probes multinode headers help $(ALL_NAMES)
-all: single-node fusion probes headers
+.PHONY: all single-node peer-collectives fusion probes multinode headers help $(ALL_NAMES)
+all: single-node peer-collectives fusion probes headers
 single-node: $(call BIN,$(COLLECTIVES))
+peer-collectives: $(call BIN,$(PEER_COLLECTIVES))
 fusion: $(call BIN,$(FUSION))
 probes: $(call BIN,$(PROBES))
 multinode: $(call BIN,$(MULTINODE) host_allreduce)
@@ -44,8 +46,11 @@ $(ALL_NAMES): %: $(BUILD)/uccl_lite_%
 $(BUILD):
 	mkdir -p $@
 
-$(call BIN,$(COLLECTIVES)): $(BUILD)/uccl_lite_%: src/collectives/%.cu | $(BUILD)
+$(call BIN,allreduce alltoall): $(BUILD)/uccl_lite_%: src/collectives/%.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++20 $(MSCCLPP_INC) $< -o $@ $(MSCCLPP_LIB) -lcudart -lpthread
+
+$(BUILD)/uccl_lite_peer_ag_rs: src/collectives/peer_ag_rs.cu | $(BUILD)
+	$(NVCC) $(NVCC_FLAGS) -std=c++17 -I$(NCCL_HOME)/include $< -o $@ -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib
 
 $(call BIN,$(MULTINODE)): $(BUILD)/uccl_lite_%: src/collectives/%.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++20 $(IB_INC) $(MPI_INC) $< -o $@ $(IB_LIB) $(MPI_LIB) -lcudart -lpthread
@@ -68,11 +73,14 @@ $(call BIN,gemm_probe mma_gemm_probe mma_peak_probe moe_overlap_probe): $(BUILD)
 $(BUILD)/uccl_lite_cutlass_gemm_probe: benchmarks/probes/cutlass_gemm_probe.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++17 $(FUSION_FLAGS) -Iinclude/uccl_lite -I$(CUTLASS_HOME)/include $< -o $@ -lcublas
 
+$(BUILD)/uccl_lite_hardware_profiler: benchmarks/probes/hardware_profiler.cu | $(BUILD)
+	$(NVCC) $(NVCC_FLAGS) -std=c++17 $< -o $@ -Xcompiler=-pthread
+
 $(BUILD)/header_check.o: benchmarks/header_check.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++17 $(FUSION_FLAGS) $(FUSION_INC) -c $< -o $@
 
 help:
-	@printf '%s\n' 'UCCL Lite targets:' '  make single-node  (default): AllReduce and All-to-All' '  make fusion: dense and expert-parallel MoE benchmarks' '  make probes: standalone GEMM and overlap diagnostics' '  make headers: compile-check reusable MoE headers' '  make all: all of the above' '  make multinode: two-node benchmarks (Open MPI required)' '  make <name>: build one executable, e.g. multinode_allreduce' 'See docs/build.md for dependency paths and launch commands.'
+	@printf '%s\n' 'UCCL Lite targets:' '  make single-node  (default): AllReduce and All-to-All' '  make peer-collectives: four-GPU AllGather/ReduceScatter + NCCL comparison' '  make fusion: dense and expert-parallel MoE benchmarks' '  make probes: hardware topology/bandwidth and GEMM/overlap diagnostics' '  make headers: compile-check reusable MoE headers' '  make all: all of the above' '  make multinode: two-node benchmarks (Open MPI required)' '  make <name>: build one executable, e.g. multinode_allreduce' 'See docs/build.md for dependency paths and launch commands.'
 	@printf '%s\n' '  make cpu-router: optional static/shared CPU-router module' '  make adaptive-collectives: BF16 dispatcher + NCCL calibration benchmark' '  make router-checks: core, policy, eager, and graph correctness executables'
 
 include src/cpu_router/module.mk

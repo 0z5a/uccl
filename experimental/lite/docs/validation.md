@@ -1,5 +1,60 @@
 # Validation and limitations
 
+## Hardware profiler and local-only router policy — November 10, 2026
+
+`make hardware_profiler router-checks adaptive-collectives` builds on the
+four-L4 host. The new [hardware profiler](hardware-profiler.md) completed
+three independent runs of topology, directed and concurrent peer PCIe,
+concurrent host PCIe, CPU copy, and BF16 reduction probes, each with three
+repetitions. Complete outputs and measurement scope are archived separately
+from collective timings. Its output checks the first and last elements of
+each GPU copy and each CPU worker's result.
+
+Automatic router selection now accepts only exact local calibration. The
+historical eight-L4 CSV remains readable for offline analysis but cannot
+enable a router on a different host. Current policy checks pass **31** cases,
+including rejection of archived AG/RS/AR wins and acceptance of a synthetic
+exact local eight-GPU record. The rebuilt dispatcher passes **28** host checks;
+the NCCL identity checker passes **8**. Four-GPU eager routing passes **732**
+mixed operations, the graph path passes **1,000** captured operations, and
+the opt-in GPU reduction check passes **26,569,136** scalar/guard checks.
+
+The rebuilt BF16 adaptive example, with no loaded local profile, checked
+AR/AG/RS at 1 MiB and retained NCCL for all three calls without creating
+router workers. This was a short integration check, not a performance result.
+No eight-GPU or two-node rerun was available for this policy change.
+
+## Direct peer AG/RS — November 10, 2026
+
+The new four-L4 executable builds against NCCL 2.28.7 and checks every output
+element of each peer and NCCL result for three changed input generations per
+size. The 1-KiB–64-MiB sweep, plus a separate 1008-byte tail check, passed for
+both operations. Thirty repeated peer/NCCL launches per backend and size were
+timed for the three-run sweep; the archived min/median/max ranges and negative
+results are in [peer AG/RS](peer-ag-rs.md). This validation covers only the
+documented out-of-place float32 single-node layout. It does not establish
+multi-node behavior or safe reuse under arbitrary concurrent application
+streams.
+
+## Two-node AG/RS and current AllReduce regression — November 10, 2026
+
+Two hosts with four L4 GPUs each ran checked 1-KiB–1-GiB AG and RS sweeps.
+Each new path verified three changed input generations per size, including a
+post-timing generation; numerical error was zero on all ranks. The current
+AllReduce kernel also passed a checked 1-KiB–64-MiB regression sweep after
+the shared local-ring helper changed. An oversized cooperative grid was
+rejected by the new occupancy guard instead of hanging.
+
+The paired MPI-enabled NCCL comparison uses the same eight-rank CUDA-event
+timing scope for AG, RS, and a fresh current-source AR run through 1 GiB.
+AllGather shows a repeatable large-message gain;
+the direct standard-input RS ring wins by about 15–17% at 32 MiB–1 GiB.
+The fixed AR configuration wins by 4–9% at 32 MiB–1 GiB. AG and RS lose on
+small messages. The first RS prototype received prepacked input
+outside timing; its logs are archived but excluded from the accepted
+[multi-node results](multinode.md). This validation does not establish
+portability to other networks, arbitrary streams, or application workloads.
+
 ## Migration validation — November 5, 2026
 
 The UCCL Lite reorganization was checked on four NVIDIA L4 GPUs, driver
@@ -38,12 +93,13 @@ before publication. Generated binaries and validation logs stay in ignored
 
 ## README figures
 
-The README includes six blue bar figures generated from committed
+At migration time, the README included six blue bar figures generated from committed
 CSV/text measurements. Generation checks for missing series, non-finite or
 nonpositive values, and invalid error ranges. The dense figure selects the
-current comparison block. TP-MoE, direct-decode, and two-node result figures
-have been removed from the README and generator; their source records and
-kernel implementations are retained.
+current comparison block. Historical TP-MoE, direct-decode, and older two-node
+figures were removed; their source records and kernel implementations are
+retained. The new two-node AG/RS figure was added and validated separately
+above.
 All bar axes start at zero and the plotted small-batch regressions are retained.
 PNG previews were visually checked for layout; SVG and PDF exports use the
 same plots. This is a
@@ -66,7 +122,7 @@ Only the benchmark links NCCL 2.28.7 as its existing-backend callback.
 
 | Check | Result |
 | --- | --- |
-| Pure host backend policy | 31 checks pass, including matched eight-L4 wins, four-GPU rejection of eight-GPU data, version/topology/dtype/placement mismatch, regressions, noisy ranges, and profile round trip |
+| Pure host backend policy | Historical test: 31 checks passed, including matched eight-L4 selection. Current policy requires exact local calibration; its updated checks are recorded below. |
 | Dispatcher boundary | 21 checks pass without GPU initialization; fallback callback, no router allocation, explicit prepare, dtype/capacity semantics, placement and device-order validation |
 | CPU BF16 reference | 524,312 scalar-oracle checks pass |
 | Router core operations | Host `forward/process/multicast` checks pass |
@@ -102,14 +158,15 @@ for AR, 422.9 / 491.0 µs for AG, and 400.4 / 1083.4 µs for RS. These eager
 integration measurements are not replacements for the historical collective
 plots or a comparison against the separate float32 MSCCL++ implementation.
 
-No eight-GPU machine was used for fresh validation. The eight-L4 reference
-selection behavior is checked against the archived measurements in host tests;
-its newly ported runtime performance still needs an eight-GPU rerun.
+No eight-GPU machine was used for fresh validation. The archived eight-L4
+measurements no longer enable automatic routing; the newly ported runtime
+performance still needs an eight-GPU rerun.
 
 ## What this validation does not establish
 
-- The reorganized multi-node binaries have not been executed across two hosts.
-  Their performance and correctness tables are historical measurements.
+- The older reorganized multi-node AllReduce reference table remains a
+  historical measurement; the current code's new AG/RS paths have separate
+  two-host validation above. Other multi-node variants have not been rerun.
 - TP-MoE device headers are compile-checked, not numerically exercised by an
   included host driver. Their former application-side harness is out of scope.
 - One smoke pass does not establish race freedom, arbitrary-stream safety,

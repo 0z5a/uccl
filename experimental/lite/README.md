@@ -4,7 +4,7 @@
 
 **Topology-aware collectives and communication–compute fusion for PCIe GPUs.**
 
-[Build & run](docs/build.md) · [CPU-router module](docs/cpu-router.md) · [Collectives](docs/collectives.md) · [Fusion](docs/fusion.md) · [Multi-node](docs/multinode.md) · [Measurements](benchmarks/README.md)
+[Build & run](docs/build.md) · [Hardware profiler](docs/hardware-profiler.md) · [CPU-router module](docs/cpu-router.md) · [Collectives](docs/collectives.md) · [Peer AG/RS](docs/peer-ag-rs.md) · [Fusion](docs/fusion.md) · [Multi-node](docs/multinode.md) · [Measurements](benchmarks/README.md)
 
 </div>
 
@@ -18,8 +18,9 @@ The MSCCL++ peer paths are specialized to **four NVIDIA L4 GPUs, PCIe Gen4,
 no NVLink, with two GPUs per NUMA socket**. The optional **CPU-router module**
 provides BF16 AllReduce, AllGather, and ReduceScatter through NUMA-local host
 memory for 1–32 local GPUs, with a policy that enables it only when matching
-measurements show a stable gain. Two-node AllReduce extends the four-GPU peer
-layout to eight GPUs across two network rails. This is an experimental kernel
+measurements show a stable gain. Two-node AllReduce, AllGather, and
+ReduceScatter extend the four-GPU peer layout to eight GPUs across two network
+rails. This is an experimental kernel
 and benchmark project: application integrations and serving-framework hooks
 are intentionally outside its scope.
 
@@ -27,16 +28,20 @@ are intentionally outside its scope.
 
 | Component | What is implemented | Representative recorded result |
 | :--- | :--- | :--- |
+| **Hardware profiler** | GPU PCI/NUMA/peer map; directed and concurrent PCIe copies; NUMA CPU copy and BF16 reduction | Four-L4 H2D / D2H / peer ring: **99.60 / 55.42 / 82.04 GB/s** aggregate |
 | **AllReduce** | LL packets, NUMA hierarchy, copy-engine ring | **6.08 µs** at 1 KiB; **20.13 GB/s** bus bandwidth at 1 GiB |
+| **Peer AllGather / ReduceScatter** | Four-GPU source-side CUDA peer writes and destination FP32 reduction | At 32 MiB, **1.11× / 1.14×** over NCCL 2.28.7; small sizes regress |
+| **Two-node AG / RS** | GPUDirect exchange plus local ring forwarding/reduction | At 64 MiB: **1.20× / 1.17×**; at 1 GiB: **1.14× / 1.15×** over NCCL 2.28.7 |
 | **All-to-All** | Collision-free peer schedules on SMs and copy engines | **74.47 GB/s** aggregate at 256 MiB/rank |
 | **CPU-router module** | Optional BF16 AR/AG/RS backend; NUMA memory, channels, CPU executor, packet pipeline | Historical 8-L4 AG/RS: **5.25 / 5.59 GB/s** at 1 GiB; local selection is measurement-gated |
 | **Dense fusion** | AllGather + GEMM, GEMM + ReduceScatter, GEMM + AllReduce | **1.47× / 1.24× / 1.30×** over cuBLAS + NCCL at the large reference shapes |
 | **Expert-parallel MoE** | Ragged dispatch, grouped GEMM, activation, down projection, combine | **1.39–1.52×** full-layer speedup at large token counts |
 
-These are historical measurements on the documented L4 testbed, not portable
-performance guarantees. Fusion can lose on small shapes. Collective summaries
-select the fastest correct configuration per size; the executables expose
-those variants rather than a universal automatic selector.
+These are measurements on their documented L4 testbeds, not portable
+performance guarantees. Fusion can lose on small shapes. The older AllReduce
+summaries select the fastest correct configuration per size; the newer peer
+AG/RS comparisons use one specified variant across each sweep. No universal
+automatic selector is provided for those peer paths.
 
 ## Why topology matters
 
@@ -129,15 +134,13 @@ make -j2 cpu-router adaptive-collectives
 ```
 
 `--backend off` disables the module; `--backend force` enables it for explicit
-testing without claiming a speedup. `--reference benchmarks/data/primitives_8l4.csv`
-allows the historical profile only on its matching eight-L4/no-P2P configuration,
-including the recorded CUDA, driver, CPU budget, and NCCL baseline. It never
-turns the router on merely because eight GPUs are visible.
+testing without claiming a speedup. Automatic routing requires a matching local
+calibration. The historical eight-L4 measurements remain available for comparison,
+but cannot select the backend on a different host.
 On the current four-L4 host, paired BF16 calibration at 1/2/4/8 MiB for all
 three collectives retained the fallback in all **12** cases. Reusing the profile
-in a fresh process initialized no router. The eight-GPU enable decisions are
-covered by policy tests against historical measurements; this port's eight-GPU
-performance has not been rerun.
+in a fresh process initialized no router. This port's eight-GPU performance has
+not been rerun.
 [API, policy, calibration, and limitations](docs/cpu-router.md)
 
 ## Measured performance
@@ -165,6 +168,31 @@ The scheduled peer transfers reach **74.47 GB/s aggregate** at 256 MiB/rank,
 with **1.17–4.20×** speedup over the tested default NCCL transport across the
 recorded sweep. NCCL uses host staging on this testbed. Aggregate bandwidth
 counts all nonlocal traffic and is distinct from AllReduce bus bandwidth.
+
+### Four-GPU direct-peer AllGather and ReduceScatter
+
+The newer standalone float32 peer path uses source-side writes and explicit
+completion events. Against NCCL 2.28.7 in the same one-process harness, its
+32-MiB AllGather and ReduceScatter calls reach **1.11× and 1.14×** speedup.
+AllGather wins from 1–64 MiB; ReduceScatter wins mainly at 8–32 MiB. Both lose
+substantially at small sizes, and ReduceScatter loses at 64 MiB. The
+[complete matched sweep and correctness contract](docs/peer-ag-rs.md) retain
+those regressions. No automatic peer/NCCL selector is included.
+
+### Two-node AllGather and ReduceScatter
+
+![Two-node AllGather and ReduceScatter speedup over NCCL at 1–64 MiB](docs/assets/multinode-peer.svg)
+
+On two four-L4 nodes, the GPUDirect/local-ring AllGather reaches **1.20×**
+over NCCL 2.28.7 at 64 MiB and **1.14×** at 1 GiB. The direct standard-input
+ReduceScatter ring reaches **1.17×** and **1.15×** at those sizes. Both lose
+on small messages. The [full paired comparison, methods, and negative
+results](docs/multinode.md) use the same eight-rank CUDA-event timing scope
+for both paths.
+
+The current two-node AllReduce binary also has a [paired in-place NCCL
+comparison](docs/multinode.md): **1.06×** at 64 MiB and **1.09×** at 1 GiB
+with one fixed UCCL Lite configuration.
 
 ### Standalone AllGather and ReduceScatter — eight-GPU primitives
 
@@ -226,7 +254,7 @@ experimental/lite/
 ├── include/uccl_lite/           # Reusable grouped-GEMM, routing, and MoE kernels
 ├── benchmarks/
 │   ├── fusion/                 # Dense and expert-parallel MoE benchmarks
-│   ├── probes/                 # GEMM, tensor-core, and overlap diagnostics
+│   ├── probes/                 # Hardware profiler, GEMM, and overlap diagnostics
 │   ├── cpu_router/             # BF16 dispatch and paired calibration example
 │   └── data/                   # Curated reference measurements
 ├── tests/cpu_router/            # Host policy, numeric, eager, and graph checks

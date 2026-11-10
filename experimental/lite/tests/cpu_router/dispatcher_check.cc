@@ -114,10 +114,8 @@ int main() {
     require(!gpuAutomatic.prepare(call).cpuRouter &&
                 !gpuAutomatic.routerInitialized(),
             "unmeasured GPU reduction retains fallback without allocation");
-    require(
-        !gpuAutomatic.topology().referenceRouterOptions &&
-            gpuAutomatic.topology().identity != automatic.topology().identity,
-        "GPU reduction does not match historical CPU reduction profiles");
+    require(gpuAutomatic.topology().identity != automatic.topology().identity,
+            "GPU reduction requires its own local calibration");
     gpu.interleaveScatter = true;
     gpu.reduction = cpu_router::ReductionPlacement::Gpu;
     CollectiveDispatcher striped(t, autoPolicy, callback, gpu);

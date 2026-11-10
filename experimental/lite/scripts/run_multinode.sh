@@ -7,6 +7,7 @@ if [[ $# -lt 1 || "$1" == --help ]]; then
     'Usage: HOSTS=node0:4,node1:4 bash scripts/run_multinode.sh BACKEND [options]' \
     'Backends: multinode_allreduce, multinode_cpu_router,' \
     '          host_allreduce, host_hierarchical_allreduce' \
+    'multinode_allreduce accepts --op allreduce|allgather|reducescatter.' \
     'Optional: MPIRUN, BUILD_DIR, SOCKET_IFNAME, HCA_DEVICES, IBV_MODE.'
   exit 0
 fi

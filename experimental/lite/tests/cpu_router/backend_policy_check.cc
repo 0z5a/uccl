@@ -48,37 +48,46 @@ int main(int argc, char** argv) {
     require(p.measurements.size() == 144, "reference dimensions");
     auto eight = topology(8), four = topology(4);
     Workload w{Collective::AllGather, ScalarType::BFloat16, 1UL << 30, true};
-    require(p.select(eight, w).cpuRouter,
-            "matching 8-L4 AG should use measured win");
+    require(!p.select(eight, w).cpuRouter,
+            "historical AG result cannot enable a different host");
     require(!p.select(four, w).cpuRouter,
             "four GPUs must not inherit eight-GPU timings");
     w.collective = Collective::ReduceScatter;
-    require(p.select(eight, w).cpuRouter,
-            "matching 8-L4 RS should use measured win");
+    require(!p.select(eight, w).cpuRouter,
+            "historical RS result cannot enable a different host");
     w.collective = Collective::AllReduce;
+    require(!p.select(eight, w).cpuRouter,
+            "historical AR result cannot enable a different host");
+    Measurement localEight{eight.identity, p.fallbackIdentity, w,
+                           {8, 9, 10},   {19, 20, 21},       3,
+                           true};
+    p.measurements.push_back(localEight);
     require(p.select(eight, w).cpuRouter,
-            "matching 8-L4 AR should use measured win");
+            "exact local eight-GPU calibration may enable router");
     auto changed = eight;
     changed.peerAccess[1] = true;
+    changed.identity += ";peer-access-changed";
     require(!p.select(changed, w).cpuRouter, "P2P topology mismatch");
     changed = eight;
     changed.gpuNames[0] = "NVIDIA A100";
+    changed.identity += ";gpu-model-changed";
     require(!p.select(changed, w).cpuRouter, "GPU model mismatch");
     changed = eight;
     changed.driverVersion = "595.58.03";
+    changed.identity += ";driver-changed";
     require(!p.select(changed, w).cpuRouter,
             "driver mismatch needs local calibration");
     changed = eight;
     changed.cudaRuntimeVersion = 13000;
+    changed.identity += ";cuda-changed";
     require(!p.select(changed, w).cpuRouter, "toolkit mismatch");
     changed = eight;
     changed.permittedCpusPerNode[0] = 8;
+    changed.identity += ";affinity-changed";
     require(!p.select(changed, w).cpuRouter, "CPU budget mismatch");
     changed = eight;
-    changed.referenceRouterOptions = false;
-    require(!p.select(changed, w).cpuRouter, "router tuning mismatch");
-    changed = eight;
     std::swap(changed.devices[0], changed.devices[1]);
+    changed.identity += ";device-order-changed";
     require(!p.select(changed, w).cpuRouter, "device ordering mismatch");
     p.fallbackIdentity = "nccl:22807";
     require(!p.select(eight, w).cpuRouter, "baseline mismatch");
@@ -149,7 +158,7 @@ int main(int argc, char** argv) {
     require(parseRouterMode("off") == RouterMode::Off, "off parser");
     rejects([] { parseRouterMode("typo"); }, "invalid mode rejected");
     std::cout << "Backend policy: " << checks
-              << " checks passed; 4-L4 default off, matched 8-L4 wins on\n";
+              << " checks passed; historical data cannot enable router\n";
   } catch (std::exception const& e) {
     std::cerr << e.what() << '\n';
     return 1;

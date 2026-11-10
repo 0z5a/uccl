@@ -24,6 +24,78 @@ The reference sweep searches 1/2/4/8 MiB pieces (`-k`) and pipeline distances
 32 MiB upward, reaching 18.06 GB/s at 64 MiB and 17.80 GB/s at 1 GiB. Small
 messages lose because dependent proxy phases impose an approximately 80 µs floor.
 
+A fresh [paired current-source sweep](../benchmarks/data/multinode_peer_20261110/summary_ar.csv)
+uses one fixed default UCCL Lite configuration and NCCL 2.28.7 in-place
+AllReduce, both with slowest-rank CUDA events. Across 32 MiB–1 GiB, all six
+sizes have non-overlapping three-run ranges and at least 3% median gain. At
+64 MiB, latency is **6.888 versus 7.303 ms** (**1.06×**); at 1 GiB, it is
+**105.620 versus 115.184 ms** (**1.09×**). This current result is separate
+from the older best-per-size comparison above.
+
+## Hierarchical AllGather and ReduceScatter
+
+The same [multi-node executable](../src/collectives/multinode_allreduce.cu)
+now accepts `--op allgather` and `--op reducescatter`. Both are out-of-place
+float32 paths for exactly two nodes with four peer-accessible L4s each. They
+use the existing local CUDA-IPC channels and the rail map above.
+
+AllGather sends each rank's shard over IB to its corresponding rank on the
+other node. Local rings forward the four local shards while IB is in flight,
+then forward the four received shards. The ring order is `0 → 1 → 3 → 2 → 0`.
+`--ag-ring 1` selects this path; the flat multicast is retained as a slower
+comparison. Each global-rank output interval has one producer.
+
+ReduceScatter first groups input shards by local destination and sums the four
+local contributions. It exchanges one remote-destination partial with the
+corresponding rank across nodes, then adds the received partial to the local
+output. `--rs-ring 1 --rs-direct-ring 1 --rs-piece-bytes 8388608 -B 96 -T 512`
+selects the measured path. It reads the **standard rank-ordered input directly**
+and keeps each in-flight local partial in its own receive slot. The input is
+immutable throughout the collective. The fixed piece rule uses at least two
+pieces per destination shard and targets no more than 8 MiB per piece; it
+reaches 16 pieces at 1 GiB. IB source slots remain unchanged until flush. A
+launch occupancy check rejects grids that cannot reside together, because the
+kernels synchronize across the grid. Earlier GPU-packing and prepacked-input
+experiments remain archived but are excluded from the final comparison.
+
+![Two-node AllGather and ReduceScatter speedup over NCCL at 1–64 MiB](assets/multinode-peer.svg)
+
+The figure uses the [matched paired summary](../benchmarks/data/multinode_peer_20261110/summary.csv).
+At 64 MiB, AllGather takes **3.175 ms** versus **3.819 ms** for NCCL 2.28.7
+(**1.20×**), and ReduceScatter takes **3.382 ms** versus **3.972 ms**
+(**1.17×**). At 32 MiB, the corresponding speedups are **1.20× / 1.15×**.
+Both paths lose on small messages: at 1 KiB, AG takes 97.66 versus 19.36 µs
+and RS takes 100.66 versus 23.03 µs. RS also loses at 1 MiB, 189.54 versus
+103.76 µs. The full
+[128-MiB–1-GiB paired sweep](../benchmarks/data/multinode_peer_20261110/summary_large.csv)
+extends the checked comparison:
+
+| Complete bytes/rank | AG UCCL / NCCL | AG speedup | RS UCCL / NCCL | RS speedup |
+| ---: | ---: | ---: | ---: | ---: |
+| 128 MiB | 6.453 / 7.374 ms | 1.14× | 6.697 / 7.701 ms | 1.15× |
+| 256 MiB | 12.945 / 14.679 ms | 1.13× | 13.354 / 15.369 ms | 1.15× |
+| 512 MiB | 25.869 / 29.284 ms | 1.13× | 26.742 / 30.615 ms | 1.14× |
+| 1 GiB | 51.539 / 58.647 ms | 1.14× | 53.336 / 61.160 ms | 1.15× |
+
+The full 1-KiB–1-GiB data retain every regression. The figure shows 1–64 MiB
+so the 512-KiB NCCL timing anomaly does not compress the useful range. Its
+8-MiB RS whisker includes one slow NCCL run; the ranges overlap there, so
+that bar is not a stable gain.
+
+These are three paired repetitions, alternating backend order. Each repetition
+has five warmups and ten timed calls. Both use one GPU per MPI rank, eight ranks,
+FP32, and slowest-rank CUDA-event time; validation and initialization are
+outside timing. NCCL uses MPI-enabled nccl-tests 2.19.7 with NCCL 2.28.7,
+`-a 3`, default P2P/GDR, and both `mlx5_0,mlx5_1` HCAs. Each UCCL Lite
+operation checks three changed input generations per size; NCCL reports zero
+wrong and out-of-bounds values. The workload is a native primitive comparison,
+not an application benchmark or a runtime peer/NCCL selector. The
+[paired launcher](../scripts/run_multinode_peer_compare.sh),
+[validator](../scripts/summarize_multinode_peer.py), and
+[plotter](../scripts/plot_multinode_peer.py) reproduce the logs, table and SVG.
+[Raw-log provenance and excluded prepacked-input runs](../benchmarks/data/multinode_peer_20261110/README.md)
+identify the exact binaries and limitations.
+
 ## Pinned-host CPU router
 
 [multinode_cpu_router.cu](../src/collectives/multinode_cpu_router.cu) retains

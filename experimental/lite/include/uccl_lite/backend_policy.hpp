@@ -31,7 +31,6 @@ struct Topology {
   // Exact local identity: UUIDs, PCI IDs, CPU/affinity, driver/toolkit, router
   // knobs.
   std::string identity;
-  bool referenceRouterOptions = true;
 };
 
 struct TimingRange {
@@ -69,8 +68,8 @@ char const* collectiveName(Collective collective);
 Collective parseCollective(std::string const& name);
 RouterMode parseRouterMode(std::string const& name);
 
-// Loading historical evidence is explicit; it applies only to its matching
-// testbed.
+// Archive reader for offline comparisons and integrity checks. Historical
+// records never enable automatic routing on a live host.
 std::vector<Measurement> loadL4ReferenceProfile(std::string const& path);
 std::vector<Measurement> loadRouterProfile(std::string const& path);
 void saveRouterProfile(std::string const& path,
