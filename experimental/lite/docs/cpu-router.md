@@ -63,12 +63,15 @@ The selection key includes collective, BF16 dtype, exact byte count, in-place
 placement, topology identity, and the identity of the caller's fallback.
 No interpolation or best-neighbor size policy is applied.
 
-For AllReduce through 4 MiB, the adaptive dispatcher prepares the CPU router
-with 128 KiB packets by default. Larger AllReduce and the other collectives
-use the 512 KiB default. The packet choice happens in `prepare`, outside the
-timed invocation. `--small-ar-packet-bytes 0` disables the smaller choice in
-the example. Packet geometry is part of the profile identity, so changing it
-requires new calibration.
+For AllReduce through 4 MiB and ReduceScatter from 256 KiB through 4 MiB,
+the adaptive dispatcher prepares the router with 128 KiB packets by default.
+At exactly 128 KiB, ReduceScatter uses GPU reduction and GPU progress with
+the regular packet limit. Other calls use the 512 KiB packet default and CPU
+reduction. These choices happen in `prepare`, outside the timed invocation.
+`--small-ar-packet-bytes 0`, `--small-rs-packet-bytes 0`, and
+`--no-small-rs-gpu-progress` disable the respective example choices. Packet
+geometry and reduction mode are part of the profile identity, so changing
+them requires new calibration.
 
 1. Unsupported dtype/topology/capacity retains the existing backend.
 2. Only an exact local calibration record can enable the router. A newer

@@ -146,6 +146,13 @@ struct PacketPipelineOptions {
   // 4 MiB. Zero disables this choice; direct PacketPipeline users keep
   // packetBytes unchanged.
   size_t smallAllReducePacketBytes = 128UL << 10;
+  // Adaptive dispatcher only: smaller ReduceScatter packets from 256 KiB
+  // through 4 MiB.
+  // Zero keeps packetBytes for every ReduceScatter call.
+  size_t smallReduceScatterPacketBytes = 128UL << 10;
+  // Adaptive dispatcher only: the 128-KiB ReduceScatter case uses GPU
+  // reduction/progress. Direct PacketPipeline users keep their chosen mode.
+  bool smallReduceScatterGpuProgress = true;
   int transportBlocks = 64;
   int transportThreads = 256;
   size_t transportGrainBytes = 16UL << 10;

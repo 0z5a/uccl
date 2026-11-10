@@ -42,12 +42,14 @@ class CollectiveDispatcher {
  private:
   void validatePorts(CollectiveCall const& call) const;
   size_t packetBytesFor(CollectiveCall const& call) const;
+  bool smallReduceScatterGpuProgressFor(CollectiveCall const& call) const;
   Topology topology_;
   BackendPolicy policy_;
   Fallback fallback_;
   cpu_router::CpuRouterOptions options_;
   std::unique_ptr<cpu_router::CpuRouter> router_;
   size_t routerPacketBytes_ = 0;
+  bool routerSmallReduceScatterGpuProgress_ = false;
 };
 
 }  // namespace uccl_lite

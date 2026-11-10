@@ -1,8 +1,10 @@
 # Eight-L4 BF16 small-message collectives
 
-This record fills 1 KiB–512 KiB for the eight-L4 single-node figures. The
-1 MiB point comes from the earlier paired large-message runs, so both plot
-panels share that measured boundary point. GPUs 0–3 are on NUMA node 0 and
+This historical record fills 1 KiB–512 KiB for the eight-L4 AllReduce and
+AllGather figures and retains the earlier ReduceScatter and All-to-All runs.
+The current ReduceScatter figure uses its [new paired rerun](../reducescatter_8l4_20261110_v2/README.md).
+The 1 MiB point in each figure comes from the matching large-message run, so
+both plot panels share that measured boundary point. GPUs 0–3 are on NUMA node 0 and
 4–7 on node 1. CUDA 12.9, NVIDIA driver 580.178.04, and NCCL 2.28.9 match
 the large-message record.
 
@@ -22,14 +24,13 @@ calls in total. The final line of each summary records the correctness pass.
 | `*_samples.csv` | Per-call slowest-rank CUDA-event times. |
 | `*.profile`, `*.log` | Calibration identities and selection diagnostics; the NCCL profiles are external controls, not local-fallback policy evidence. |
 
-The [selected-path summary](../collectives_8l4_20261110.csv) chooses the
-faster UCCL Lite median from each local comparison without consulting NCCL.
-For CPU-router winners, it reports the router and NCCL timings from their
-direct paired run. At 128 KiB, local wins for AllReduce and ReduceScatter,
-so those two UCCL timings come from the separate local comparison. All-to-All
-selects peer+host at 128 KiB and host staging at the other nine small sizes.
-Some selected UCCL Lite paths lose to NCCL; the summary and figures retain
-those points.
+The [selected-path summary](../collectives_8l4_20261110.csv) uses the
+AllReduce and AllGather measurements here, choosing the faster UCCL Lite
+median from each local comparison without consulting NCCL. For CPU-router
+winners, it reports the router and NCCL timings from their direct paired run.
+At 128 KiB, local wins for AllReduce, so that UCCL timing comes from the
+separate local comparison. The earlier ReduceScatter and All-to-All data
+remain here as experimental records, including their losses.
 
 ## Reproduce
 

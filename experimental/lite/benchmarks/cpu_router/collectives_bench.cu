@@ -50,6 +50,8 @@ struct Config {
   size_t begin = 1024, end = 1 << 20;
   size_t packetBytes = 512UL << 10;
   size_t smallAllReducePacketBytes = 128UL << 10;
+  size_t smallReduceScatterPacketBytes = 128UL << 10;
+  bool smallReduceScatterGpuProgress = true;
   bool inPlace = false;
   bool gpuReduce = false;
   bool gpuProgress = false;
@@ -205,6 +207,10 @@ int main(int argc, char** argv) {
         cfg.packetBytes = std::stoull(next());
       else if (arg == "--small-ar-packet-bytes")
         cfg.smallAllReducePacketBytes = std::stoull(next());
+      else if (arg == "--small-rs-packet-bytes")
+        cfg.smallReduceScatterPacketBytes = std::stoull(next());
+      else if (arg == "--no-small-rs-gpu-progress")
+        cfg.smallReduceScatterGpuProgress = false;
       else if (arg == "--op")
         cfg.operation = next();
       else if (arg == "--fallback")
@@ -253,6 +259,9 @@ int main(int argc, char** argv) {
             "131072)\n"
             "  --small-ar-packet-bytes BYTES (default 131072 through 4 MiB; "
             "0 disables)\n"
+            "  --small-rs-packet-bytes BYTES (default 131072 for "
+            "256 KiB to 4 MiB; 0 disables)\n"
+            "  --no-small-rs-gpu-progress (disable 128-KiB RS GPU progress)\n"
             "  --warmup N --iterations N --repeats N (at least 3)\n"
             "Auto keeps the selected fallback unless matching validated "
             "evidence shows a stable "
@@ -277,7 +286,11 @@ int main(int argc, char** argv) {
         (cfg.smallAllReducePacketBytes &&
          (cfg.smallAllReducePacketBytes < (128UL << 10) ||
           cfg.smallAllReducePacketBytes > cfg.packetBytes ||
-          cfg.smallAllReducePacketBytes % 16)))
+          cfg.smallAllReducePacketBytes % 16)) ||
+        (cfg.smallReduceScatterPacketBytes &&
+         (cfg.smallReduceScatterPacketBytes < (128UL << 10) ||
+          cfg.smallReduceScatterPacketBytes > cfg.packetBytes ||
+          cfg.smallReduceScatterPacketBytes % 16)))
       throw std::invalid_argument(
           "invalid device count, size, or iteration settings");
     if (!cfg.calibrate.empty() && std::filesystem::exists(cfg.calibrate))
@@ -357,6 +370,10 @@ int main(int argc, char** argv) {
       options.maxTensorBytes = cfg.end;
       options.packetBytes = cfg.packetBytes;
       options.smallAllReducePacketBytes = cfg.smallAllReducePacketBytes;
+      options.smallReduceScatterPacketBytes =
+          cfg.smallReduceScatterPacketBytes;
+      options.smallReduceScatterGpuProgress =
+          cfg.smallReduceScatterGpuProgress;
       options.reduction = cfg.gpuReduce ? cpu_router::ReductionPlacement::Gpu
                                         : cpu_router::ReductionPlacement::Cpu;
       options.interleaveScatter = cfg.interleaveScatter;
@@ -395,6 +412,11 @@ int main(int argc, char** argv) {
       for (auto op : operations)
         for (size_t bytes = cfg.begin; bytes <= cfg.end; bytes *= 2) {
           auto call = buffers.call(op, bytes, cfg.inPlace);
+          char const* activeRouterName =
+              !cfg.gpuReduce && cfg.smallReduceScatterGpuProgress &&
+                      op == Collective::ReduceScatter && bytes == (128UL << 10)
+                  ? "gpu-progress-small-rs"
+                  : routerName;
           auto decision = selected.prepare(call);
           if (local && (!decision.cpuRouter || baseline)) local->prepare();
           std::fprintf(stderr, "%s %zu: %s\n", collectiveName(op), bytes,
@@ -415,9 +437,11 @@ int main(int argc, char** argv) {
               if (repeat % 2 == 0) {
                 baselineSamples.push_back(
                     measure(*baseline, fallbackName, repeat));
-                cpuSamples.push_back(measure(*router, routerName, repeat));
+                cpuSamples.push_back(
+                    measure(*router, activeRouterName, repeat));
               } else {
-                cpuSamples.push_back(measure(*router, routerName, repeat));
+                cpuSamples.push_back(
+                    measure(*router, activeRouterName, repeat));
                 baselineSamples.push_back(
                     measure(*baseline, fallbackName, repeat));
               }
@@ -438,7 +462,7 @@ int main(int argc, char** argv) {
               auto t = backend ? m.router : m.fallback;
               std::printf("%s,%zu,%d,%s,%.3f,%.3f,%.3f,%.4f,%d\n",
                           collectiveName(op), bytes, cfg.inPlace,
-                          backend ? routerName : "fallback", t.median,
+                          backend ? activeRouterName : "fallback", t.median,
                           t.minimum, t.maximum, m.fallback.median / t.median,
                           backend ? router->routerInitialized()
                                   : baseline->routerInitialized());
@@ -453,11 +477,13 @@ int main(int argc, char** argv) {
               samples.push_back(
                   run(selected, call, buffers, cfg.iterations, true,
                       cfg.samples.empty() ? nullptr : &sampleOutput,
-                      decision.cpuRouter ? routerName : fallbackName, repeat));
+                      decision.cpuRouter ? activeRouterName : fallbackName,
+                      repeat));
             auto t = summarize(samples);
             std::printf("%s,%zu,%d,%s,%.3f,%.3f,%.3f,%.4f,%d\n",
                         collectiveName(op), bytes, cfg.inPlace,
-                        decision.cpuRouter ? routerName : "fallback", t.median,
+                        decision.cpuRouter ? activeRouterName : "fallback",
+                        t.median,
                         t.minimum, t.maximum, decision.measuredSpeedup,
                         selected.routerInitialized());
           }

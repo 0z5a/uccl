@@ -1,7 +1,9 @@
 # Eight-L4 BF16 CPU router versus NCCL 2.28.9
 
-This is the direct paired control for the current eight-GPU single-node README
-result. The UCCL Lite candidate is the CPU router: the separate
+This is the direct paired control for the current eight-GPU AllReduce and
+AllGather README results. Its ReduceScatter data is retained as the earlier
+control; the current RS figure uses a [new paired rerun](../reducescatter_8l4_20261110_v2/README.md).
+The UCCL Lite candidate is the CPU router: the separate
 [local/router sweep](../local_fallback_8l4_20261110_v3/README.md) measured it
 faster than the project-owned local path at every 1 MiB–1 GiB AR/AG/RS size
 in both placements. NCCL is an external control in this run, not the default

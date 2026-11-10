@@ -18,7 +18,6 @@ OPERATIONS = (
     ("all_reduce", "AllReduce", "allreduce", 14 / 8, "bus"),
     ("all_gather", "AllGather", "allgather", 7 / 8, "bus"),
     ("reduce_scatter", "ReduceScatter", "reducescatter", 7 / 8, "bus"),
-    ("all_to_all", "All-to-All", "alltoall", 7, "aggregate"),
 )
 SMALL_SIZES = [1 << power for power in range(10, 21)]
 LARGE_SIZES = [1 << power for power in range(20, 31)]
@@ -79,7 +78,7 @@ def plot_operation(data, operation, title, filename, factor, bandwidth_kind,
         upper = 0.0
         for field, label, color in (
             ("nccl_median_us", "NCCL 2.28.9", BASELINE),
-            ("uccl_median_us", "UCCL Lite best measured path", BLUE),
+            ("uccl_median_us", "uccl-lite", BLUE),
         ):
             values = [measure(size, float(data[operation, size][field]))
                       for size in sizes]

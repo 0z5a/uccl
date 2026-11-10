@@ -408,16 +408,16 @@ L 753.705488 124.354832
   </g>
   <g id="legend_1">
    <g id="line2d_39">
-    <path d="M 481.580219 64.283516
-L 491.080219 64.283516
-L 500.580219 64.283516
+    <path d="M 588.900531 64.283516
+L 598.400531 64.283516
+L 607.900531 64.283516
 " style="fill: none; stroke: #205e9e; stroke-width: 2.2; stroke-linecap: square"/>
     <g>
-     <use xlink:href="#m5791be98ea" x="491.080219" y="64.283516" style="fill: #205e9e; stroke: #ffffff; stroke-width: 0.6"/>
+     <use xlink:href="#m5791be98ea" x="598.400531" y="64.283516" style="fill: #205e9e; stroke: #ffffff; stroke-width: 0.6"/>
     </g>
    </g>
    <g id="text_32">
-    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #172a3a" x="508.180219" y="67.608516" transform="rotate(-0 508.180219 67.608516)">UCCL Lite best measured path</text>
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #172a3a" x="615.500531" y="67.608516" transform="rotate(-0 615.500531 67.608516)">uccl-lite</text>
    </g>
    <g id="line2d_40">
     <path d="M 671.883031 64.283516

@@ -19,7 +19,7 @@ def rows(path: Path) -> dict[tuple[str, int, str], dict[str, str]]:
     result = {}
     for row in csv.DictReader(line for line in text.splitlines()
                               if not line.startswith("#")):
-        operation = row.get("collective", "all_to_all")
+        operation = row["collective"]
         key = operation, int(row["bytes"]), row["backend"]
         if key in result:
             raise ValueError(f"duplicate measurement: {path}, {key}")
@@ -34,8 +34,7 @@ def main() -> None:
     results = []
     small_dir = DATA / "collectives_small_8l4_20261110"
     for operation, placement, prefix in (("all_reduce", "in_place", "ar"),
-                                         ("all_gather", "out_of_place", "out"),
-                                         ("reduce_scatter", "out_of_place", "out")):
+                                         ("all_gather", "out_of_place", "out")):
         local = rows(small_dir / f"{prefix}_local.csv")
         nccl = rows(small_dir / f"{prefix}_nccl.csv")
         for size in SMALL_SIZES:
@@ -55,8 +54,7 @@ def main() -> None:
     local_dir = DATA / "local_fallback_8l4_20261110_v3"
     paired_dir = DATA / "router_vs_nccl_8l4_20261110"
     for operation, placement in (("all_reduce", "in_place"),
-                                 ("all_gather", "out_of_place"),
-                                 ("reduce_scatter", "out_of_place")):
+                                 ("all_gather", "out_of_place")):
         local = rows(local_dir / f"{placement}_calibration.csv")
         paired = rows(paired_dir / f"{placement}_calibration.csv")
         for size in LARGE_SIZES:
@@ -69,19 +67,25 @@ def main() -> None:
             control = float(paired[operation, size, "fallback"]["median_us"])
             results.append((operation, size, placement, "cpu-router", candidate,
                             control, control / candidate))
-    alltoall = rows(DATA / "alltoall_8l4_20261110/summary.csv")
-    alltoall.update(rows(small_dir / "a2a.csv"))
+    rs_dir = DATA / "reducescatter_8l4_20261110_v2"
+    rs_local = rows(rs_dir / "local.csv")
+    rs_nccl = rows(rs_dir / "nccl.csv")
     for size in SMALL_SIZES + LARGE_SIZES:
-        variants = (
-            ("host-staging", float(alltoall["all_to_all", size, "uccl-host"]["median_us"])),
-            ("peer-host", float(alltoall["all_to_all", size, "uccl-hybrid"]["median_us"])),
-        )
-        path, candidate = min(variants, key=lambda item: item[1])
-        control = float(alltoall["all_to_all", size, "nccl"]["median_us"])
-        results.append(("all_to_all", size, "out_of_place", path, candidate,
+        operation = "reduce_scatter"
+        router_backend = ("gpu-progress-small-rs" if size == (128 << 10)
+                          else "cpu-router")
+        local_time = float(rs_local[operation, size, "fallback"]["median_us"])
+        router_time = float(rs_local[operation, size, router_backend]["median_us"])
+        if router_time < local_time:
+            path = router_backend
+            candidate = float(rs_nccl[operation, size, router_backend]["median_us"])
+        else:
+            path, candidate = "local", local_time
+        control = float(rs_nccl[operation, size, "fallback"]["median_us"])
+        results.append((operation, size, "out_of_place", path, candidate,
                         control, control / candidate))
     order = {operation: index for index, operation in enumerate(
-        ("all_reduce", "all_gather", "reduce_scatter", "all_to_all"))}
+        ("all_reduce", "all_gather", "reduce_scatter"))}
     results.sort(key=lambda result: (order[result[0]], result[1]))
     output = DATA / "collectives_8l4_20261110.csv"
     with output.open("w", newline="") as stream:

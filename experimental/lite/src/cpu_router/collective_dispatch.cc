@@ -149,11 +149,19 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
        options_.smallAllReducePacketBytes > options_.packetBytes ||
        options_.smallAllReducePacketBytes % 16))
     throw std::invalid_argument("invalid small AllReduce packet size");
+  if (options_.smallReduceScatterPacketBytes &&
+      (options_.smallReduceScatterPacketBytes < options_.minPacketBytes ||
+       options_.smallReduceScatterPacketBytes > options_.packetBytes ||
+       options_.smallReduceScatterPacketBytes % 16))
+    throw std::invalid_argument("invalid small ReduceScatter packet size");
   std::ostringstream key;
   // maxTensorBytes is a validation bound, not packet geometry or an allocation
   // size.
   key << ";options=" << options_.packetBytes << ',' << options_.minPacketBytes
       << ";small-ar-packet-v1=" << options_.smallAllReducePacketBytes << ','
+      << ";small-rs-packet-v1=" << options_.smallReduceScatterPacketBytes
+      << ";small-rs-gpu-progress-v1="
+      << options_.smallReduceScatterGpuProgress << ','
       << options_.transportBlocks << ',' << options_.transportThreads << ','
       << options_.transportGrainBytes << ',' << options_.workersPerNode << ','
       << options_.scatterWorkersPerNode << ',' << options_.grainElements << ','
@@ -251,12 +259,28 @@ size_t CollectiveDispatcher::packetBytesFor(CollectiveCall const& call) const {
       call.workload().bytes <= (4UL << 20) &&
       options_.smallAllReducePacketBytes)
     return std::min(options_.packetBytes, options_.smallAllReducePacketBytes);
+  if (call.collective == Collective::ReduceScatter &&
+      call.workload().bytes >= (256UL << 10) &&
+      call.workload().bytes <= (4UL << 20) &&
+      options_.smallReduceScatterPacketBytes)
+    return std::min(options_.packetBytes,
+                    options_.smallReduceScatterPacketBytes);
   return options_.packetBytes;
+}
+bool CollectiveDispatcher::smallReduceScatterGpuProgressFor(
+    CollectiveCall const& call) const {
+  return options_.smallReduceScatterGpuProgress &&
+         options_.reduction == cpu_router::ReductionPlacement::Cpu &&
+         call.collective == Collective::ReduceScatter &&
+         call.workload().bytes == (128UL << 10);
 }
 BackendDecision CollectiveDispatcher::prepare(CollectiveCall const& call) {
   auto selected = decision(call);
   size_t packetBytes = packetBytesFor(call);
-  if (selected.cpuRouter && (!router_ || routerPacketBytes_ != packetBytes)) {
+  bool smallGpu = smallReduceScatterGpuProgressFor(call);
+  if (selected.cpuRouter &&
+      (!router_ || routerPacketBytes_ != packetBytes ||
+       routerSmallReduceScatterGpuProgress_ != smallGpu)) {
     for (auto const& port : call.ports) {
       check(cudaSetDevice(port.device));
       cudaStreamCaptureStatus status;
@@ -268,10 +292,15 @@ BackendDecision CollectiveDispatcher::prepare(CollectiveCall const& call) {
     router_.reset();
     auto activeOptions = options_;
     activeOptions.packetBytes = packetBytes;
+    if (smallGpu) {
+      activeOptions.reduction = cpu_router::ReductionPlacement::Gpu;
+      activeOptions.gpuProgress = true;
+    }
     auto router = std::make_unique<cpu_router::CpuRouter>(activeOptions);
     router->prepare(call.ports);
     router_ = std::move(router);
     routerPacketBytes_ = packetBytes;
+    routerSmallReduceScatterGpuProgress_ = smallGpu;
   }
   return selected;
 }
@@ -286,6 +315,9 @@ BackendDecision CollectiveDispatcher::enqueue(CollectiveCall const& call) {
   size_t packetBytes = packetBytesFor(call);
   if (routerPacketBytes_ != packetBytes)
     throw std::logic_error("prepare CPU-router for this packet size");
+  if (routerSmallReduceScatterGpuProgress_ !=
+      smallReduceScatterGpuProgressFor(call))
+    throw std::logic_error("prepare CPU-router for this reduction mode");
   // Graph replay needs the core's explicit publication protocol. Do not
   // silently capture only GPU work.
   for (auto const& port : call.ports) {

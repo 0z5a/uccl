@@ -7,6 +7,9 @@ up to 2 MiB in pinned host memory, and the adaptive dispatcher prepares a
 512 KiB packets. NCCL 2.28.9 is a [separate control](../cpu_router_8l4_20261110/README.md),
 never the automatic fallback. The prior [local v2 record](../local_fallback_8l4_20261110/README.md)
 remains available; its profile identity cannot select the changed code.
+The current ReduceScatter README figure uses a [later calibration](../reducescatter_8l4_20261110_v2/README.md)
+with different packet and progress choices; this v3 record remains the
+AllReduce/AllGather selection evidence.
 
 ## Machine and measurement
 
