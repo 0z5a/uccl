@@ -126,10 +126,9 @@ or contention for host memory can erase that advantage.
 
 The optional CPU router exchanges packets through NUMA-local pinned host
 memory. **Forward** moves a packet, **Multicast** sends one packet to multiple
-destinations, and **Process** transforms packet contents. CPU processing
-provides Reduce, Pack, and Deduplicate operators; selected reductions can
-instead use GPU processing. Collectives compose these operations, with packet
-slots and reader credits preventing reuse until consumers finish.
+destinations, and **Process (CPU)** transforms packet contents with Reduce,
+Pack, and Deduplicate operators. Collectives compose these operations, with
+packet slots and reader credits preventing reuse until consumers finish.
 
 ```mermaid
 flowchart TB
@@ -137,7 +136,6 @@ flowchart TB
     F["Forward"]
     PC["Process (CPU)"]
     M["Multicast"]
-    PG["Process (GPU)"]
     RED["Reduce"]
     PACK["Pack"]
     DEDUP["Deduplicate"]
@@ -145,7 +143,6 @@ flowchart TB
     R --> F
     R --> PC
     R --> M
-    R --> PG
     PC --> RED
     PC --> PACK
     PC --> DEDUP
@@ -154,7 +151,7 @@ flowchart TB
     classDef stage fill:#E5F0F8,stroke:#7CA8C8,color:#17364F
     classDef operator fill:#F4F7FA,stroke:#A8BAC9,color:#17364F
     class R router
-    class F,PC,M,PG stage
+    class F,PC,M stage
     class RED,PACK,DEDUP operator
 ```
 
