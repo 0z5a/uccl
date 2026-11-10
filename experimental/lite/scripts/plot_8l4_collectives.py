@@ -74,7 +74,7 @@ def plot_operation(data, operation, filename, factor, preview):
         upper = 0.0
         for field, label, color, marker, linestyle in (
             ("nccl_median_us", "NCCL 2.28.9", NCCL_COLOR, "s", (0, (5, 2.5))),
-            ("uccl_median_us", "uccl-lite", UCCL_COLOR, "o", "-"),
+            ("uccl_median_us", "UCCL-Lite", UCCL_COLOR, "o", "-"),
         ):
             values = [measure(size, float(data[operation, size][field]))
                       for size in sizes]
@@ -89,7 +89,7 @@ def plot_operation(data, operation, filename, factor, preview):
                bbox_to_anchor=(0.5, 0.99), ncol=2, frameon=False,
                fontsize=12.5, handlelength=2.8, columnspacing=3.0,
                markerscale=1.2)
-    save(fig, f"collectives-8l4-{filename}-v4", preview)
+    save(fig, f"collectives-8l4-{filename}-v5", preview)
 
 
 def main() -> None:

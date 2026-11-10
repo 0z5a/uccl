@@ -391,9 +391,9 @@ L 753.705488 84.641416
   </g>
   <g id="legend_1">
    <g id="line2d_39">
-    <path d="M 261.704297 19.325047
-L 279.204297 19.325047
-L 296.704297 19.325047
+    <path d="M 255.852734 19.325047
+L 273.352734 19.325047
+L 290.852734 19.325047
 " style="fill: none; stroke: #0068b5; stroke-width: 2.8; stroke-linecap: square"/>
     <defs>
      <path id="m99c216711a" d="M 0 3.6
@@ -409,16 +409,16 @@ z
 " style="stroke: #ffffff; stroke-width: 0.7"/>
     </defs>
     <g>
-     <use xlink:href="#m99c216711a" x="279.204297" y="19.325047" style="fill: #0068b5; stroke: #ffffff; stroke-width: 0.7"/>
+     <use xlink:href="#m99c216711a" x="273.352734" y="19.325047" style="fill: #0068b5; stroke: #ffffff; stroke-width: 0.7"/>
     </g>
    </g>
    <g id="text_28">
-    <text style="font-size: 12.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #172a3a" x="306.704297" y="23.700047" transform="rotate(-0 306.704297 23.700047)">uccl-lite</text>
+    <text style="font-size: 12.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #172a3a" x="300.852734" y="23.700047" transform="rotate(-0 300.852734 23.700047)">UCCL-Lite</text>
    </g>
    <g id="line2d_40">
-    <path d="M 393.391797 19.325047
-L 410.891797 19.325047
-L 428.391797 19.325047
+    <path d="M 399.243359 19.325047
+L 416.743359 19.325047
+L 434.243359 19.325047
 " style="fill: none; stroke-dasharray: 14,7; stroke-dashoffset: 0; stroke: #d65a00; stroke-width: 2.8"/>
     <defs>
      <path id="ma80281dc45" d="M -3.6 3.6
@@ -429,11 +429,11 @@ z
 " style="stroke: #ffffff; stroke-width: 0.7; stroke-linejoin: miter"/>
     </defs>
     <g>
-     <use xlink:href="#ma80281dc45" x="410.891797" y="19.325047" style="fill: #d65a00; stroke: #ffffff; stroke-width: 0.7; stroke-linejoin: miter"/>
+     <use xlink:href="#ma80281dc45" x="416.743359" y="19.325047" style="fill: #d65a00; stroke: #ffffff; stroke-width: 0.7; stroke-linejoin: miter"/>
     </g>
    </g>
    <g id="text_29">
-    <text style="font-size: 12.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #172a3a" x="438.391797" y="23.700047" transform="rotate(-0 438.391797 23.700047)">NCCL 2.28.9</text>
+    <text style="font-size: 12.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #172a3a" x="444.243359" y="23.700047" transform="rotate(-0 444.243359 23.700047)">NCCL 2.28.9</text>
    </g>
   </g>
  </g>
