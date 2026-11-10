@@ -87,11 +87,11 @@ looking at NCCL. The CPU router is selected for all large AR/AG/RS sizes.
 At 128 KiB, AR selects the local path and RS selects GPU reduction/progress;
 RS uses the CPU-reduction router at other sizes.
 
-![Eight-L4 AllReduce: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allreduce.svg)
+![Eight-L4 AllReduce: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allreduce-v2.svg)
 
-![Eight-L4 AllGather: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allgather.svg)
+![Eight-L4 AllGather: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allgather-v2.svg)
 
-![Eight-L4 ReduceScatter: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-reducescatter.svg)
+![Eight-L4 ReduceScatter: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-reducescatter-v2.svg)
 
 | Collective | UCCL Lite path | 1 MiB UCCL / NCCL | 64 MiB UCCL / NCCL | 1 GiB UCCL / NCCL |
 | --- | --- | ---: | ---: | ---: |

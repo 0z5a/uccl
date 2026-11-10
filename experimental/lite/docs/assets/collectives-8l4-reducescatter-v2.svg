@@ -448,7 +448,7 @@ L 753.705488 124.874346
    <text style="font-weight: 700; font-size: 16px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #172a3a" x="58.32" y="24.2535" transform="rotate(-0 58.32 24.2535)">Eight-L4 single-node ReduceScatter</text>
   </g>
   <g id="text_35">
-   <text style="font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #607486" x="58.32" y="45.994359" transform="rotate(-0 58.32 45.994359)">BF16  ·  complete bytes per rank  ·  slowest-rank CUDA events</text>
+   <text style="font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #607486" x="58.32" y="45.994359" transform="rotate(-0 58.32 45.994359)">BF16  ·  128 KiB GPU progress; 256 KiB–4 MiB small packets  ·  slowest-rank CUDA events</text>
   </g>
   <g id="legend_1">
    <g id="line2d_47">

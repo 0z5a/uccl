@@ -50,9 +50,12 @@ def throughput(size: int, latency_us: float, factor: float) -> float:
 def plot_operation(data, operation, title, filename, factor, bandwidth_kind,
                    preview):
     fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.8))
+    subtitle = ("BF16  ·  128 KiB GPU progress; 256 KiB–4 MiB small packets"
+                "  ·  slowest-rank CUDA events"
+                if operation == "reduce_scatter" else
+                "BF16  ·  complete bytes per rank  ·  slowest-rank CUDA events")
     heading(fig, f"Eight-L4 single-node {title}",
-            "BF16  ·  complete bytes per rank  ·  slowest-rank CUDA events",
-            left=0.075)
+            subtitle, left=0.075)
     fig.subplots_adjust(left=0.085, right=0.985, top=0.70, bottom=0.18,
                         wspace=0.28)
     for ax, sizes, measure, panel_title, ylabel, ticks in (
@@ -91,7 +94,7 @@ def plot_operation(data, operation, title, filename, factor, bandwidth_kind,
     fig.legend(handles[::-1], labels[::-1], loc="upper right",
                bbox_to_anchor=(0.985, 0.85), ncol=2, frameon=False,
                fontsize=9.5)
-    save(fig, f"collectives-8l4-{filename}", preview)
+    save(fig, f"collectives-8l4-{filename}-v2", preview)
 
 
 def main() -> None:
