@@ -67,13 +67,13 @@ and ReduceScatter takes **100.66 versus 23.03 µs**. At 1 MiB, AG reaches
 103.76 µs**. The latency figure omits the anomalous 512-KiB NCCL point;
 the complete sweep retains it.
 
-![Two-node AllGather, ReduceScatter, and AllReduce bus bandwidth at 64 MiB and 1 GiB](assets/multinode-peer.svg)
+![Paired two-node AllGather, ReduceScatter, and AllReduce latency bars at 64 MiB and 1 GiB](assets/multinode-peer.svg)
 
-The bandwidth figure uses the [32–64 MiB paired summary](../benchmarks/data/multinode_peer_20261110/summary.csv),
+The latency bars use the [32–64 MiB paired summary](../benchmarks/data/multinode_peer_20261110/summary.csv),
 [128 MiB–1 GiB summary](../benchmarks/data/multinode_peer_20261110/summary_large.csv),
 and [in-place AR summary](../benchmarks/data/multinode_peer_20261110/summary_ar.csv).
-At 64 MiB, AG/RS/AR reach **18.50 / 17.36 / 17.05 GB/s** versus
-**15.38 / 14.78 / 16.08 GB/s** for NCCL. The full
+At 64 MiB, AG/RS/AR take **3.17 / 3.38 / 6.89 ms** versus
+**3.82 / 3.97 / 7.30 ms** for NCCL. The full
 [128-MiB–1-GiB paired sweep](../benchmarks/data/multinode_peer_20261110/summary_large.csv)
 extends the checked comparison:
 
@@ -87,7 +87,7 @@ extends the checked comparison:
 All table values are bus bandwidth in decimal GB/s. This uses complete bytes
 per rank divided by time, multiplied by `7/8` for AG/RS and `7/4` for AR.
 
-The full 1-KiB–1-GiB AG/RS data retain every regression. The bandwidth figure
+The full 1-KiB–1-GiB AG/RS data retain every regression. The latency figure
 selects 64 MiB and 1 GiB; all intermediate points remain in the CSVs. At
 512 KiB the NCCL AG/RS timing is anomalously high, and at 8 MiB one RS run
 is slow. Those points are retained in the data and excluded from the selected

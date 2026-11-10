@@ -71,7 +71,7 @@ bandwidth. The dense overview compares complete-operation latency at the large
 reference shapes; the [labeled shape plot](../docs/fusion.md) keeps all eight
 shapes, including regressions. MoE shows full-layer latency at every recorded
 token count, split into three panels with linear millisecond scales. The
-two-node bandwidth figure selects 64 MiB and 1 GiB, and
+two-node large-message latency bars select 64 MiB and 1 GiB, and
 the small-latency figure selects readable sizes through 1 MiB. Full AG/RS
 sweeps and the 512-KiB NCCL anomaly remain in the CSVs.
 

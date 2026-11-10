@@ -83,12 +83,12 @@ rules](docs/peer-ag-rs.md).
 
 ### Two nodes: large-message collectives
 
-![Two-node AllGather, ReduceScatter, and AllReduce bus bandwidth at 64 MiB and 1 GiB](docs/assets/multinode-peer.svg)
+![Paired two-node AllGather, ReduceScatter, and AllReduce latency bars at 64 MiB and 1 GiB](docs/assets/multinode-peer.svg)
 
-At 1 GiB on two four-L4 nodes, **AllGather / ReduceScatter / AllReduce** reach
-**18.23 / 17.62 / 17.79 GB/s bus bandwidth**, versus **16.02 / 15.36 /
-16.31 GB/s** for NCCL 2.28.7. These are three paired runs with slowest-rank
-CUDA-event timing; AG/RS are out of place and AR is in place. Small messages
+At 1 GiB on two four-L4 nodes, **AllGather / ReduceScatter / AllReduce** take
+**51.54 / 53.34 / 105.62 ms**, versus **58.65 / 61.16 / 115.18 ms** for
+NCCL 2.28.7. These are three paired runs with slowest-rank CUDA-event timing;
+AG/RS are out of place and AR is in place. Small messages
 can lose: at 1 KiB, AG takes **97.66 µs** versus **19.36 µs** for NCCL.
 The [two-node results](docs/multinode.md) include small-message latency,
 timing ranges, and the complete sweeps.

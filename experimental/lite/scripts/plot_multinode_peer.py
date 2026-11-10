@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw absolute bandwidth and latency from paired two-node collective data."""
+"""Draw latency from paired two-node collective data."""
 
 import argparse
 import csv
@@ -10,7 +10,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from figure_style import BASELINE, BLUE, GRID, ROOT
+from figure_style import BASELINE, BLUE, GRID, MUTED, ROOT
 from figure_style import clean_axis, configure, heading, save
 
 
@@ -30,50 +30,51 @@ def value(row: dict[str, str], backend: str) -> float:
     return number
 
 
-def bus_bandwidth(row: dict[str, str], operation: str, backend: str) -> float:
-    factor = 1.75 if operation == "allreduce" else 0.875
-    return int(row["bytes"]) / (value(row, backend) * 1e-6) / 1e9 * factor
-
-
-def bandwidth_figure(preview: bool, small, large, allreduce) -> None:
-    fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.7))
-    heading(fig, "Two-node large-message bandwidth",
+def large_message_figure(preview: bool, small, large, allreduce) -> None:
+    fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.8))
+    heading(fig, "Two-node large-message latency",
             "2 × 4 L4  ·  FP32  ·  three paired runs  ·  NCCL 2.28.7", left=0.075)
-    fig.subplots_adjust(left=0.12, right=0.985, top=0.71, bottom=0.17, wspace=0.34)
-    for ax, size, title in ((axes[0], 1 << 26, "64 MiB per rank"),
-                            (axes[1], 1 << 30, "1 GiB per rank")):
+    fig.subplots_adjust(left=0.16, right=0.985, top=0.71, bottom=0.20,
+                        wspace=0.38)
+    operations = (("allgather", "AllGather"),
+                  ("reducescatter", "ReduceScatter"),
+                  ("allreduce", "AllReduce"))
+    for ax, size, title, limit, ticks in (
+        (axes[0], 1 << 26, "64 MiB per rank", 9, [0, 2, 4, 6, 8]),
+        (axes[1], 1 << 30, "1 GiB per rank", 130, [0, 25, 50, 75, 100, 125]),
+    ):
         clean_axis(ax)
         ax.set_title(title, loc="left", pad=12)
-        ax.set_xlim(0, 22)
-        ax.set_ylim(-0.5, 2.5)
-        ax.set_xticks([0, 5, 10, 15, 20])
-        ax.set_yticks([2, 1, 0], ["AllGather", "ReduceScatter", "AllReduce"])
-        ax.set_xlabel("Bus bandwidth (GB/s) ↑")
+        ax.set_xlim(0, limit)
+        ax.set_ylim(len(operations) - 0.55, -0.55)
+        ax.set_xticks(ticks)
+        ax.set_yticks(range(len(operations)), [name for _, name in operations])
+        ax.set_xlabel("Slowest-rank latency (ms) ↓")
         ax.grid(axis="x", color=GRID, linewidth=0.8)
         ax.grid(axis="y", visible=False)
-        for operation, y in (("allgather", 2), ("reducescatter", 1),
-                             ("allreduce", 0)):
+        for y, (operation, _) in enumerate(operations):
             records = allreduce if operation == "allreduce" else (
                 small if size <= 1 << 26 else large)
             row = records[operation, size]
-            candidate = bus_bandwidth(row, operation, "uccl")
-            baseline = bus_bandwidth(row, operation, "nccl")
-            ax.hlines(y, min(candidate, baseline), max(candidate, baseline),
-                      color=GRID, linewidth=3)
-            ax.scatter(baseline, y, color=BASELINE, s=72, zorder=2,
-                       edgecolor="white", linewidth=0.8)
-            ax.scatter(candidate, y, color=BLUE, s=82, zorder=3,
-                       edgecolor="white", linewidth=0.8)
-            ax.text(candidate + 0.35, y, f"{candidate:.1f}", va="center",
-                    color=BLUE, fontsize=9.5, fontweight="bold")
-    fig.legend(
-        handles=[plt.Line2D([0], [0], marker="o", linestyle="", color=BLUE,
-                            markersize=8, label="UCCL Lite"),
-                 plt.Line2D([0], [0], marker="o", linestyle="", color=BASELINE,
-                            markersize=8, label="NCCL 2.28.7")],
-        loc="upper right", bbox_to_anchor=(0.985, 0.85), ncol=2,
-        frameon=False, fontsize=9.5,
-    )
+            candidate = value(row, "uccl") / 1000
+            baseline = value(row, "nccl") / 1000
+            ax.barh(y + 0.18, baseline, height=0.32, color=BASELINE,
+                    label="NCCL 2.28.7" if y == 0 else None)
+            ax.barh(y - 0.18, candidate, height=0.32, color=BLUE,
+                    label="UCCL Lite" if y == 0 else None)
+            offset = 0.08 if size == 1 << 26 else 1.1
+            digits = 2 if size == 1 << 26 else 1
+            ax.text(baseline + offset, y + 0.18, f"{baseline:.{digits}f}",
+                    va="center", fontsize=9)
+            ax.text(candidate + offset, y - 0.18, f"{candidate:.{digits}f}",
+                    va="center", fontsize=9)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles[::-1], labels[::-1], loc="upper right",
+               bbox_to_anchor=(0.985, 0.85), ncol=2,
+               frameon=False, fontsize=9.5)
+    fig.text(0.16, 0.04,
+             "AG/RS: out of place; AR: in place. Each panel has its own linear millisecond scale.",
+             fontsize=9, color=MUTED)
     save(fig, "multinode-peer", preview)
 
 
@@ -117,7 +118,7 @@ def main() -> None:
     small = read("summary.csv")
     large = read("summary_large.csv")
     allreduce = read("summary_ar.csv")
-    bandwidth_figure(args.preview, small, large, allreduce)
+    large_message_figure(args.preview, small, large, allreduce)
     latency_figure(args.preview, small)
 
 

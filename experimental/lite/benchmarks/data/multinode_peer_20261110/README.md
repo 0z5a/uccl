@@ -6,9 +6,10 @@ The accepted AG/RS comparisons are `paired_direct/` (1 KiB–64 MiB) and
 float32 input and out-of-place output. The separate `paired_ar/` and
 `summary_ar.csv` provide a current-source 32-MiB–1-GiB in-place AllReduce
 comparison. The figure in
-`../../../docs/assets/multinode-peer.svg` plots 1–64 MiB from `summary.csv`;
-the 512-KiB NCCL anomaly remains in the raw logs and CSV but is outside that
-figure. There is no per-size best-variant selection.
+`../../../docs/assets/multinode-peer.svg` compares latency at 64 MiB from
+`summary.csv` and 1 GiB from `summary_large.csv`, plus in-place AllReduce
+from `summary_ar.csv`. The 512-KiB NCCL anomaly remains in the raw logs and
+CSV but is outside that figure. There is no per-size best-variant selection.
 
 Both runs used two nodes with four NVIDIA L4s each, PCIe Gen4 x16, NUMA pairs
 `(0,1)` and `(2,3)`, and `mlx5_0,mlx5_1`. Host `mibura-sky-test-02` used
