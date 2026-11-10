@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot eight-L4 BF16 latency and throughput for each collective."""
+"""Plot 8xL4 GPU BF16 latency and throughput for each collective."""
 
 import argparse
 import csv
@@ -10,14 +10,14 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from figure_style import BASELINE, BLUE, ROOT, clean_axis, configure, heading, save
+from figure_style import BASELINE, BLUE, ROOT, clean_axis, configure, save
 
 
 DATA = ROOT / "benchmarks/data/collectives_8l4_20261110.csv"
 OPERATIONS = (
-    ("all_reduce", "AllReduce", "allreduce", 14 / 8, "bus"),
-    ("all_gather", "AllGather", "allgather", 7 / 8, "bus"),
-    ("reduce_scatter", "ReduceScatter", "reducescatter", 7 / 8, "bus"),
+    ("all_reduce", "allreduce", 14 / 8),
+    ("all_gather", "allgather", 7 / 8),
+    ("reduce_scatter", "reducescatter", 7 / 8),
 )
 SMALL_SIZES = [1 << power for power in range(10, 21)]
 LARGE_SIZES = [1 << power for power in range(20, 31)]
@@ -30,7 +30,7 @@ def load() -> dict[tuple[str, int], dict[str, str]]:
     for row in rows:
         key = row["collective"], int(row["bytes"])
         if key in result:
-            raise ValueError(f"duplicate eight-L4 workload: {key}")
+            raise ValueError(f"duplicate 8xL4 GPU workload: {key}")
         for field in ("uccl_median_us", "nccl_median_us"):
             value = float(row[field])
             if not math.isfinite(value) or value <= 0:
@@ -39,7 +39,7 @@ def load() -> dict[tuple[str, int], dict[str, str]]:
     expected = {(operation, 1 << power) for operation, *_ in OPERATIONS
                 for power in range(10, 31)}
     if set(result) != expected:
-        raise ValueError("incomplete eight-L4 BF16 sweep")
+        raise ValueError("incomplete 8xL4 GPU BF16 sweep")
     return result
 
 
@@ -47,28 +47,19 @@ def throughput(size: int, latency_us: float, factor: float) -> float:
     return factor * size / latency_us / 1000  # decimal GB/s
 
 
-def plot_operation(data, operation, title, filename, factor, bandwidth_kind,
-                   preview):
-    fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.8))
-    subtitle = ("BF16  ·  128 KiB GPU progress; 256 KiB–4 MiB small packets"
-                "  ·  slowest-rank CUDA events"
-                if operation == "reduce_scatter" else
-                "BF16  ·  complete bytes per rank  ·  slowest-rank CUDA events")
-    heading(fig, f"Eight-L4 single-node {title}",
-            subtitle, left=0.075)
-    fig.subplots_adjust(left=0.085, right=0.985, top=0.70, bottom=0.18,
+def plot_operation(data, operation, filename, factor, preview):
+    fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.1))
+    fig.subplots_adjust(left=0.085, right=0.985, top=0.80, bottom=0.20,
                         wspace=0.28)
-    for ax, sizes, measure, panel_title, ylabel, ticks in (
+    for ax, sizes, measure, ylabel, ticks in (
         (axes[0], SMALL_SIZES, lambda size, us: us,
-         "1 KiB–1 MiB · latency ↓", "Latency (µs)",
+         "Latency (µs) ↓",
          [1 << power for power in (10, 12, 14, 16, 18, 20)]),
         (axes[1], LARGE_SIZES, lambda size, us: throughput(size, us, factor),
-         f"1 MiB–1 GiB · {bandwidth_kind} throughput ↑",
-         f"{bandwidth_kind.title()} throughput (GB/s)",
+         "Bus throughput (GB/s) ↑",
          [1 << power for power in (20, 22, 24, 26, 28, 30)]),
     ):
         clean_axis(ax)
-        ax.set_title(panel_title, loc="left", pad=12)
         ax.set_xscale("log", base=2)
         ax.set_xlim(sizes[0] / 1.35, sizes[-1] * 1.35)
         ax.set_xticks(ticks, [
@@ -92,9 +83,9 @@ def plot_operation(data, operation, title, filename, factor, bandwidth_kind,
         ax.set_ylim(0, upper * 1.13)
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles[::-1], labels[::-1], loc="upper right",
-               bbox_to_anchor=(0.985, 0.85), ncol=2, frameon=False,
+               bbox_to_anchor=(0.985, 0.98), ncol=2, frameon=False,
                fontsize=9.5)
-    save(fig, f"collectives-8l4-{filename}-v2", preview)
+    save(fig, f"collectives-8l4-{filename}-v3", preview)
 
 
 def main() -> None:
@@ -104,9 +95,8 @@ def main() -> None:
     args = parser.parse_args()
     configure()
     data = load()
-    for operation, title, filename, factor, bandwidth_kind in OPERATIONS:
-        plot_operation(data, operation, title, filename, factor,
-                       bandwidth_kind, args.preview)
+    for operation, filename, factor in OPERATIONS:
+        plot_operation(data, operation, filename, factor, args.preview)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ paths target **two such nodes**, with two NIC rails per node. The CPU router is
 a separate BF16 module for 1–32 local GPUs. Most collective and fusion paths
 use MSCCL++; standalone peer AG/RS uses CUDA peer copies.
 
-The current result refresh uses an **eight-L4 host with four GPUs per NUMA
+The current result refresh uses an **8xL4 GPU host with four GPUs per NUMA
 node**. Four-L4, two-node, and fusion measurements will be refreshed on their
 respective machines; their earlier records remain linked. Small messages and
 small GEMMs can lose to NCCL; full sweeps and negative results are retained.
@@ -34,13 +34,13 @@ small GEMMs can lose to NCCL; full sweeps and negative results are retained.
 
 The four-GPU peer kernels assume `(GPU 0, GPU 1)` on NUMA node 0 and
 `(GPU 2, GPU 3)` on NUMA node 1, with a large-message ring
-**0 → 1 → 3 → 2 → 0**. This eight-L4 machine instead has GPUs 0–3 and 4–7 on
+**0 → 1 → 3 → 2 → 0**. This 8xL4 GPU host instead has GPUs 0–3 and 4–7 on
 the two NUMA nodes. Moving to another order or interconnect needs a topology
 check and new crossover measurements.
 
 ## Get started
 
-From the UCCL repository root on this eight-L4 machine:
+From the UCCL repository root on the 8xL4 GPU host:
 
 ```bash
 cd experimental/lite
@@ -62,7 +62,7 @@ the two-node launcher.
 
 ## Measured results
 
-The completed eight-L4 comparison shows **latency from 1 KiB to 1 MiB** and
+The completed 8xL4 GPU comparison shows **latency from 1 KiB to 1 MiB** and
 **throughput from 1 MiB to 1 GiB** for each collective. The other topology and
 fusion sections link their earlier records until the matching machines can be
 rerun.
@@ -78,20 +78,27 @@ used for that comparison. Earlier measurements remain in the
 [single-node design](docs/collectives.md), [peer AG/RS record](docs/peer-ag-rs.md),
 and [benchmark archive](benchmarks/README.md).
 
-#### Eight L4 (this machine)
+#### 8xL4 GPU
 
 This BF16 comparison uses GPUs 0–3 on NUMA node 0 and 4–7 on node 1.
 AllReduce is in place; AllGather and ReduceScatter are out of place. Each UCCL Lite curve
 uses the fastest measured project-owned path at that size, chosen without
 looking at NCCL. The CPU router is selected for all large AR/AG/RS sizes.
 At 128 KiB, AR selects the local path and RS selects GPU reduction/progress;
-RS uses the CPU-reduction router at other sizes.
+RS uses the CPU-reduction router at other sizes. Its 256 KiB–4 MiB calls use
+128 KiB packets.
 
-![Eight-L4 AllReduce: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allreduce-v2.svg)
+##### AllReduce on single 8xL4 GPU
 
-![Eight-L4 AllGather: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allgather-v2.svg)
+![8xL4 GPU AllReduce: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allreduce-v3.svg)
 
-![Eight-L4 ReduceScatter: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-reducescatter-v2.svg)
+##### AllGather on single 8xL4 GPU
+
+![8xL4 GPU AllGather: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-allgather-v3.svg)
+
+##### ReduceScatter on single 8xL4 GPU
+
+![8xL4 GPU ReduceScatter: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL](docs/assets/collectives-8l4-reducescatter-v3.svg)
 
 | Collective | UCCL Lite path | 1 MiB UCCL / NCCL | 64 MiB UCCL / NCCL | 1 GiB UCCL / NCCL |
 | --- | --- | ---: | ---: | ---: |
@@ -157,7 +164,7 @@ make -j2 cpu-router local-collectives adaptive-collectives \
   --backend auto --profile build/local-in-place.profile
 ```
 
-The eight-L4 table above reports the fastest **measured** UCCL Lite path.
+The 8xL4 GPU table above reports the fastest **measured** UCCL Lite path.
 Runtime `auto` is more conservative: with its matching local profile, it
 retains local AllGather at 1 GiB because the CPU-router gain is below the 3%
 selection margin. Without a matching profile it uses the local fallback.
