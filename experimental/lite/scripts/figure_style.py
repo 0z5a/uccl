@@ -11,6 +11,8 @@ BLUE = "#205E9E"
 TEAL = "#148D91"
 AMBER = "#BF6C36"
 PURPLE = "#8064A6"
+BASELINE = "#8999A8"
+SECOND_BASELINE = "#B3BEC8"
 INK = "#172A3A"
 MUTED = "#607486"
 GRID = "#E6EDF2"
@@ -43,14 +45,11 @@ def heading(fig, title: str, subtitle: str, left: float = 0.095) -> None:
     fig.text(left, 0.89, subtitle, va="top", fontsize=10.5, color=MUTED)
 
 
-def clean_axis(ax, *, speedup: bool = True) -> None:
+def clean_axis(ax) -> None:
     ax.set_facecolor("white")
     ax.set_axisbelow(True)
     ax.grid(axis="y", color=GRID, linewidth=0.8)
     ax.tick_params(axis="both", which="both", length=0, pad=7)
-    if speedup:
-        ax.axhline(1, color=MUTED, linestyle=(0, (4, 4)), linewidth=1)
-        ax.set_ylabel("Speedup over NCCL (×)")
 
 
 def save(fig, name: str, preview: bool) -> None:

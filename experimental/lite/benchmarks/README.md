@@ -55,21 +55,22 @@ import the application-side benchmark or imply a fresh validation of the headers
 
 ## Figure conventions
 
-Compact line and dot plots use the same palette throughout: blue for UCCL Lite
-gains, amber for regressions, teal or purple for a second measured series.
-The dashed 1× line is the stated NCCL or cuBLAS+NCCL baseline. Faint bands
-show ranges computed from recorded min–max or paired-run ratios where those
-values exist; no uncertainty is invented for files that only retain medians.
+Figures now use absolute metrics. Small collective messages use latency in
+microseconds; large messages use bus or aggregate bandwidth in GB/s. Lower
+latency and higher bandwidth are better. Blue marks UCCL Lite, gray the stated
+baseline, and amber marks a fused regression in the detailed dense plot.
+The recorded min–max timing ranges remain in the CSVs rather than being
+presented as confidence intervals.
 
-The single-node AllReduce and historical eight-GPU AG/RS plots show the full
-recorded size sweeps. The All-to-All plot shows every size in its compact
-summary. Dense fusion shows the fused path at all eight shapes per operation;
-its no-overlap and Flux controls remain in the source file and
-[fusion notes](../docs/fusion.md). MoE shows the complete token ranges for
-the fused path, including small-batch regressions. The two-node chart focuses
-on 32 MiB–1 GiB so the large-message AG, RS, and AR curves can be compared on
-one scale; the full AG/RS sweep, including the 512-KiB NCCL anomaly, remains
-in the CSVs.
+Single-node AllReduce, All-to-All, and historical eight-GPU AG/RS figures
+split their recorded sweeps between small-message latency and large-message
+bandwidth. The dense overview compares complete-operation latency at the large
+reference shapes; the [labeled shape plot](../docs/fusion.md) keeps all eight
+shapes, including regressions. MoE shows full-layer small-batch latency and
+large-batch token throughput, computed as tokens per rank divided by measured
+full-layer time. The two-node bandwidth figure selects 64 MiB and 1 GiB, and
+the small-latency figure selects readable sizes through 1 MiB. Full AG/RS
+sweeps and the 512-KiB NCCL anomaly remain in the CSVs.
 
 ## Regenerate figures
 
@@ -82,8 +83,9 @@ Requires Matplotlib and NumPy. `plot_results.py` reads committed CSV/text data
 and regenerates seven SVGs under `docs/assets/`: four-GPU AllReduce and All-to-All,
 historical eight-GPU AG/RS, dense-fusion overview and labeled shapes, and EP-MoE. The historical AG/RS
 figures now appear in [primitive results](../docs/primitive-collectives.md).
-`plot_multinode_peer.py` draws the eighth SVG from the validated paired
-two-node AG, RS, and AR summaries. Neither script runs GPU work or benchmarks.
+`plot_multinode_peer.py` draws two more SVGs from the validated paired
+two-node AG, RS, and AR summaries, for nine figures total. Neither script runs
+GPU work or benchmarks.
 Use `python3 scripts/plot_results.py --preview` to also export PNG and PDF copies
 under ignored `build/figures/` for inspection or reuse in a technical report.
 `python3 scripts/plot_multinode_peer.py --preview` exports PNG/PDF copies there.

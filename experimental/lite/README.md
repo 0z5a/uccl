@@ -15,7 +15,7 @@ paths target **two such nodes**, with two NIC rails per node. The CPU router is
 a separate BF16 module for 1–32 local GPUs. Most collective and fusion paths
 use MSCCL++; standalone peer AG/RS uses CUDA peer copies.
 
-The recorded gains below describe those testbeds and workloads. Small messages
+The measurements below describe those testbeds and workloads. Small messages
 and small GEMMs can lose to NCCL; the full sweeps and negative results are linked
 alongside the figures.
 
@@ -56,55 +56,60 @@ and the two-node launcher.
 
 ## Measured results
 
+Collective figures use **latency for small messages** and **bandwidth for large
+messages**. Fusion figures show complete-operation time or token throughput.
+
 ### Single node: collective schedules
 
-![AllReduce speedup over two NCCL versions from 1 KiB to 1 GiB](docs/assets/allreduce.svg)
+![AllReduce small-message latency and large-message bus bandwidth on four L4 GPUs](docs/assets/allreduce.svg)
 
-On four L4s, the float32 AllReduce sweep wins at **19 of 21** sizes against
-both tested NCCL versions. At 1 KiB it takes **6.08 µs**, versus
+On four L4s, the float32 AllReduce sweep has lower median time at **19 of 21**
+sizes than both tested NCCL versions. At 1 KiB it takes **6.08 µs**, versus
 **17.29/19.54 µs** for NCCL 2.18.3/2.28.7. At 1 GiB it reaches
 **20.13 GB/s bus bandwidth**, versus **17.01/18.49 GB/s**. This historical
 summary selects the fastest correct UCCL Lite variant per size; some mid-size
 differences are ties. [Full sweep and method](benchmarks/README.md).
 
-![All-to-All speedup over default NCCL transport](docs/assets/alltoall.svg)
+![All-to-All small-message latency and large-message aggregate bandwidth](docs/assets/alltoall.svg)
 
-The scheduled All-to-All path reaches **74.47 GB/s aggregate** at
-256 MiB/rank, with **1.17–4.20×** speedup over the recorded default NCCL
-transport. This aggregate traffic metric differs from AllReduce bus bandwidth.
-The four-GPU direct-peer AG/RS path reaches **1.11× / 1.14×** over NCCL 2.28.7
-at 32 MiB; both paths regress on small messages. [AG/RS sweep and ownership
+At 1 KiB, scheduled All-to-All takes **5.21 µs** versus **21.9 µs** for the
+recorded default NCCL transport. At 256 MiB/rank it reaches **74.47 GB/s
+aggregate** versus **55.79 GB/s**. Aggregate traffic differs from AllReduce
+bus bandwidth. For direct-peer AG/RS at 32 MiB, measured bus bandwidth is
+**18.19 / 17.56 GB/s** versus **16.46 / 15.42 GB/s** for NCCL 2.28.7;
+both paths regress on small messages. [AG/RS sweep and ownership
 rules](docs/peer-ag-rs.md).
 
 ### Two nodes: large-message collectives
 
-![Two-node AllGather, ReduceScatter, and AllReduce speedup over NCCL at 32 MiB to 1 GiB](docs/assets/multinode-peer.svg)
+![Two-node AllGather, ReduceScatter, and AllReduce bus bandwidth at 64 MiB and 1 GiB](docs/assets/multinode-peer.svg)
 
 At 1 GiB on two four-L4 nodes, **AllGather / ReduceScatter / AllReduce** reach
-**1.14× / 1.15× / 1.09×** over NCCL 2.28.7. These are three paired runs with
-slowest-rank CUDA-event timing; AG/RS are out of place and AR is in place.
-The figure shows 32 MiB–1 GiB, where the direct ring paths are useful.
-Small-message regressions, timing ranges, and the complete 1 KiB–1 GiB sweeps
-remain in the [two-node results](docs/multinode.md).
+**18.23 / 17.62 / 17.79 GB/s bus bandwidth**, versus **16.02 / 15.36 /
+16.31 GB/s** for NCCL 2.28.7. These are three paired runs with slowest-rank
+CUDA-event timing; AG/RS are out of place and AR is in place. Small messages
+can lose: at 1 KiB, AG takes **97.66 µs** versus **19.36 µs** for NCCL.
+The [two-node results](docs/multinode.md) include small-message latency,
+timing ranges, and the complete sweeps.
 
 ### Communication–compute fusion
 
-![Dense AG+GEMM, GEMM+RS, and GEMM+AR speedup across eight shapes](docs/assets/dense-fusion.svg)
+![Complete-operation latency for three dense fusion kernels at their large reference shapes](docs/assets/dense-fusion.svg)
 
-At the large FP16 reference shapes, AG+GEMM, GEMM+RS, and GEMM+AR reach
-**1.47× / 1.24× / 1.30×** over cuBLAS + NCCL. Each row shows all eight
-recorded shapes; the large dot marks the reference shape and orange marks
-regressions. The [fusion notes](docs/fusion.md) include a labeled shape plot,
-Flux and no-overlap controls, and timing details; the underlying values are
-in the [measurement record](benchmarks/README.md).
+At the large FP16 reference shapes, fusion changes complete-operation latency
+from **22.87 → 15.58 ms** for AG+GEMM, **22.95 → 18.46 ms** for GEMM+RS, and
+**25.66 → 19.77 ms** for GEMM+AR, compared with cuBLAS + NCCL. The
+[labeled eight-shape plot](docs/fusion.md) retains small-shape regressions;
+Flux and no-overlap controls remain in the [measurement record](benchmarks/README.md).
 
-![Expert-parallel MoE dispatch and full-layer fusion speedup](docs/assets/moe-fusion.svg)
+![Expert-parallel MoE full-layer small-batch latency and large-batch token throughput](docs/assets/moe-fusion.svg)
 
-For DeepSeek-shaped BF16 expert parallelism, fusion reaches **1.48–1.61×**
-for dispatch + GEMM and **1.39–1.52×** for the full layer at large token counts.
-The full layer includes dispatch, both projections, SwiGLU, weighted reduction,
-and combine. Routing-plan construction and framework work are outside timing;
-small-token losses are visible in the figure. [Workload and controls](docs/fusion.md).
+For DeepSeek-shaped BF16 expert parallelism, the full layer at 32k tokens/rank
+takes **85.28 ms** versus **129.77 ms** for NCCL + grouped cuBLAS. That is
+**384k versus 253k tokens/s/rank** in this kernel benchmark. At eight tokens,
+fusion is slower: **2.46 versus 1.37 ms**. The full layer includes dispatch,
+both projections, SwiGLU, weighted reduction, and combine; routing-plan
+construction and framework work are outside timing. [Workload and controls](docs/fusion.md).
 
 ## Optional CPU router
 

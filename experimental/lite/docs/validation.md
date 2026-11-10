@@ -2,10 +2,11 @@
 
 ## README figure refresh — November 10, 2026
 
-The README now uses compact line and dot plots. The historical eight-GPU
+The README now uses compact line and dot plots with latency for small
+messages and bandwidth for large ones. The historical eight-GPU
 primitive figures and labeled dense shape plot live in their detailed design
 pages. Plot scripts read the same committed benchmark data; no kernel or timing
-result changed for this presentation update. All eight SVGs regenerate
+result changed for this presentation update. All nine SVGs regenerate
 deterministically, PNG previews were inspected, and local Markdown links were
 checked. The full sweeps and negative results remain in the data files.
 

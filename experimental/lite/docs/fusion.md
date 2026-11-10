@@ -19,13 +19,13 @@ and their cuBLAS+NCCL controls in one executable.
   allowing earlier AllGather traffic to overlap later GEMM work. The large
   reference shape uses two stripes; more stripes lose GEMM efficiency.
 
-| Large reference operation | cuBLAS + NCCL | UCCL Lite fused | Speedup |
+| Large reference operation | cuBLAS + NCCL | UCCL Lite fused | Time saved |
 | --- | ---: | ---: | ---: |
-| AG + GEMM, `(4096,49152,12288)` | 22.871 ms | 15.578 ms | 1.468× |
-| GEMM + RS, `(4096,12288,49152)` | 22.954 ms | 18.461 ms | 1.243× |
-| GEMM + AR, `(4096,12288,49152)` | 25.658 ms | 19.774 ms | 1.298× |
+| AG + GEMM, `(4096,49152,12288)` | 22.871 ms | 15.578 ms | 7.293 ms |
+| GEMM + RS, `(4096,12288,49152)` | 22.954 ms | 18.461 ms | 4.493 ms |
+| GEMM + AR, `(4096,12288,49152)` | 25.658 ms | 19.774 ms | 5.884 ms |
 
-![Dense fusion speedup with all eight model shapes labeled for each operation](assets/dense-fusion-shapes.svg)
+![Dense fusion and cuBLAS plus NCCL latency across eight model shapes for each operation](assets/dense-fusion-shapes.svg)
 
 These are favorable large shapes, not averages. The retained
 [shape sweep](../benchmarks/data/dense_fusion.txt) includes regressions, including
@@ -58,8 +58,10 @@ separate dispatcher being scheduled behind workers waiting for its data.
 
 The default shape is DeepSeek-V2-Lite: H=2048, I=1408, 64 experts, top-6, EP=4,
 BF16 inputs/outputs with FP32 GEMM accumulation. The Qwen build uses I=512,
-256 experts, top-8. Full-layer speedups of 1.39–1.52× are recorded from 2,048
-tokens/rank upward. At small token counts, grouped scheduling overhead exceeds
+256 experts, top-8. At 2,048 tokens/rank, the full layer takes **5.893 ms**
+versus **8.241 ms** for NCCL + grouped cuBLAS; at 32,768 tokens/rank it takes
+**85.283 versus 129.770 ms**, or **384k versus 253k tokens/s/rank**. At small
+token counts, grouped scheduling overhead exceeds
 the communication that can be hidden and fusion loses.
 
 The standalone harness constructs routing metadata outside primary timing.

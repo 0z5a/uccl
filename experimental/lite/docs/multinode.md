@@ -1,8 +1,9 @@
-# Two-node AllReduce
+# Two-node collectives
 
 All network benchmarks use two nodes with four L4 GPUs each. Local ranks 0/1
 map to `mlx5_0` and ranks 2/3 to `mlx5_1`. Reported latency is the slowest of
-eight ranks; bus bandwidth uses the eight-rank factor `2*(8-1)/8 = 1.75`.
+eight ranks. Bus bandwidth multiplies complete bytes per rank divided by time
+by `7/4` for AllReduce and `7/8` for AllGather/ReduceScatter.
 
 ## Hierarchical GPUDirect
 
@@ -27,9 +28,9 @@ messages lose because dependent proxy phases impose an approximately 80 µs floo
 A fresh [paired current-source sweep](../benchmarks/data/multinode_peer_20261110/summary_ar.csv)
 uses one fixed default UCCL Lite configuration and NCCL 2.28.7 in-place
 AllReduce, both with slowest-rank CUDA events. Across 32 MiB–1 GiB, all six
-sizes have non-overlapping three-run ranges and at least 3% median gain. At
-64 MiB, latency is **6.888 versus 7.303 ms** (**1.06×**); at 1 GiB, it is
-**105.620 versus 115.184 ms** (**1.09×**). This current result is separate
+sizes have non-overlapping three-run ranges and higher UCCL Lite bandwidth. At
+64 MiB, bus bandwidth is **17.05 versus 16.08 GB/s**; at 1 GiB, it is
+**17.79 versus 16.31 GB/s**. This current result is separate
 from the older best-per-size comparison above.
 
 ## Hierarchical AllGather and ReduceScatter
@@ -58,32 +59,39 @@ launch occupancy check rejects grids that cannot reside together, because the
 kernels synchronize across the grid. Earlier GPU-packing and prepacked-input
 experiments remain archived but are excluded from the final comparison.
 
-![Two-node AllGather, ReduceScatter, and AllReduce speedup over NCCL at 32 MiB to 1 GiB](assets/multinode-peer.svg)
+![Two-node AllGather and ReduceScatter small-message latency versus NCCL](assets/multinode-latency.svg)
 
-The figure uses the [32–64 MiB paired summary](../benchmarks/data/multinode_peer_20261110/summary.csv),
+At 1 KiB, AllGather takes **97.66 µs** versus **19.36 µs** for NCCL 2.28.7,
+and ReduceScatter takes **100.66 versus 23.03 µs**. At 1 MiB, AG reaches
+**111.92 versus 119.60 µs**, while RS still loses at **189.54 versus
+103.76 µs**. The latency figure omits the anomalous 512-KiB NCCL point;
+the complete sweep retains it.
+
+![Two-node AllGather, ReduceScatter, and AllReduce bus bandwidth at 64 MiB and 1 GiB](assets/multinode-peer.svg)
+
+The bandwidth figure uses the [32–64 MiB paired summary](../benchmarks/data/multinode_peer_20261110/summary.csv),
 [128 MiB–1 GiB summary](../benchmarks/data/multinode_peer_20261110/summary_large.csv),
 and [in-place AR summary](../benchmarks/data/multinode_peer_20261110/summary_ar.csv).
-At 64 MiB, AllGather takes **3.175 ms** versus **3.819 ms** for NCCL 2.28.7
-(**1.20×**), and ReduceScatter takes **3.382 ms** versus **3.972 ms**
-(**1.17×**). At 32 MiB, the corresponding speedups are **1.20× / 1.15×**.
-Both paths lose on small messages: at 1 KiB, AG takes 97.66 versus 19.36 µs
-and RS takes 100.66 versus 23.03 µs. RS also loses at 1 MiB, 189.54 versus
-103.76 µs. The full
+At 64 MiB, AG/RS/AR reach **18.50 / 17.36 / 17.05 GB/s** versus
+**15.38 / 14.78 / 16.08 GB/s** for NCCL. The full
 [128-MiB–1-GiB paired sweep](../benchmarks/data/multinode_peer_20261110/summary_large.csv)
 extends the checked comparison:
 
-| Complete bytes/rank | AG UCCL / NCCL | AG speedup | RS UCCL / NCCL | RS speedup |
-| ---: | ---: | ---: | ---: | ---: |
-| 128 MiB | 6.453 / 7.374 ms | 1.14× | 6.697 / 7.701 ms | 1.15× |
-| 256 MiB | 12.945 / 14.679 ms | 1.13× | 13.354 / 15.369 ms | 1.15× |
-| 512 MiB | 25.869 / 29.284 ms | 1.13× | 26.742 / 30.615 ms | 1.14× |
-| 1 GiB | 51.539 / 58.647 ms | 1.14× | 53.336 / 61.160 ms | 1.15× |
+| Complete bytes/rank | AG UCCL / NCCL | RS UCCL / NCCL | AR UCCL / NCCL |
+| ---: | ---: | ---: | ---: |
+| 128 MiB | 18.20 / 15.93 | 17.54 / 15.25 | 16.96 / 16.18 |
+| 256 MiB | 18.14 / 16.00 | 17.59 / 15.28 | 16.97 / 16.29 |
+| 512 MiB | 18.16 / 16.04 | 17.57 / 15.34 | 17.50 / 16.29 |
+| 1 GiB | 18.23 / 16.02 | 17.62 / 15.36 | 17.79 / 16.31 |
 
-The full 1-KiB–1-GiB AG/RS data retain every regression. The figure focuses on
-32 MiB–1 GiB, where all three operations have comparable paired measurements.
-At 512 KiB the NCCL AG/RS timing is anomalously high; at 8 MiB one RS run is
-slow. Both points remain in the full CSVs and are omitted from this large-size
-view.
+All table values are bus bandwidth in decimal GB/s. This uses complete bytes
+per rank divided by time, multiplied by `7/8` for AG/RS and `7/4` for AR.
+
+The full 1-KiB–1-GiB AG/RS data retain every regression. The bandwidth figure
+selects 64 MiB and 1 GiB; all intermediate points remain in the CSVs. At
+512 KiB the NCCL AG/RS timing is anomalously high, and at 8 MiB one RS run
+is slow. Those points are retained in the data and excluded from the selected
+latency view.
 
 These are three paired repetitions, alternating backend order. Each repetition
 has five warmups and ten timed calls. Both use one GPU per MPI rank, eight ranks,

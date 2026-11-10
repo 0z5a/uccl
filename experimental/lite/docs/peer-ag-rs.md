@@ -39,16 +39,27 @@ values. Allocation, fill and correctness checking are outside timing. The
 complete file also retains each backend's min/max run values. No per-size
 variant selection is used.
 
-| Full bytes per rank | AG peer / NCCL | AG speedup | RS peer / NCCL | RS speedup |
-| ---: | ---: | ---: | ---: | ---: |
-| 1 KiB | 56.42 / 19.43 µs | 0.34× | 79.97 / 19.66 µs | 0.25× |
-| 1 MiB | 77.33 / 83.34 µs | 1.08× | 108.95 / 76.49 µs | 0.70× |
-| 8 MiB | 371.59 / 397.31 µs | 1.07× | 388.61 / 418.30 µs | 1.08× |
-| 16 MiB | 706.57 / 768.90 µs | 1.09× | 729.29 / 820.74 µs | 1.13× |
-| 32 MiB | 1383.78 / 1529.04 µs | 1.11× | 1433.29 / 1632.46 µs | 1.14× |
-| 64 MiB | 2816.81 / 3037.29 µs | 1.08× | 3111.01 / 3065.24 µs | 0.99× |
+Small-message latency (peer / NCCL, lower is better):
 
-AG has a lower median on 7/17 sizes, from 1 through 64 MiB, with
+| Complete bytes/rank | AllGather | ReduceScatter |
+| ---: | ---: | ---: |
+| 1 KiB | 56.42 / 19.43 µs | 79.97 / 19.66 µs |
+| 1 MiB | 77.33 / 83.34 µs | 108.95 / 76.49 µs |
+
+Large-message bus bandwidth (peer / NCCL, higher is better):
+
+| Complete bytes/rank | AllGather | ReduceScatter |
+| ---: | ---: | ---: |
+| 8 MiB | 16.93 / 15.84 GB/s | 16.19 / 15.04 GB/s |
+| 16 MiB | 17.81 / 16.36 GB/s | 17.25 / 15.33 GB/s |
+| 32 MiB | 18.19 / 16.46 GB/s | 17.56 / 15.42 GB/s |
+| 64 MiB | 17.87 / 16.57 GB/s | 16.18 / 16.42 GB/s |
+
+For four ranks, bus bandwidth is complete bytes per rank divided by time,
+multiplied by `3/4`. It is a useful-byte collective metric, not one PCIe
+link's wire rate.
+
+AG has a lower median latency on 7/17 sizes, from 1 through 64 MiB, with
 non-overlapping recorded timing ranges. RS has a lower median on 4/17 sizes;
 its 4-MiB advantage is only 1.2%, while 8–32 MiB exceed 3% with
 non-overlapping ranges. The small-message and 64-MiB RS losses remain in the

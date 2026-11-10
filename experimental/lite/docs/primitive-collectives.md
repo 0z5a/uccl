@@ -19,7 +19,8 @@ The retained CSV SHA-256 is
 `3703360a23ba17b4f1ac22c4cd0a37e425381e56af265823765d914f0f7bebdc`.
 It contains 288 summary rows: three collectives × two placements × two backends
 × 24 sizes. AllReduce rows are retained for completeness; the README uses this
-file only for the eight-GPU standalone AllGather and ReduceScatter figures.
+file for its historical eight-GPU result table, and this page shows the
+standalone AllGather and ReduceScatter figures.
 
 The data import was followed by a modular runtime port with new four-GPU
 validation. No application integration or NCCL interposition adapter is included.
@@ -62,20 +63,20 @@ explicit SM transport, with no internal NCCL fallback or per-size backend switch
 
 ## Reading the figures
 
-![Historical eight-L4 AllGather speedup by placement](assets/allgather.svg)
+![Historical eight-L4 AllGather small-message latency and large-message bus bandwidth](assets/allgather.svg)
 
-![Historical eight-L4 ReduceScatter speedup by placement](assets/reducescatter.svg)
+![Historical eight-L4 ReduceScatter small-message latency and large-message bus bandwidth](assets/reducescatter.svg)
 
 For both operations, decimal bus bandwidth is algorithm bandwidth × `7/8`.
 AllGather's byte count is the complete output on each rank; ReduceScatter's
 byte count is the complete input on each rank. It is not a single peer's payload
 and not one physical PCIe link's wire rate.
 
-Each line shows the ratio of NCCL median latency to CPU-router median latency
-for one placement over the full 24-size sweep; the faint band is the range
-implied by the recorded three-run min–max times. The dashed 1× line marks a
-tie. Every numeric row remains in the CSV. These eight-GPU BF16 results cannot
-be directly ranked against the four-GPU float32 results.
+Each row shows one placement. The left panels use median latency through
+512 KiB; the right panels use bus bandwidth from 1 MiB to 1 GiB. Lower latency
+and higher bandwidth are better. The full 24-size sweep and three-run min–max
+values remain in the CSV. These eight-GPU BF16 results cannot be directly
+ranked against the four-GPU float32 results.
 
 At 1 GiB in-place:
 
