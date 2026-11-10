@@ -55,35 +55,37 @@ import the application-side benchmark or imply a fresh validation of the headers
 
 ## Figure conventions
 
-The README uses grouped bars with a consistent blue palette: dark navy for the
-primary UCCL Lite path, lighter blues for reference or intermediate variants.
-All bar axes start at zero. Speedup panels show a dashed 1× baseline and preserve
-regressions. Only existing measurements are plotted; no missing series are
-interpolated and no uncertainty is invented.
+Compact line and dot plots use the same palette throughout: blue for UCCL Lite
+gains, amber for regressions, teal or purple for a second measured series.
+The dashed 1× line is the stated NCCL or cuBLAS+NCCL baseline. Faint bands
+show ranges computed from recorded min–max or paired-run ratios where those
+values exist; no uncertainty is invented for files that only retain medians.
 
-The standalone collective figures select representative message sizes to
-keep bars legible. The full numerical sweeps remain in the data files. Dense
-fusion uses the later "Current full comparison" block, not the superseded
-exploratory numbers. Flux latencies are normalized to the same cuBLAS+NCCL
-baseline as UCCL Lite, while retaining the different-harness caveat. The EP-MoE
-panels show their full available token ranges, which differ between the two logs.
+The single-node AllReduce and historical eight-GPU AG/RS plots show the full
+recorded size sweeps. The All-to-All plot shows every size in its compact
+summary. Dense fusion shows the fused path at all eight shapes per operation;
+its no-overlap and Flux controls remain in the source file and
+[fusion notes](../docs/fusion.md). MoE shows the complete token ranges for
+the fused path, including small-batch regressions. The two-node chart focuses
+on 32 MiB–1 GiB so the large-message AG, RS, and AR curves can be compared on
+one scale; the full AG/RS sweep, including the 512-KiB NCCL anomaly, remains
+in the CSVs.
 
-## Regenerate README figures
+## Regenerate figures
 
 ```bash
 python3 scripts/plot_results.py
 python3 scripts/plot_multinode_peer.py
 ```
 
-Requires Matplotlib and NumPy. `plot_results.py` reads the committed CSV/text
-data and regenerates the original six SVGs under `docs/assets/`: four-GPU AllReduce, eight-GPU
-standalone AllGather and ReduceScatter (each showing both placements), All-to-All,
-dense fusion, and EP-MoE. It performs no GPU work and runs no benchmarks.
-`plot_multinode_peer.py` draws the seventh SVG from the validated paired
-two-node AG/RS summary. Historical TP-MoE and older two-node AR records remain
-archived without README figures.
+Requires Matplotlib and NumPy. `plot_results.py` reads committed CSV/text data
+and regenerates seven SVGs under `docs/assets/`: four-GPU AllReduce and All-to-All,
+historical eight-GPU AG/RS, dense-fusion overview and labeled shapes, and EP-MoE. The historical AG/RS
+figures now appear in [primitive results](../docs/primitive-collectives.md).
+`plot_multinode_peer.py` draws the eighth SVG from the validated paired
+two-node AG, RS, and AR summaries. Neither script runs GPU work or benchmarks.
 Use `python3 scripts/plot_results.py --preview` to also export PNG and PDF copies
 under ignored `build/figures/` for inspection or reuse in a technical report.
-`python3 scripts/plot_multinode_peer.py --preview` exports its PNG there.
+`python3 scripts/plot_multinode_peer.py --preview` exports PNG/PDF copies there.
 For fresh measurements, use the commands in [build.md](../docs/build.md), keep
 correctness enabled, and save the complete run configuration with each result.

@@ -25,6 +25,8 @@ and their cuBLAS+NCCL controls in one executable.
 | GEMM + RS, `(4096,12288,49152)` | 22.954 ms | 18.461 ms | 1.243× |
 | GEMM + AR, `(4096,12288,49152)` | 25.658 ms | 19.774 ms | 1.298× |
 
+![Dense fusion speedup with all eight model shapes labeled for each operation](assets/dense-fusion-shapes.svg)
+
 These are favorable large shapes, not averages. The retained
 [shape sweep](../benchmarks/data/dense_fusion.txt) includes regressions, including
 small GEMM+AllReduce cases. Flux uses a separate harness with different timing

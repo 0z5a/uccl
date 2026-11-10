@@ -1,68 +1,67 @@
 #!/usr/bin/env python3
-"""Draw the matched two-node AG/RS comparison from validated summary data."""
+"""Draw the matched large-message two-node comparison from validated CSVs."""
 
+import argparse
 import csv
-import sys
-from pathlib import Path
+import math
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from figure_style import BLUE, PURPLE, ROOT, TEAL
+from figure_style import clean_axis, configure, heading, save
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "benchmarks/data/multinode_peer_20261110/summary.csv"
-OUTPUT = ROOT / "docs/assets/multinode-peer.svg"
-SIZES = [1 << power for power in range(20, 27)]
+
+DATA = ROOT / "benchmarks/data/multinode_peer_20261110"
+SIZES = [1 << power for power in range(25, 31)]
+
+
+def read(name: str) -> dict[tuple[str, int], dict[str, str]]:
+    with (DATA / name).open() as stream:
+        return {(row["collective"], int(row["bytes"])): row
+                for row in csv.DictReader(stream)}
 
 
 def main() -> None:
-    with DATA.open() as stream:
-        rows = {(row["collective"], int(row["bytes"])): row
-                for row in csv.DictReader(stream)}
-    fig, axis = plt.subplots(figsize=(10.2, 4.5))
-    colors = {"allgather": "#174a78", "reducescatter": "#55a0c8"}
-    names = {"allgather": "AllGather", "reducescatter": "ReduceScatter"}
-    width = 0.36
-    maximum_ratio = 1.35
-    for operation, shift in (("allgather", -width / 2),
-                             ("reducescatter", width / 2)):
-        selected = [rows[(operation, size)] for size in SIZES]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--preview", action="store_true",
+                        help="Also export PNG/PDF copies to build/figures/.")
+    args = parser.parse_args()
+    configure()
+    small = read("summary.csv")
+    large = read("summary_large.csv")
+    allreduce = read("summary_ar.csv")
+    fig, ax = plt.subplots(figsize=(9.6, 4.1))
+    heading(fig, "Two-node collectives",
+            "2 × 4 L4  ·  FP32  ·  AR in place; AG/RS out of place  ·  NCCL 2.28.7")
+    fig.subplots_adjust(left=0.095, right=0.965, top=0.79, bottom=0.19)
+    clean_axis(ax)
+    for operation, label, color, records in (
+        ("allgather", "AllGather", BLUE, small | large),
+        ("reducescatter", "ReduceScatter", TEAL, small | large),
+        ("allreduce", "AllReduce", PURPLE, allreduce),
+    ):
+        selected = [records[operation, size] for size in SIZES]
         values = [float(row["speedup"]) for row in selected]
         lower = [float(row["paired_min_speedup"]) for row in selected]
         upper = [float(row["paired_max_speedup"]) for row in selected]
-        maximum_ratio = max(maximum_ratio, max(upper) * 1.08)
-        if any(lo > value or value > hi
+        if any(not all(math.isfinite(x) and x > 0 for x in (lo, value, hi))
+               or lo > value or value > hi
                for lo, value, hi in zip(lower, values, upper)):
-            raise ValueError("ratio of medians lies outside paired run range")
-        axis.bar([index + shift for index in range(len(SIZES))], values,
-                 width, color=colors[operation], label=names[operation],
-                 yerr=[[value - lo for value, lo in zip(values, lower)],
-                       [hi - value for value, hi in zip(values, upper)]],
-                 capsize=2, error_kw={"elinewidth": 1})
-    axis.axhline(1, color="#333333", linestyle="--", linewidth=1)
-    axis.set_xticks(range(len(SIZES)), [f"{size >> 20}" for size in SIZES])
-    axis.set_xlabel("Complete output (AG) or input (RS) per rank (MiB)")
-    axis.set_ylabel("Speedup over NCCL 2.28.7 (×)")
-    axis.set_ylim(0, maximum_ratio)
-    axis.set_title("Two nodes × four L4 GPUs · FP32 · out of place")
-    axis.grid(axis="y", alpha=0.2)
-    axis.set_axisbelow(True)
-    axis.legend(frameon=False, loc="upper left")
-    fig.text(0.5, 0.01,
-             "Bars: ratio of three-run medians; whiskers: paired run ratio "
-             "range. Values below 1× are slower than NCCL.",
-             ha="center", fontsize=9)
-    fig.tight_layout(rect=(0, 0.06, 1, 1))
-    fig.savefig(OUTPUT)
-    # Matplotlib leaves trailing spaces in SVG path commands. They are not
-    # meaningful geometry, and removing them keeps generated diffs lintable.
-    OUTPUT.write_text("\n".join(line.rstrip() for line in OUTPUT.read_text().splitlines()) + "\n")
-    if "--preview" in sys.argv[1:]:
-        preview = ROOT / "build/figures/multinode-peer.png"
-        preview.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(preview, dpi=160)
+            raise ValueError(f"invalid paired ratio range for {operation}")
+        ax.fill_between(SIZES, lower, upper, color=color, alpha=0.10, linewidth=0)
+        ax.plot(SIZES, values, marker="o", markersize=6, linewidth=2.4,
+                markeredgecolor="white", markeredgewidth=0.7,
+                color=color, label=label)
+    ax.set_xscale("log", base=2)
+    ax.set_xlim(SIZES[0] / 1.25, SIZES[-1] * 1.23)
+    ax.set_xticks(SIZES, ["32M", "64M", "128M", "256M", "512M", "1G"])
+    ax.set_xlabel("Complete tensor bytes per rank  ·  M = MiB, G = GiB")
+    ax.set_ylim(0.94, 1.29)
+    ax.legend(loc="upper right", frameon=False, ncol=3, fontsize=9.5)
+    save(fig, "multinode-peer", args.preview)
 
 
 if __name__ == "__main__":

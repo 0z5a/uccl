@@ -62,15 +62,20 @@ explicit SM transport, with no internal NCCL fallback or per-size backend switch
 
 ## Reading the figures
 
+![Historical eight-L4 AllGather speedup by placement](assets/allgather.svg)
+
+![Historical eight-L4 ReduceScatter speedup by placement](assets/reducescatter.svg)
+
 For both operations, decimal bus bandwidth is algorithm bandwidth × `7/8`.
 AllGather's byte count is the complete output on each rank; ReduceScatter's
 byte count is the complete input on each rank. It is not a single peer's payload
 and not one physical PCIe link's wire rate.
 
-Each figure separates in-place and out-of-place and uses representative sizes
-for latency and bandwidth. Bars are three-run medians; whiskers show the recorded
-min–max range. Every numeric row remains available in the CSV. These eight-GPU
-BF16 results cannot be directly ranked against the four-GPU float32 results.
+Each line shows the ratio of NCCL median latency to CPU-router median latency
+for one placement over the full 24-size sweep; the faint band is the range
+implied by the recorded three-run min–max times. The dashed 1× line marks a
+tie. Every numeric row remains in the CSV. These eight-GPU BF16 results cannot
+be directly ranked against the four-GPU float32 results.
 
 At 1 GiB in-place:
 

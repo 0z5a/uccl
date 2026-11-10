@@ -58,9 +58,11 @@ launch occupancy check rejects grids that cannot reside together, because the
 kernels synchronize across the grid. Earlier GPU-packing and prepacked-input
 experiments remain archived but are excluded from the final comparison.
 
-![Two-node AllGather and ReduceScatter speedup over NCCL at 1–64 MiB](assets/multinode-peer.svg)
+![Two-node AllGather, ReduceScatter, and AllReduce speedup over NCCL at 32 MiB to 1 GiB](assets/multinode-peer.svg)
 
-The figure uses the [matched paired summary](../benchmarks/data/multinode_peer_20261110/summary.csv).
+The figure uses the [32–64 MiB paired summary](../benchmarks/data/multinode_peer_20261110/summary.csv),
+[128 MiB–1 GiB summary](../benchmarks/data/multinode_peer_20261110/summary_large.csv),
+and [in-place AR summary](../benchmarks/data/multinode_peer_20261110/summary_ar.csv).
 At 64 MiB, AllGather takes **3.175 ms** versus **3.819 ms** for NCCL 2.28.7
 (**1.20×**), and ReduceScatter takes **3.382 ms** versus **3.972 ms**
 (**1.17×**). At 32 MiB, the corresponding speedups are **1.20× / 1.15×**.
@@ -77,10 +79,11 @@ extends the checked comparison:
 | 512 MiB | 25.869 / 29.284 ms | 1.13× | 26.742 / 30.615 ms | 1.14× |
 | 1 GiB | 51.539 / 58.647 ms | 1.14× | 53.336 / 61.160 ms | 1.15× |
 
-The full 1-KiB–1-GiB data retain every regression. The figure shows 1–64 MiB
-so the 512-KiB NCCL timing anomaly does not compress the useful range. Its
-8-MiB RS whisker includes one slow NCCL run; the ranges overlap there, so
-that bar is not a stable gain.
+The full 1-KiB–1-GiB AG/RS data retain every regression. The figure focuses on
+32 MiB–1 GiB, where all three operations have comparable paired measurements.
+At 512 KiB the NCCL AG/RS timing is anomalously high; at 8 MiB one RS run is
+slow. Both points remain in the full CSVs and are omitted from this large-size
+view.
 
 These are three paired repetitions, alternating backend order. Each repetition
 has five warmups and ten timed calls. Both use one GPU per MPI rank, eight ranks,

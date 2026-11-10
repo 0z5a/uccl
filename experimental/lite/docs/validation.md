@@ -1,5 +1,14 @@
 # Validation and limitations
 
+## README figure refresh — November 10, 2026
+
+The README now uses compact line and dot plots. The historical eight-GPU
+primitive figures and labeled dense shape plot live in their detailed design
+pages. Plot scripts read the same committed benchmark data; no kernel or timing
+result changed for this presentation update. All eight SVGs regenerate
+deterministically, PNG previews were inspected, and local Markdown links were
+checked. The full sweeps and negative results remain in the data files.
+
 ## Hardware profiler and local-only router policy — November 10, 2026
 
 `make hardware_profiler router-checks adaptive-collectives` builds on the
