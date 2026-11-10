@@ -12,7 +12,7 @@ UCCL Lite is an experimental collection of CUDA collective kernels, an
 optional CPU router, fusion kernels, and hardware probes. The direct peer paths
 target **four NVIDIA L4 GPUs on a PCIe Gen4 dual-socket node**; the network
 paths target **two such nodes**, with two NIC rails per node. The CPU router is
-a separate BF16 module for 1–32 local GPUs. Most collective and fusion paths
+a separate module for 1–32 local GPUs. Most collective and fusion paths
 use MSCCL++; standalone peer AG/RS uses CUDA peer copies.
 
 The current result refresh uses an **8xL4 GPU host with four GPUs per NUMA
@@ -24,19 +24,11 @@ small GEMMs can lose to NCCL; full sweeps and negative results are retained.
 
 | Component | Purpose |
 | --- | --- |
-| [Hardware profiler](docs/hardware-profiler.md) | Discover PCI/NUMA/peer topology; measure directed and concurrent GPU transfers, CPU copy, and BF16 reduction bandwidth. |
-| [Single-node collectives](docs/collectives.md) | Float32 AllReduce and All-to-All schedules, plus [direct-peer AllGather and ReduceScatter](docs/peer-ag-rs.md). |
-| [Eight-GPU local fallback](docs/collectives.md#eight-gpu-bf16-local-fallback) | Project-owned BF16 AR/AG/RS for two four-GPU NUMA groups, using peer copies within groups and pinned host staging across groups. |
-| [Eight-GPU All-to-All](docs/collectives.md#eight-gpu-bf16-all-to-all) | BF16 host and peer/host paths for two four-GPU NUMA groups, with an explicit NCCL control. |
-| [Two-node collectives](docs/multinode.md) | Eight-rank AllReduce, AllGather, and ReduceScatter over local CUDA IPC and two GPUDirect rails. |
-| [Optional CPU router](docs/cpu-router.md) | BF16 AR/AG/RS over NUMA-local host memory, selected only with matching local benefit evidence. |
-| [Fusion kernels](docs/fusion.md) | AG+GEMM, GEMM+RS, GEMM+AR, and expert-parallel MoE pipelines. |
-
-The four-GPU peer kernels assume `(GPU 0, GPU 1)` on NUMA node 0 and
-`(GPU 2, GPU 3)` on NUMA node 1, with a large-message ring
-**0 → 1 → 3 → 2 → 0**. This 8xL4 GPU host instead has GPUs 0–3 and 4–7 on
-the two NUMA nodes. Moving to another order or interconnect needs a topology
-check and new crossover measurements.
+| [Profiler](docs/hardware-profiler.md) | Inspect GPU, PCIe, and NUMA topology and measure transfer bandwidth. |
+| [Single-node collectives](docs/collectives.md) | AllReduce, AllGather, ReduceScatter, and All-to-All on one node. |
+| [Multi-node collectives](docs/multinode.md) | Collective implementations across nodes using local GPU access and network rails. |
+| [CPU router](docs/cpu-router.md) | Optional NUMA-aware path for local collectives, selected from measured benefit. |
+| [Fusion kernels](docs/fusion.md) | Combine collective communication with GEMM and MoE stages. |
 
 ## Get started
 
@@ -80,7 +72,7 @@ and [benchmark archive](benchmarks/README.md).
 
 #### 8xL4 GPU
 
-This BF16 comparison uses GPUs 0–3 on NUMA node 0 and 4–7 on node 1.
+This comparison uses GPUs 0–3 on NUMA node 0 and 4–7 on node 1.
 AllReduce is in place; AllGather and ReduceScatter are out of place. Each UCCL Lite curve
 uses the fastest measured project-owned path at that size, chosen without
 looking at NCCL. The CPU router is selected for all large AR/AG/RS sizes.
@@ -121,7 +113,7 @@ small-shape regressions, remain available until then.
 
 The CPU router is a separately built library. A caller supplies its existing
 backend as a callback. The included eight-GPU example now supplies a **UCCL
-Lite two-NUMA BF16 collective** as that backend; NCCL is an optional external
+Lite two-NUMA collective** as that backend; NCCL is an optional external
 control. Automatic selection requires an **exact local** match for collective,
 dtype, byte count, placement, topology/software identity, and fallback
 identity. A candidate needs at least **3% median speedup with non-overlapping
