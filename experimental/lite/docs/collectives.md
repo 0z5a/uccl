@@ -90,6 +90,18 @@ through 4 MiB AllReduce, the router also beats the separate NCCL control at
 The earlier NCCL run is a separate control, not an automatic fallback for this
 configuration.
 
+## Eight-GPU BF16 All-to-All
+
+[alltoall_8l4_bench.cu](../benchmarks/collectives/alltoall_8l4_bench.cu)
+compares two project-owned out-of-place paths on the same two-NUMA topology:
+NUMA-pinned host staging for every nonself chunk, and local CUDA peer copies
+with host staging across the NUMA groups. Both exchange equal rank-ordered
+chunks and check every output element on all eight GPUs. The external control
+uses grouped NCCL send/recv pairs. The [full 1 MiB–1 GiB record](../benchmarks/data/alltoall_8l4_20261110/README.md)
+finds host staging the faster UCCL Lite candidate at all 11 sizes, while
+NCCL wins all 11. This is a standalone eager benchmark, not a runtime
+All-to-All selector.
+
 ## Boundaries
 
 These are specialized algorithms, not an NCCL compatibility layer. Their

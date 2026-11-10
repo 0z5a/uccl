@@ -33,10 +33,11 @@ PROBES := gemm_probe mma_gemm_probe mma_peak_probe moe_overlap_probe cutlass_gem
 ALL_NAMES := $(COLLECTIVES) $(PEER_COLLECTIVES) $(MULTINODE) host_allreduce $(FUSION) $(PROBES)
 BIN = $(addprefix $(BUILD)/uccl_lite_,$(1))
 
-.PHONY: all single-node peer-collectives fusion probes multinode headers help $(ALL_NAMES)
+.PHONY: all single-node peer-collectives eight-gpu-alltoall fusion probes multinode headers help $(ALL_NAMES)
 all: single-node peer-collectives fusion probes headers
 single-node: $(call BIN,$(COLLECTIVES))
 peer-collectives: $(call BIN,$(PEER_COLLECTIVES))
+eight-gpu-alltoall: $(BUILD)/uccl_lite_alltoall_8l4
 fusion: $(call BIN,$(FUSION))
 probes: $(call BIN,$(PROBES))
 multinode: $(call BIN,$(MULTINODE) host_allreduce)
@@ -51,6 +52,9 @@ $(call BIN,allreduce alltoall): $(BUILD)/uccl_lite_%: src/collectives/%.cu | $(B
 
 $(BUILD)/uccl_lite_peer_ag_rs: src/collectives/peer_ag_rs.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++17 -I$(NCCL_HOME)/include $< -o $@ -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib
+
+$(BUILD)/uccl_lite_alltoall_8l4: benchmarks/collectives/alltoall_8l4_bench.cu | $(BUILD)
+	$(NVCC) $(NVCC_FLAGS) -std=c++17 -I$(NCCL_HOME)/include $< -o $@ -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib -Xcompiler=-pthread
 
 $(call BIN,$(MULTINODE)): $(BUILD)/uccl_lite_%: src/collectives/%.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++20 $(IB_INC) $(MPI_INC) $< -o $@ $(IB_LIB) $(MPI_LIB) -lcudart -lpthread
@@ -82,6 +86,7 @@ $(BUILD)/header_check.o: benchmarks/header_check.cu | $(BUILD)
 help:
 	@printf '%s\n' 'UCCL Lite targets:' '  make single-node  (default): AllReduce and All-to-All' '  make peer-collectives: four-GPU AllGather/ReduceScatter + NCCL comparison' '  make fusion: dense and expert-parallel MoE benchmarks' '  make probes: hardware topology/bandwidth and GEMM/overlap diagnostics' '  make headers: compile-check reusable MoE headers' '  make all: all of the above' '  make multinode: two-node benchmarks (Open MPI required)' '  make <name>: build one executable, e.g. multinode_allreduce' 'See docs/build.md for dependency paths and launch commands.'
 	@printf '%s\n' '  make cpu-router: optional static/shared CPU-router module' '  make local-collectives: two-NUMA BF16 fallback library' '  make adaptive-collectives: BF16 dispatcher + local/router calibration (optional NCCL control)' '  make router-checks local-collectives-check: core, policy, eager, and graph correctness executables'
+	@printf '%s\n' '  make eight-gpu-alltoall: BF16 host/peer paths against NCCL on two four-GPU NUMA groups'
 
 include src/cpu_router/module.mk
 

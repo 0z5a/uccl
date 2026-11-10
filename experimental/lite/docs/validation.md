@@ -1,5 +1,18 @@
 # Validation and limitations
 
+## Eight-L4 four-collective comparison — November 10, 2026
+
+The current single-node README compares the fastest measured UCCL Lite path
+with NCCL 2.28.9 for BF16 AR/AG/RS/A2A, 1 MiB–1 GiB. CPU-router/NCCL
+calibration completed 1,980 checked timed calls per placement. The separate
+out-of-place All-to-All experiment completed 990 checked timed calls across
+host, peer+host, and NCCL paths, checked every output element on all eight
+GPUs, and passed a 1 MiB + 128 B tail case. Host staging is the faster UCCL
+Lite A2A path at all 11 sizes, but NCCL wins all 11; this negative result is
+retained in the [full record](../benchmarks/data/alltoall_8l4_20261110/README.md).
+The [paired router/NCCL record](../benchmarks/data/router_vs_nccl_8l4_20261110/README.md)
+also retains the 1 MiB ReduceScatter regressions.
+
 ## Eight-L4 local fallback and adaptive rerun — November 10, 2026
 
 The standalone BF16 example defaults to a UCCL Lite two-NUMA fallback.

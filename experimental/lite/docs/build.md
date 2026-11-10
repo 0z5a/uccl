@@ -12,6 +12,8 @@ builds the AR/AG/RS calibration example. `make router-checks` and
 existing single-node/fusion targets. The router and local fallback use CUDA
 without NCCL; the calibration binary links NCCL for an optional external
 comparison. Its default fallback is UCCL Lite local on eight supported GPUs.
+`make eight-gpu-alltoall` builds the separate BF16 two-NUMA host/peer benchmark
+and its grouped NCCL send/recv control.
 
 ## Dependencies
 
@@ -39,6 +41,7 @@ because the measured CUDA 12.9 compiler had a frontend failure with C++20.
 # Required paths can be supplied on every make invocation.
 make -j2 single-node MSCCLPP_HOME=/path/to/mscclpp
 make peer_ag_rs NCCL_HOME=/path/to/nccl/build
+make eight-gpu-alltoall NCCL_HOME=/path/to/nccl/build
 make -j2 fusion MSCCLPP_HOME=/path/to/mscclpp \
   CUTLASS_HOME=/path/to/cutlass NCCL_HOME=/path/to/nccl/build
 make -j2 probes CUTLASS_HOME=/path/to/cutlass
@@ -84,6 +87,14 @@ flags are `-w` warmups, `-n` iterations, and `-c` correctness checking. MoE's
 `-c 2` for the full-layer independent reference check. Keep checking enabled
 when porting; some harnesses print an error metric without returning failure,
 so inspect `maxrelerr`, `badrow`, and `bad` in the output as well as exit codes.
+
+On the current eight-L4 host, the out-of-place BF16 All-to-All benchmark checks
+every output element on all ranks and accepts a non-power-of-two tail size:
+
+```bash
+./build/uccl_lite_alltoall_8l4 --begin 1048704 --end 1048704 \
+  --warmup 1 --iterations 1 --repeats 3
+```
 
 ## Two-node build
 
