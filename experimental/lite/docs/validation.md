@@ -62,7 +62,7 @@ small messages and bandwidth for large ones, and paired latency bars for
 fusion. The historical eight-GPU
 primitive figures and labeled dense shape plot live in their detailed design
 pages. Plot scripts read the same committed benchmark data; no kernel or timing
-result changed for this presentation update. All nine SVGs regenerate
+result changed for this presentation update. The then-current nine SVGs regenerated
 deterministically, PNG previews were inspected, and local Markdown links were
 checked. The full sweeps and negative results remain in the data files.
 

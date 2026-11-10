@@ -12,7 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from figure_style import BASELINE, BLUE, GRID, MUTED, ROOT, SECOND_BASELINE
+from figure_style import BASELINE, BLUE, GRID, MUTED, ROOT
 from figure_style import clean_axis, configure, heading, save
 
 
@@ -36,13 +36,6 @@ def size_label(size: int) -> str:
     return f"{size} B"
 
 
-def two_panels(title: str, subtitle: str, *, height: float = 4.7):
-    fig, axes = plt.subplots(1, 2, figsize=(10.5, height))
-    heading(fig, title, subtitle, left=0.075)
-    fig.subplots_adjust(left=0.085, right=0.985, top=0.70, bottom=0.17, wspace=0.29)
-    return fig, axes
-
-
 def size_axis(ax, sizes, ticks, title: str, ylabel: str, top: float) -> None:
     clean_axis(ax)
     ax.set_title(title, loc="left", pad=12)
@@ -54,80 +47,11 @@ def size_axis(ax, sizes, ticks, title: str, ylabel: str, top: float) -> None:
     ax.set_xlabel("Complete tensor bytes per rank")
 
 
-def measured_line(ax, sizes, values, label: str, color: str, *, dashed=False):
+def measured_line(ax, sizes, values, label: str, color: str):
     positive(values, label)
     ax.plot(sizes, values, color=color, linewidth=2.2,
-            linestyle=(0, (5, 3)) if dashed else "-",
             marker="o", markersize=4.8, markeredgecolor="white",
             markeredgewidth=0.7, label=label)
-
-
-def allreduce(preview: bool) -> None:
-    data = {(int(row["bytes"]), row["backend"]): row
-            for row in rows("allreduce_single_node.csv")}
-    all_sizes = sorted(size for size, backend in data if backend == "uccl_lite_main")
-    if len(all_sizes) != 21:
-        raise ValueError("AllReduce sweep must have 21 sizes")
-    small = [size for size in all_sizes if size <= 1 << 19]
-    large = [size for size in all_sizes if size >= 1 << 20]
-    series = (
-        ("UCCL Lite", "uccl_lite_main", BLUE, False),
-        ("NCCL 2.18.3", "nccl218", BASELINE, False),
-        ("NCCL 2.28.7", "nccl228", SECOND_BASELINE, True),
-    )
-    fig, axes = two_panels(
-        "Single-node AllReduce",
-        "4 × L4  ·  FP32  ·  three-run medians  ·  UCCL variant chosen per size",
-    )
-    for ax, sizes, field, title, ylabel, ticks in (
-        (axes[0], small, "median_us", "Small messages · latency ↓", "Latency (µs)",
-         [1 << power for power in (10, 14, 18)]),
-        (axes[1], large, "bus_bw_gbs", "Large messages · bus bandwidth ↑",
-         "Bus bandwidth (GB/s)", [1 << power for power in (20, 22, 26, 30)]),
-    ):
-        values_by_series = []
-        for label, backend, color, dashed in series:
-            values = [float(data[size, backend][field]) for size in sizes]
-            measured_line(ax, sizes, values, label, color, dashed=dashed)
-            values_by_series.extend(values)
-        size_axis(ax, sizes, ticks, title, ylabel, max(values_by_series) * 1.16)
-    fig.legend(*axes[0].get_legend_handles_labels(), loc="upper right",
-               bbox_to_anchor=(0.985, 0.855), ncol=3, frameon=False, fontsize=9.5)
-    save(fig, "allreduce", preview)
-
-
-def alltoall(preview: bool) -> None:
-    data = {int(row["size_bytes"]): row for row in rows("collectives.csv")
-            if row["collective"] == "alltoall"}
-    all_sizes = sorted(data)
-    small = [size for size in all_sizes if size <= 1 << 18]
-    large = [size for size in all_sizes if size >= 1 << 20]
-    fig, axes = two_panels(
-        "Single-node All-to-All",
-        "4 × L4  ·  FP32  ·  fastest correct UCCL schedule per size",
-    )
-    for ax, sizes, title, ylabel, ticks, bandwidth in (
-        (axes[0], small, "Small messages · latency ↓", "Latency (µs)",
-         [1 << power for power in (10, 14, 18)], False),
-        (axes[1], large, "Large messages · aggregate bandwidth ↑",
-         "Aggregate bandwidth (GB/s)",
-         [1 << power for power in (20, 22, 26, 28)], True),
-    ):
-        values_by_series = []
-        for label, field, color in (
-            ("UCCL Lite", "uccl_lite_us", BLUE),
-            ("NCCL 2.28.7", "nccl_us", BASELINE),
-        ):
-            latencies = [float(data[size][field]) for size in sizes]
-            values = ([3 * size / latency / 1000
-                       for size, latency in zip(sizes, latencies)]
-                      if bandwidth else latencies)
-            measured_line(ax, sizes, values, label, color)
-            values_by_series.extend(values)
-        size_axis(ax, sizes, ticks, title, ylabel, max(values_by_series) * 1.16)
-    fig.legend(*axes[0].get_legend_handles_labels(), loc="upper right",
-               bbox_to_anchor=(0.985, 0.855), ncol=2, frameon=False, fontsize=9.5)
-    save(fig, "alltoall", preview)
 
 
 def primitive_collectives(preview: bool) -> None:
@@ -216,37 +140,6 @@ def dense_label(model: str, m: int) -> str:
 
 def dense(preview: bool) -> None:
     records = dense_records()
-    overview, ax = plt.subplots(figsize=(9.6, 4.4))
-    heading(overview, "Dense fusion · large reference shapes",
-            "4 × L4  ·  FP16  ·  complete operation latency  ·  lower is better")
-    overview.subplots_adjust(left=0.29, right=0.965, top=0.73, bottom=0.16)
-    operations = (("AG", "AllGather + GEMM"),
-                  ("RS", "GEMM + ReduceScatter"),
-                  ("AR", "GEMM + AllReduce"))
-    y = np.arange(len(operations))
-    baseline = [records[operation][-1][2] for operation, _ in operations]
-    fused = [records[operation][-1][3] for operation, _ in operations]
-    ax.barh(y + 0.18, baseline, height=0.32, color=BASELINE,
-            label="cuBLAS + NCCL")
-    ax.barh(y - 0.18, fused, height=0.32, color=BLUE,
-            label="UCCL Lite fused")
-    ax.set_xlim(0, 30)
-    ax.set_xticks(range(0, 31, 5))
-    ax.set_yticks(y, [name for _, name in operations])
-    ax.set_ylim(len(operations) - 0.6, -0.6)
-    ax.tick_params(axis="both", which="both", length=0, pad=8)
-    ax.set_axisbelow(True)
-    ax.grid(axis="x", color=GRID, linewidth=0.8)
-    for row, (base, own) in enumerate(zip(baseline, fused)):
-        ax.text(base + 0.25, row + 0.18, f"{base:.2f}", va="center", fontsize=9)
-        ax.text(own + 0.25, row - 0.18, f"{own:.2f}", va="center", fontsize=9)
-    ax.set_xlabel("Complete-operation latency (ms) ↓")
-    handles, labels = ax.get_legend_handles_labels()
-    overview.legend(handles[::-1], labels[::-1], loc="upper right",
-                    bbox_to_anchor=(0.965, 0.85), ncol=2,
-                    frameon=False, fontsize=9.5)
-    save(overview, "dense-fusion", preview)
-
     fig, axes = plt.subplots(3, 2, figsize=(14.8, 12.5))
     heading(fig, "Dense fusion · all recorded shapes",
             "4 × L4  ·  FP16  ·  complete-operation latency  ·  lower is better",
@@ -355,8 +248,6 @@ def main() -> None:
                         help="Also export PNG/PDF copies to build/figures/.")
     args = parser.parse_args()
     configure()
-    allreduce(args.preview)
-    alltoall(args.preview)
     primitive_collectives(args.preview)
     dense(args.preview)
     moe(args.preview)

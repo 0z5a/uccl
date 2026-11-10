@@ -38,7 +38,7 @@ validation is recorded separately in [validation.md](../docs/validation.md).
 | [local_fallback_8l4_20261110/README.md](data/local_fallback_8l4_20261110/README.md) | Earlier same-day local v2/router calibration, retained with its small-message regression and complete negative results. Its profiles cannot select the revised code. |
 | [cpu_router_8l4_20261110/README.md](data/cpu_router_8l4_20261110/README.md) | Earlier same-day eight-L4 BF16 router versus NCCL 2.28.9 control, both placements. Hardware probe, paired timings and old NCCL-backed profiles remain for external comparison; they cannot select against the new UCCL Lite fallback. |
 | [primitives_8l4.csv](data/primitives_8l4.csv) | October 12 matched CPU-router primitive rerun after the ReduceScatter fix. Single node, eight L4s, BF16, no GPU P2P; both placements, two retained backends, 24 sizes, three runs. Used for standalone AG/RS charts, not automatic backend selection. [Provenance and port status](../docs/primitive-collectives.md). |
-| [collectives.csv](data/collectives.csv) | Earlier compact single-node tables. The AllReduce rows are an older sweep; use the newer single-node CSV for the README figure. |
+| [collectives.csv](data/collectives.csv) | Earlier compact single-node tables. The AllReduce rows are an older sweep; the current README uses the eight-L4 summary instead. |
 | [alltoall.txt](data/alltoall.txt), [nccl_alltoall.txt](data/nccl_alltoall.txt) | All-to-All algorithm ladder and the default NCCL transport baseline. |
 | [dense_fusion.txt](data/dense_fusion.txt) | September dense shape sweeps, including NCCL, no-overlap, fusion, and Flux controls. Later blocks supersede earlier exploratory blocks. |
 | [moe_dispatch.txt](data/moe_dispatch.txt) | Dispatch + GEMM; grouped cuBLAS baseline, settled/interleaved variants. Routing-plan construction excluded. |
@@ -65,15 +65,15 @@ import the application-side benchmark or imply a fresh validation of the headers
 
 Figures now use absolute metrics. Small collective messages use latency in
 microseconds; large messages use bus or aggregate bandwidth in GB/s. Lower
-latency and higher bandwidth are better. Blue marks UCCL Lite and gray the
-stated baseline. The fusion figures use paired latency bars for each shape.
+latency and higher bandwidth are better. The current 8xL4 GPU figures use
+blue for UCCL-Lite and orange for NCCL; historical figures retain their
+recorded palettes. The fusion figures use paired latency bars for each shape.
 The recorded min–max timing ranges remain in the CSVs rather than being
 presented as confidence intervals.
 
-Single-node AllReduce, All-to-All, current eight-L4, and historical eight-GPU AG/RS figures
-split their recorded sweeps between small-message latency and large-message
-bandwidth. The dense overview compares complete-operation latency at the large
-reference shapes; the [labeled shape plot](../docs/fusion.md) keeps all eight
+The current eight-L4 and historical eight-GPU AG/RS figures split their
+recorded sweeps between small-message latency and large-message bandwidth.
+The [labeled dense shape plot](../docs/fusion.md) keeps all eight
 shapes, including regressions. MoE shows full-layer latency at every recorded
 token count, split into three panels with linear millisecond scales. The
 two-node large-message latency bars select 64 MiB and 1 GiB, and
@@ -91,15 +91,15 @@ python3 scripts/plot_cpu_router_8l4.py
 ```
 
 Requires Matplotlib and NumPy. `plot_results.py` reads committed CSV/text data
-and regenerates seven SVGs under `docs/assets/`: four-GPU AllReduce and All-to-All,
-historical eight-GPU AG/RS, dense-fusion overview and labeled shapes, and EP-MoE. The historical AG/RS
+and regenerates four SVGs under `docs/assets/`: historical eight-GPU AG/RS,
+the labeled dense-fusion shapes, and EP-MoE. The historical AG/RS
 figures now appear in [primitive results](../docs/primitive-collectives.md).
 `plot_multinode_peer.py` draws two more SVGs from the validated paired
 two-node AG, RS, and AR summaries. The eight-L4 summarizer selects the fastest
 measured UCCL Lite candidate before `plot_8l4_collectives.py` draws three
 two-panel figures, one per collective. `plot_cpu_router_8l4.py` draws one diagnostic SVG
 from the current eight-L4 paired BF16 local/router calibration and automatic
-selection replay, with the earlier NCCL run as a separate control, for thirteen
+selection replay, with the earlier NCCL run as a separate control, for ten
 figures total. These scripts do not run GPU work or benchmarks.
 Use `python3 scripts/plot_results.py --preview` to also export PNG and PDF copies
 under ignored `build/figures/` for inspection or reuse in a technical report.
