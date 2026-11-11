@@ -218,36 +218,6 @@ The `Process (CPU)` operators can be used in different collectives:
 - **Deduplicate** removes repeated token records in dispatch/combine. The
   included fixed-width operator is intended for small routing metadata.
 
-### Profiler and selection
-
-The hardware profiler checks topology and measures PCIe, peer, and host-memory
-bandwidth to identify plausible routing opportunities. It does **not** enable
-the router from a bandwidth ratio. A separate paired calibration checks output
-correctness and times the router against the caller's existing local backend
-for each exact collective, data type, message size, and buffer placement. The
-profile is bound to the hardware/software configuration and backend identity.
-
-At runtime, `auto` looks up the matching profile; it does not benchmark during
-the collective. The router is selected only when at least three repetitions
-show a **3% median gain** and the router's slowest run is faster than the
-fallback's fastest run. Missing, stale, or inconclusive evidence keeps the
-existing backend without allocating router buffers or starting workers. See
-the [architecture and calibration guide](docs/cpu-router.md) for the API and
-exact profile rules.
-
-### Experimental duplex AllGather
-
-An opt-in eight-GPU AllGather candidate uses two NUMA-local host slots per
-source and separate upload/download streams to overlap D2H with H2D. At
-1 GiB, its two-run median is **174.56 ms**, versus **181.43 ms** for the
-existing packet router and **196.17 ms** for NCCL. The CUDA trace shows
-**89–94%** of D2H-active time overlapping H2D on each GPU. Smaller sizes
-usually favor the packet router, so this candidate is not auto-selected.
-[Paired samples, trace, and reproduction commands](benchmarks/data/duplex_allgather_8l4_20261111/README.md)
-are retained.
-
-![Eight-GPU AllGather bus throughput from 1 MiB to 1 GiB for NCCL, packet router, and duplex host staging](docs/assets/duplex-allgather-8l4.svg)
-
 ## Documentation
 
 - [Build targets and correctness commands](docs/build.md)
