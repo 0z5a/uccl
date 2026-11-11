@@ -2,7 +2,7 @@ Host: mibura-sky-test-02; date: 2026-11-11 UTC
 One process owns four L4 GPUs. BF16 router versus NCCL 2.28.7 default control; no NCCL_* overrides in timed runs.
 Primary geometry tests: slowest-GPU CUDA event, 20 warmups, 3 backend-alternating rounds of 10 timed calls, complete output checked for every call.
 Final router: CPU progress, 8 configured workers per NUMA (one active routing task per NUMA for Copy), 248 transport blocks, 4 MiB AG packet cap.
-Large-message packet capacity: cap / (2 slots * 4 ranks) = 512 KiB per source per tile at 4 MiB cap.
+Large-message packet capacity: cap / (2 * 4 ranks) in 16-bit units = cap / 4 in bytes = 1 MiB per source/tile at a 4 MiB cap; 256 tiles for a 1 GiB full output/GPU.
 Nsight reports are diagnostics only and are excluded from paired performance tables.
 
 ## git head

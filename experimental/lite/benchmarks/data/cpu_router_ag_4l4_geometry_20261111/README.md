@@ -28,11 +28,13 @@ numbers.
 
 ## Confirmed bottleneck and geometry changes
 
-1. The AllGather packet capacity is `packet_cap / (2 slots × 4 ranks)`, not
-   the full configured packet cap. At 1 GiB complete output/GPU, each source
-   contributes 256 MiB. The old 2 MiB cap yields 256 KiB/source/tile and
-   **1,024 tiles**; the new 4 MiB cap yields 512 KiB/source/tile and **512
-   tiles**. A 1-GiB, 64-block screen measured **44.93 ms at a 1 MiB cap**,
+1. The AllGather `packetCapacity` helper returns **16-bit storage units**.
+   Its `packet_cap / (2 × 4 ranks)` result therefore corresponds to
+   `packet_cap / 4` bytes per source/tile. At 1 GiB complete output/GPU,
+   each source contributes 256 MiB. The old 2 MiB cap yields
+   **512 KiB/source/tile and 512 tiles**; the new 4 MiB cap yields
+   **1 MiB/source/tile and 256 tiles**. A 1-GiB, 64-block screen measured
+   **44.93 ms at a 1 MiB cap**,
    **42.73 ms at 2 MiB**, **42.31 ms at
    4 MiB**, and **42.13 ms at 8 MiB**. Packet size alone saved less than
    1 ms relative to the old 2-MiB cap. The 16/32-MiB caps regressed in the

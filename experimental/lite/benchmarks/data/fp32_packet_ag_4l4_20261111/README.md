@@ -59,6 +59,26 @@ candidate loses to peer at 4/8/16 MiB (298.54/479.07/783.23 µs versus
 241.83/407.65/739.93 µs), so the selected UCCL crossover is 32 MiB.
 Those losses remain in `candidates.csv` rather than being hidden.
 
+## Why 4–16 MiB loses
+
+The host-packet implementation **does pipeline** producer uploads and
+consumer reads through two reusable slots. `packetCapacity` counts 16-bit
+storage units; with the 4-MiB packet cap it carries at most 1 MiB of each
+source shard per tile. The short-message half-extent rule keeps at least
+two tiles when possible. Thus 4/8/16/32 MiB complete outputs need only
+**2/2/4/8 tiles**. At 4–16 MiB, filling and draining the pipeline and
+waiting for packet readiness consume a large fraction of the call; direct
+peer copies avoid the upload-to-host/read-from-host sequence entirely.
+
+The separate [`pipeline_diagnostic.csv`](pipeline_diagnostic.csv) and
+`profile_{4,8,16,32}m.log` record GPU0 first-tile ready wait, first-tile
+copy and kernel span. At 4/8 MiB, ready+copy of the first tile takes about
+**131/224 µs**, versus GPU0 total kernel spans **218/360 µs**. At 32 MiB,
+the first tile still costs about **218 µs** but the kernel spans **1,242 µs**;
+its startup fraction is much lower and the router wins. These per-GPU
+diagnostic intervals are from separate runs and are not an exact critical
+path decomposition of the paired end-to-end CUDA-event values.
+
 `pilot_1g.log`, `tail_1008.log`, `tail_large.log`, and
 `default_peer_smoke.log` retain the initial full-output, scalar-tail,
 large-tail, and unchanged-default-path checks. All exited successfully.

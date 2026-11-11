@@ -15,6 +15,9 @@ SAMPLE = re.compile(
     r"^# sample,all_gather,(\d+),([a-z-]+),(\d+),(\d+),([\d.]+)$", re.M)
 RESULT = re.compile(
     r"^all_gather,(\d+),([a-z-]+),([\d.]+),([\d.]+),([\d.]+)$", re.M)
+PROFILE = re.compile(
+    r"^profile GPU(\d) consumer ready0 ([\d.]+) copy0 ([\d.]+) "
+    r"total ([\d.]+) us$", re.M)
 
 
 def write_rows(name, rows):
@@ -30,6 +33,17 @@ def expected_backends(size):
     if size <= 2 << 20:
         return {"peer", "push-serial", "nccl"}
     return {"peer", "packet-router", "nccl"}
+
+
+def packet_geometry(size):
+    # The existing packetCapacity helper counts 16-bit storage units.
+    elements = size // 8  # One GPU contributes size/4 bytes.
+    rounded = lambda value: (value + 7) // 8 * 8
+    capacity = min(rounded(elements),
+                   min((4 << 20) // (2 * 4),
+                       max((128 << 10) // (2 * 4),
+                           rounded((elements + 1) // 2))))
+    return capacity * 2, (elements + capacity - 1) // capacity
 
 
 def main():
@@ -105,6 +119,28 @@ def main():
     write_rows("samples.csv", samples)
     write_rows("candidates.csv", candidates)
     write_rows("selected.csv", selected)
+    diagnostic = []
+    lookup = {(int(row["bytes"]), row["backend"]): row for row in candidates}
+    for mib in (4, 8, 16, 32):
+        size = mib << 20
+        content = (ROOT / f"profile_{mib}m.log").read_text()
+        if "peer AG/RS:" in content:
+            raise ValueError(f"failed profile at {mib} MiB")
+        profiles = {int(gpu): tuple(map(float, (ready, copy, total)))
+                    for gpu, ready, copy, total in PROFILE.findall(content)}
+        if sorted(profiles) != list(range(4)):
+            raise ValueError(f"missing GPU stage profile at {mib} MiB")
+        packet_bytes, tiles = packet_geometry(size)
+        diagnostic.append(dict(bytes=size, source_bytes=size // 4,
+                               packet_bytes_per_source=packet_bytes,
+                               tiles=tiles, gpu0_ready0_us=profiles[0][0],
+                               gpu0_copy0_us=profiles[0][1],
+                               gpu0_total_us=profiles[0][2],
+                               slowest_profiled_gpu_total_us=max(p[2] for p in profiles.values()),
+                               paired_router_us=lookup[size, "packet-router"]["median_us"],
+                               paired_peer_us=lookup[size, "peer"]["median_us"],
+                               source=f"profile_{mib}m.log"))
+    write_rows("pipeline_diagnostic.csv", diagnostic)
     print(f"validated {len(samples)} timed calls and {len(selected)} selected sizes")
 
 
