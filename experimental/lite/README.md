@@ -173,58 +173,25 @@ AllReduce differs by only about 1%, so that point is effectively tied.
 
 ### Fusion on single 8xL4 GPU
 
-These eight-GPU experiments use the CPU router across the two NUMA groups.
-Each comparison includes cuBLAS + NCCL, cuBLAS + UCCL-Lite CPU router in
-sequence, and a resident GEMM kernel fused with the CPU router. Timings use
-the slowest-GPU CUDA-event latency and the median of two independent runs.
-Each run has five alternating repetitions of ten checked calls per method.
-GEMM + AllReduce uses 128 KiB packets; the other two operations use 512 KiB
-packets. The larger AllGather + GEMM shapes use a tuned resident GEMM tile.
-[Historical samples and reproduction commands](benchmarks/data/fusion_8l4_20261110/README.md)
-are retained separately from the new model-shape AllReduce sweep.
+The eight L4s span two NUMA groups. Figures compare cuBLAS + NCCL, cuBLAS +
+CPU router, and fused GEMM + CPU router. Values are slowest-GPU CUDA-event
+latencies, aggregated across two runs. [Methods and samples](benchmarks/data/fusion_8l4_models_20261111/README.md).
 
 #### GEMM + AllReduce on single 8xL4 GPU
 
-The new BF16 sweep measures row-parallel FFN down projection for TP=8. Each
-GPU computes `A[M,K] × B[K,N]`, then AllReduce combines the `M × N` partial
-outputs. `N` is the model hidden size and `K` is its FFN intermediate size
-divided by eight.
-
-On 24 GB L4 GPUs, the default chunked-prefill limit is
-[4096 tokens in SGLang](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/arg_groups/memory_hook.py)
-and the API-server `max_num_batched_tokens` default is
-[2048 in vLLM](https://github.com/vllm-project/vllm/blob/main/vllm/engine/arg_utils.py).
-Using the larger value as the reference gives prefill `M = 2048, 4096, 8192`;
-decode uses `M = 1, 16, 32`. These are workload points, not fixed model
-dimensions or guaranteed per-iteration serving batch sizes.
-
-| Model | `N` | `K` per GPU | Decode `(M,N,K)` | Prefill `(M,N,K)` |
-| --- | ---: | ---: | --- | --- |
-| [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/config.json) | 4096 | 1536 | `(1/16/32,4096,1536)` | `(2048/4096/8192,4096,1536)` |
-| [Qwen3.5-27B](https://huggingface.co/Qwen/Qwen3.5-27B/blob/main/config.json) | 5120 | 2176 | `(1/16/32,5120,2176)` | `(2048/4096/8192,5120,2176)` |
-| [Gemma 4 31B IT](https://huggingface.co/google/gemma-4-31B-it/blob/main/config.json) | 5376 | 2688 | `(1/16/32,5376,2688)` | `(2048/4096/8192,5376,2688)` |
-| [Qwen3-32B](https://huggingface.co/Qwen/Qwen3-32B/blob/main/config.json) | 5120 | 3200 | `(1/16/32,5120,3200)` | `(2048/4096/8192,5120,3200)` |
-
-The slash-separated `M` values denote separate shapes: six per model, 24 in
-total. Each point below has 50 checked samples per method in each of two
-independent runs. Lines show the median of the two run-level medians.
+BF16 TP=8 FFN down projection: decode `M=1,16,32`; prefill
+`M=2048,4096,8192`. Each model's `N` and per-GPU `K` appear in the figures.
 
 ![Eight-L4 GEMM plus AllReduce decode latency for four model shapes at M=1,16,32](docs/assets/fusion-8l4-model-gemm-ar-decode.svg)
 
 ![Eight-L4 GEMM plus AllReduce prefill latency for four model shapes at M=2048,4096,8192](docs/assets/fusion-8l4-model-gemm-ar-prefill.svg)
 
-The prefill figure uses a logarithmic latency axis. These are isolated GEMM +
-AllReduce timings, not full-model serving latency.
-
-The fused path has the lowest reported median at 23 of 24 shapes. At
-Qwen3.5-9B `M=16`, cuBLAS + NCCL is **0.292 ms** versus **0.298 ms** fused.
-For Qwen3.5-27B `M=16`, the two runs disagree about which of those paths is
-faster, so that point should not be treated as a stable win. Across the 12
-prefill shapes, fused is **1.17× to 1.44×** faster than NCCL. Because
-the fused path also changes the GEMM kernel, the gain cannot be assigned only
-to overlap. [Samples, summary, and reproduction commands](benchmarks/data/fusion_8l4_models_20261111/README.md)
-are retained. The [historical five-shape figure](docs/assets/fusion-8l4-gemm-ar.svg)
-remains available separately.
+Fused has the lowest aggregate median at 23/24 shapes. Qwen3.5-9B `M=16`
+favors NCCL by 0.005 ms; Qwen3.5-27B `M=16` changes winner between runs.
+The 12 prefill points show 1.17–1.44× speedup over NCCL. These are isolated
+GEMM + AR timings. [Full results](benchmarks/data/fusion_8l4_models_20261111/README.md)
+and the [older five-shape figure](docs/assets/fusion-8l4-gemm-ar.svg) are
+available separately.
 
 #### AllGather + GEMM on single 8xL4 GPU
 

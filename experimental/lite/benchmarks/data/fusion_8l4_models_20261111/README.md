@@ -4,8 +4,18 @@ This experiment measures BF16 row-parallel FFN down projection followed by
 AllReduce on one eight-L4 host. GPUs 0–3 are on NUMA node 0 and GPUs 4–7 on
 node 1; peer access is unavailable between the groups. Each GPU computes
 `A[M,K] × B[K,N]` for its TP=8 shard, then receives the `M × N` sum. The four
-model configurations and six `M` values per model are listed in the
-[main README](../../../README.md#gemm--allreduce-on-single-8xl4-gpu).
+model configurations are listed below. `N` is hidden size and `K` is FFN
+intermediate size divided by eight.
+
+| Model | `N` | `K` per GPU |
+| --- | ---: | ---: |
+| [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/config.json) | 4096 | 1536 |
+| [Qwen3.5-27B](https://huggingface.co/Qwen/Qwen3.5-27B/blob/main/config.json) | 5120 | 2176 |
+| [Gemma 4 31B IT](https://huggingface.co/google/gemma-4-31B-it/blob/main/config.json) | 5376 | 2688 |
+| [Qwen3-32B](https://huggingface.co/Qwen/Qwen3-32B/blob/main/config.json) | 5120 | 3200 |
+Decode uses `M=1,16,32`. Prefill uses `M=2048,4096,8192`, centered on the
+larger of the 24 GB GPU defaults: [SGLang chunked prefill 4096](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/arg_groups/memory_hook.py)
+and [vLLM API-server token budget 2048](https://github.com/vllm-project/vllm/blob/main/vllm/engine/arg_utils.py).
 
 The host uses NVIDIA L4 GPUs with 23,034 MiB reported memory each, driver
 580.178.04, CUDA 12.9.41, CUTLASS 4.5.0, and the project's NCCL 2.28.9
@@ -50,7 +60,7 @@ The raw samples are [run 1](samples_run1.csv) and [run 2](samples_run2.csv).
 The [summary](summary.csv) records both run medians and their median. The
 [decode figure](../../../docs/assets/fusion-8l4-model-gemm-ar-decode.svg) and
 [prefill figure](../../../docs/assets/fusion-8l4-model-gemm-ar-prefill.svg)
-show those summary values. Prefill uses a logarithmic latency axis.
+show those summary values on linear latency axes.
 
 ## Reproduce
 

@@ -71,20 +71,23 @@ def write_summary(data):
 
 
 def plot(data, phase, sizes, preview):
-    fig, axes = plt.subplots(2, 2, figsize=(10.5, 6.8), sharex=True)
+    fig, axes = plt.subplots(2, 2, figsize=(10.5, 6.8), sharey=True)
     fig.subplots_adjust(left=0.09, right=0.98, top=0.84, bottom=0.13,
                         hspace=0.4, wspace=0.25)
+    upper = max(data[(m, n, k, method)][2]
+                for _, n, k in MODELS for m in sizes
+                for method, _, _ in METHODS) * 1.15
     for ax, (model, n, k) in zip(axes.flat, MODELS):
         clean_axis(ax)
-        for method, label, color in METHODS:
+        width = 0.24
+        for index, (method, label, color) in enumerate(METHODS):
             values = [data[(m, n, k, method)][2] for m in sizes]
-            ax.plot(range(3), values, marker="o", markersize=5,
-                    linewidth=2, label=label, color=color)
+            ax.bar([i + (index - 1) * width for i in range(3)], values,
+                   width=width, label=label, color=color)
         ax.set_title(f"{model} · N={n}, K={k}")
         ax.set_xticks(range(3), [str(m) for m in sizes])
         ax.set_ylabel("Latency (ms)")
-        if phase == "prefill":
-            ax.set_yscale("log")
+        ax.set_ylim(0, upper)
         ax.set_xlabel("M (tokens)")
     handles, labels = axes.flat[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.54, 0.96),
