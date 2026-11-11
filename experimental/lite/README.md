@@ -235,6 +235,19 @@ existing backend without allocating router buffers or starting workers. See
 the [architecture and calibration guide](docs/cpu-router.md) for the API and
 exact profile rules.
 
+### Experimental duplex AllGather
+
+An opt-in eight-GPU AllGather candidate uses two NUMA-local host slots per
+source and separate upload/download streams to overlap D2H with H2D. At
+1 GiB, its two-run median is **174.56 ms**, versus **181.43 ms** for the
+existing packet router and **196.17 ms** for NCCL. The CUDA trace shows
+**89–94%** of D2H-active time overlapping H2D on each GPU. Smaller sizes
+usually favor the packet router, so this candidate is not auto-selected.
+[Paired samples, trace, and reproduction commands](benchmarks/data/duplex_allgather_8l4_20261111/README.md)
+are retained.
+
+![Eight-GPU AllGather bus throughput from 1 MiB to 1 GiB for NCCL, packet router, and duplex host staging](docs/assets/duplex-allgather-8l4.svg)
+
 ## Documentation
 
 - [Build targets and correctness commands](docs/build.md)

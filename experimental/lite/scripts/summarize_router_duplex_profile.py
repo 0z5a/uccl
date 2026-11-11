@@ -9,7 +9,11 @@ import sqlite3
 def summarize(database, label):
     connection = sqlite3.connect(database)
     rows = []
-    for device in range(4):
+    devices = [row[0] for row in connection.execute(
+        "SELECT DISTINCT deviceId FROM CUPTI_ACTIVITY_KIND_MEMCPY "
+        "WHERE copyKind IN (1,2) ORDER BY deviceId"
+    )]
+    for device in devices:
         endpoints = []
         copies = {1: 0, 2: 0}
         byte_count = {1: 0, 2: 0}

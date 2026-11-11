@@ -34,11 +34,12 @@ PROBES := gemm_probe mma_gemm_probe mma_peak_probe moe_overlap_probe cutlass_gem
 ALL_NAMES := $(COLLECTIVES) $(PEER_COLLECTIVES) $(NCCL_CONTROLS) $(MULTINODE) host_allreduce $(FUSION) $(PROBES)
 BIN = $(addprefix $(BUILD)/uccl_lite_,$(1))
 
-.PHONY: all single-node peer-collectives eight-gpu-alltoall fusion probes multinode headers help $(ALL_NAMES)
+.PHONY: all single-node peer-collectives eight-gpu-alltoall duplex-allgather-8l4 fusion probes multinode headers help $(ALL_NAMES)
 all: single-node peer-collectives fusion probes headers
 single-node: $(call BIN,$(COLLECTIVES))
 peer-collectives: $(call BIN,$(PEER_COLLECTIVES))
 eight-gpu-alltoall: $(BUILD)/uccl_lite_alltoall_8l4
+duplex-allgather-8l4: $(BUILD)/uccl_lite_duplex_allgather_8l4
 fusion: $(call BIN,$(FUSION))
 probes: $(call BIN,$(PROBES))
 multinode: $(call BIN,$(MULTINODE) host_allreduce)
@@ -62,6 +63,9 @@ $(BUILD)/uccl_lite_nccl_2x4l4_baseline: benchmarks/collectives/nccl_2x4l4_baseli
 
 $(BUILD)/uccl_lite_alltoall_8l4: benchmarks/collectives/alltoall_8l4_bench.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++17 -I$(NCCL_HOME)/include $< -o $@ -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib -Xcompiler=-pthread
+
+$(BUILD)/uccl_lite_duplex_allgather_8l4: benchmarks/cpu_router/duplex_allgather_8l4.cu $(BUILD)/cpu_router/libuccl_lite_cpu_router.a | $(BUILD)
+	$(NVCC) $(NVCC_FLAGS) -std=c++17 $(ROUTER_INC) -I$(NCCL_HOME)/include $< $(ROUTER_STATIC) -o $@ -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib -Xcompiler=-pthread -ldl
 
 $(call BIN,$(MULTINODE)): $(BUILD)/uccl_lite_%: src/collectives/%.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++20 $(IB_INC) $(MPI_INC) $< -o $@ $(IB_LIB) $(MPI_LIB) -lcudart -lpthread
