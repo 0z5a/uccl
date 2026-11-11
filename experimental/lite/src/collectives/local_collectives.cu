@@ -1,6 +1,7 @@
 #include "uccl_lite/local_collectives.hpp"
 #include <linux/mempolicy.h>
 #include <algorithm>
+#include <cerrno>
 #include <cstring>
 #include <limits>
 #include <map>
@@ -26,7 +27,10 @@ void* pinnedNuma(size_t bytes, int node) {
                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (ptr == MAP_FAILED) throw std::runtime_error("host staging mmap failed");
   unsigned long mask = 1UL << node;
-  if (syscall(SYS_mbind, ptr, bytes, MPOL_BIND, &mask, 64, 0)) {
+  if (syscall(SYS_mbind, ptr, bytes, MPOL_BIND, &mask, 64, 0) &&
+      errno != EPERM && errno != ENOSYS) {
+    // EPERM/ENOSYS (e.g. a container without CAP_SYS_NICE): keep first-touch
+    // placement rather than failing the collective.
     munmap(ptr, bytes);
     throw std::runtime_error("host staging mbind failed");
   }

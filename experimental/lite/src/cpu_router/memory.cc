@@ -1,5 +1,8 @@
 #include "memory.hpp"
 #include <linux/mempolicy.h>
+#include <atomic>
+#include <cerrno>
+#include <cstdio>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -83,8 +86,19 @@ void RegisteredMemory::allocate(size_t n, int node, bool pinned) {
     throw std::runtime_error("NUMA mmap failed");
   }
   unsigned long mask = 1UL << node;
-  if (syscall(SYS_mbind, r->address, r->bytes, MPOL_BIND, &mask, 64, 0))
-    throw std::runtime_error("NUMA mbind failed");
+  if (syscall(SYS_mbind, r->address, r->bytes, MPOL_BIND, &mask, 64, 0)) {
+    // Docker's default seccomp profile rejects mbind without CAP_SYS_NICE.
+    // Keep the buffer with first-touch placement instead of failing.
+    // ~MemoryRegistration unmaps the owned range when r goes out of scope.
+    if (errno != EPERM && errno != ENOSYS)
+      throw std::runtime_error("NUMA mbind failed");
+    static std::atomic<bool> warned{false};
+    if (!warned.exchange(true))
+      std::fprintf(stderr,
+                   "uccl-lite: mbind unavailable (%s); host buffers use "
+                   "first-touch placement\n",
+                   std::strerror(errno));
+  }
   std::memset(r->address, 0, r->bytes);
   if (pinned) {
     check(cudaHostRegister(r->address, r->bytes,
