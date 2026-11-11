@@ -102,6 +102,13 @@ evidence, it stays on its existing backend and does not allocate router buffers
 or start workers. Local evidence can opt in on any supported topology if it
 actually demonstrates a stable gain; four GPUs are not categorically forbidden.
 
+The [November 11 four-L4 calibration](../benchmarks/data/cpu_router_4l4_apply_20261111/README.md)
+provides that local BF16 evidence on `mibura-sky-test-02`. Its fresh profiles
+select the router for eight AllGather sizes in either placement, beginning at
+512 KiB and then 16 MiB–1 GiB. They select NCCL for every AllReduce and
+ReduceScatter size. This machine has peer access between all four GPUs;
+the 8×L4 compact AR and GPU-progress RS variants did not yield stable gains.
+
 `off` always retains the existing backend. `force` is a diagnostic override;
 it still rejects unsupported dtypes, missing capabilities, or insufficient
 capacity. It bypasses the performance decision, not correctness requirements.
