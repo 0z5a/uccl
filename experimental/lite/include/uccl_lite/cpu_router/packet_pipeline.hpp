@@ -164,6 +164,8 @@ struct PacketPipelineOptions {
   // remains enabled by smallReduceScatterGpuProgress.
   bool smallReduceScatterGpuProgress64K = false;
   int transportBlocks = 64;
+  // Fused GEMM only: cap each upload/download crew. Zero selects by shape.
+  int fusedTransportCrew = 0;
   int transportThreads = 256;
   size_t transportGrainBytes = 16UL << 10;
   int workersPerNode = 23;

@@ -164,7 +164,8 @@ AllReduce differs by only about 1%, so that point is effectively tied.
 The eight L4s span two NUMA groups. Figures compare cuBLAS + NCCL, cuBLAS +
 CPU router, and fused GEMM + CPU router. Values are slowest-GPU CUDA-event
 latencies, aggregated across two runs. Data: [AR](benchmarks/data/fusion_8l4_models_20261111/README.md),
-[AG/RS](benchmarks/data/fusion_8l4_models_ag_rs_20261111/README.md).
+[AG](benchmarks/data/fusion_8l4_models_ag_rs_20261111/README.md),
+[optimized RS](benchmarks/data/fusion_rs_8l4_optimized_20261111/README.md).
 
 #### GEMM + AllReduce on single 8xL4 GPU
 
@@ -198,14 +199,14 @@ and the [older figure](docs/assets/fusion-8l4-ag-gemm.svg).
 
 Decode uses `M=1,32,64`; prefill uses `M=2048,4096,8192`.
 
-![Eight-L4 GEMM plus ReduceScatter decode latency bars for four model shapes at M=1,32,64](docs/assets/fusion-8l4-model-gemm-rs-decode-labeled-bars.svg)
+![Eight-L4 GEMM plus ReduceScatter decode latency bars for four model shapes at M=1,32,64](docs/assets/fusion-8l4-model-gemm-rs-decode-optimized-labeled-bars.svg)
 
-![Eight-L4 GEMM plus ReduceScatter prefill latency bars for four model shapes at M=2048,4096,8192](docs/assets/fusion-8l4-model-gemm-rs-prefill-labeled-bars.svg)
+![Eight-L4 GEMM plus ReduceScatter prefill latency bars for four model shapes at M=2048,4096,8192](docs/assets/fusion-8l4-model-gemm-rs-prefill-optimized-labeled-bars.svg)
 
-Fused has the lowest aggregate median at all 12 decode shapes; sequential
-CPU router wins all 12 prefill shapes. At Qwen3.5-9B `M=64`, one decode run
-favors NCCL. [Data](benchmarks/data/fusion_8l4_models_ag_rs_20261111/README.md)
-and the [older figure](docs/assets/fusion-8l4-gemm-rs.svg).
+In this sweep after the prefill scheduling fix, fused is faster than sequential
+CPU router at all 12 prefill shapes (1.008×–1.101×) and all 12 decode shapes.
+NCCL wins some decode points. [Optimized data](benchmarks/data/fusion_rs_8l4_optimized_20261111/README.md)
+and [historical data](benchmarks/data/fusion_8l4_models_ag_rs_20261111/README.md).
 
 #### Other fusion workloads
 

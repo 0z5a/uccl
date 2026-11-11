@@ -14,3 +14,5 @@ __pycache__/
 !/benchmarks/data/cpu_router_8l4_20261110/*.log
 !/benchmarks/data/local_fallback_8l4_20261110/*.csv
 !/benchmarks/data/local_fallback_8l4_20261110/*.log
+!/benchmarks/data/fusion_rs_8l4_optimized_20261111/*.csv
+!/benchmarks/data/fusion_rs_8l4_optimized_20261111/*.log

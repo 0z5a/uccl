@@ -45,6 +45,7 @@ void check(cudaError_t error, char const* expression) {
 size_t rounded(size_t n, size_t alignment) {
   return (n + alignment - 1) / alignment * alignment;
 }
+constexpr size_t kShortPrefillElements = 12UL << 20;
 size_t packetCapacity(size_t elements, PacketLayout layout, int ranks,
                       PacketPipelineOptions const& options) {
   size_t expansion = layout == PacketLayout::Concatenate ? ranks : 1;
@@ -55,6 +56,21 @@ size_t packetCapacity(size_t elements, PacketLayout layout, int ranks,
                   std::min(options.packetBytes / (2 * expansion),
                            std::max(options.minPacketBytes / (2 * expansion),
                                     rounded((extent + 1) / 2, 8))));
+}
+int residentTransportCrew(int maxBlocks, size_t work, size_t totalElements,
+                          PacketLayout layout, size_t packetBytes,
+                          int overrideCrew) {
+  int crew = std::max(1, maxBlocks / 2);
+  if (overrideCrew) return std::min(crew, overrideCrew);
+  // Full-size ReduceScatter packets otherwise occupy nearly every CTA in a
+  // cooperative GEMM grid. Prefill needs more transport bandwidth than decode.
+  if (layout == PacketLayout::Scatter && work * 2 == packetBytes) {
+    int limit = 12;
+    if (totalElements < (1UL << 20)) limit = 4;
+    else if (totalElements < kShortPrefillElements) limit = 16;
+    crew = std::min(crew, limit);
+  }
+  return crew;
 }
 using Word = GenerationSignal;
 struct Flags {
@@ -1074,6 +1090,7 @@ struct PacketPipeline::Impl {
         options.minPacketBytes % 16 || options.transportBlocks < 2 ||
         options.transportBlocks >= 256 || options.transportThreads < 32 ||
         options.transportThreads > 1024 || options.transportThreads % 256 ||
+        options.fusedTransportCrew < 0 || options.fusedTransportCrew > 127 ||
         options.workersPerNode < 1 || options.workersPerNode > 63 ||
         options.scatterWorkersPerNode < 0 ||
         options.scatterWorkersPerNode > 63 || !options.grainElements ||
@@ -1390,6 +1407,10 @@ struct PacketPipeline::Impl {
         options.scatterWorkersPerNode
             ? std::min(options.workersPerNode, options.scatterWorkersPerNode)
             : options.workersPerNode;
+    // Fused short prefill may reduce CPU lanes to eight after a prior
+    // unfused call. Size scratch for that wider range in either order.
+    int configuredWorkers = workers;
+    workers = std::min(workers, 8);
     size_t rowElements = std::min(
         capacity,
         std::max((capacity + workers - 1) / workers, options.grainElements));
@@ -1409,7 +1430,7 @@ struct PacketPipeline::Impl {
     std::fprintf(stderr,
                  "# ReduceScatter owner-only merge; active CPU<=%d/node; "
                  "scratch_stride=%zu\n",
-                 workers, scatterStride);
+                 configuredWorkers, scatterStride);
   }
   uint32_t destinations(PacketProgram const& plan, size_t begin,
                         size_t end) const {
@@ -1790,7 +1811,12 @@ struct PacketPipeline::Impl {
     size_t work = std::min(capacity, plan.inputElements);
     std::array<int, kMaxRanks> producerBlocks{}, consumerBlocks{};
     for (int rank = 0; rank < ranks; ++rank) {
-      int crew = std::max(1, maxBlocks[rank] / 2);
+      int crew = fusedGemm
+                     ? residentTransportCrew(maxBlocks[rank], work,
+                                             plan.inputElements, plan.layout,
+                                             options.packetBytes,
+                                             options.fusedTransportCrew)
+                     : std::max(1, maxBlocks[rank] / 2);
       size_t egress = plan.layout == PacketLayout::Concatenate ? work * ranks
                       : plan.layout == PacketLayout::Scatter
                           ? std::min(work, plan.inputElements / ranks)
@@ -1892,6 +1918,10 @@ struct PacketPipeline::Impl {
                                           options.grainElements));
     if (plan.layout == PacketLayout::Scatter && options.scatterWorkersPerNode)
       active = std::min(active, options.scatterWorkersPerNode);
+    if (fusedGemm && plan.layout == PacketLayout::Scatter &&
+        plan.inputElements >= (1UL << 20) &&
+        plan.inputElements < kShortPrefillElements)
+      active = std::min(active, 8);
     {
       std::unique_lock<std::mutex> lock(queueMutex);
       credit.wait(lock, [&] {
@@ -2260,7 +2290,9 @@ void PacketPipeline::prepareGemm(int m, int n, int k,
   }
   int tileM = impl_->options.gemmTileM, tileN = impl_->options.gemmTileN;
   if (!tileM && !tileN) {
-    tileM = m > 256 && k >= 8192 ? 128 : 64;
+    bool wide = (layout == PacketLayout::Scatter && m >= 2048) ||
+                (m > 256 && k >= 8192);
+    tileM = wide ? 128 : 64;
     tileN = tileM == 128 ? 256 : 128;
   }
   if (impl_->options.gemmMGroup < 0 || impl_->options.gemmMGroup > 64)
@@ -2313,7 +2345,10 @@ void PacketPipeline::prepareGemm(int m, int n, int k,
                         ? std::min(work, elements / ranks)
                         : work;
     size_t grain = impl_->options.transportGrainBytes;
-    int crew = std::max(1, impl_->maxBlocks[rank] / 2);
+    int crew = residentTransportCrew(impl_->maxBlocks[rank], work, elements,
+                                     layout,
+                                     impl_->options.packetBytes,
+                                     impl_->options.fusedTransportCrew);
     int upload = std::min<size_t>(
         crew, std::max<size_t>(1, (work * 2 + grain - 1) / grain));
     int download = std::min<size_t>(

@@ -69,7 +69,8 @@ int main(int argc, char** argv) {
     int m = 512, n = 4096, k = 4096, warmup = 2, iterations = 5,
         repeats = 3;
     int packetKib = 0, tileM = 0, tileN = 0, tileK = 0, stages = 0,
-        transportBlocks = 64, workersPerNode = 23, gemmMGroup = 0,
+        transportBlocks = 64, fusedTransportCrew = 0, workersPerNode = 23,
+        scatterWorkersPerNode = 16, transportGrainKib = 16, gemmMGroup = 0,
         selectedMethod = -1;
     bool gather = false, scatter = false;
     std::string samplePath;
@@ -93,7 +94,9 @@ int main(int argc, char** argv) {
         if (method == "nccl") selectedMethod = 0;
         else if (method == "router") selectedMethod = 1;
         else if (method == "fused") selectedMethod = 2;
-        else throw std::runtime_error("--method must be nccl, router, or fused");
+        else if (method == "cublas-only") selectedMethod = 3;
+        else if (method == "resident-only") selectedMethod = 4;
+        else throw std::runtime_error("invalid --method");
         continue;
       }
       int value = std::atoi(argv[i]);
@@ -109,7 +112,11 @@ int main(int argc, char** argv) {
       else if (arg == "--tile-k") tileK = value;
       else if (arg == "--stages") stages = value;
       else if (arg == "--transport-blocks") transportBlocks = value;
+      else if (arg == "--fused-transport-crew") fusedTransportCrew = value;
       else if (arg == "--workers-per-node") workersPerNode = value;
+      else if (arg == "--scatter-workers-per-node")
+        scatterWorkersPerNode = value;
+      else if (arg == "--transport-grain-kib") transportGrainKib = value;
       else if (arg == "--gemm-m-group") gemmMGroup = value;
       else throw std::runtime_error("unknown option " + arg);
     }
@@ -125,7 +132,7 @@ int main(int argc, char** argv) {
       tileK = 64;
       stages = 2;
     }
-    if (packetKib < 128 || (packetKib & (packetKib - 1)))
+    if (packetKib < 128 || transportGrainKib < 1)
       throw std::runtime_error("invalid packet size");
     constexpr int ranks = 8;
     int available = 0;
@@ -186,7 +193,10 @@ int main(int argc, char** argv) {
     options.gemmTileK = tileK;
     options.gemmStages = stages;
     options.transportBlocks = transportBlocks;
+    options.fusedTransportCrew = fusedTransportCrew;
     options.workersPerNode = workersPerNode;
+    options.scatterWorkersPerNode = scatterWorkersPerNode;
+    options.transportGrainBytes = size_t(transportGrainKib) << 10;
     options.gemmMGroup = gemmMGroup;
     auto router = std::make_unique<PacketPipeline>(options);
     router->prepare(ports);
@@ -257,8 +267,12 @@ int main(int argc, char** argv) {
         if (!gather) gemm();
         router->enqueue(plan, binding);
         if (gather) gemm();
-      } else {
+      } else if (method == 2) {
         router->enqueueGemm(plan, binding);
+      } else if (method == 3) {
+        gemm();
+      } else {
+        router->enqueueGemmProducerOnly(binding.streams);
       }
       for (int r = 0; r < ranks; ++r) {
         check(cudaSetDevice(r));
@@ -270,6 +284,9 @@ int main(int argc, char** argv) {
         float ms = 0.f;
         check(cudaEventElapsedTime(&ms, rank[r].start, rank[r].stop));
         worst = std::max(worst, ms);
+      }
+      if (method >= 3) return double(worst);
+      for (int r = 0; r < ranks; ++r) {
         check(cudaSetDevice(r));
         check(cudaMemsetAsync(rank[r].errors.data(), 0, sizeof(int),
                               rank[r].stream));
@@ -290,8 +307,9 @@ int main(int argc, char** argv) {
       }
       return double(worst);
     };
-    const char* names[] = {"cublas+nccl", "cublas+router", "fused+router"};
-    std::vector<double> samples[3];
+    const char* names[] = {"cublas+nccl", "cublas+router", "fused+router",
+                           "cublas-only", "resident-only"};
+    std::vector<double> samples[5];
     std::ofstream sampleFile;
     if (!samplePath.empty()) {
       std::ifstream existing(samplePath);
@@ -302,8 +320,8 @@ int main(int argc, char** argv) {
         sampleFile << "op,m,n,k,repeat,iteration,method,latency_ms\n";
     }
     for (int round = 0; round < warmup + repeats; ++round) {
-      for (int order = 0; order < 3; ++order) {
-        int method = (round + order) % 3;
+      for (int order = 0; order < (selectedMethod >= 3 ? 5 : 3); ++order) {
+        int method = (round + order) % (selectedMethod >= 3 ? 5 : 3);
         if (selectedMethod >= 0 && method != selectedMethod) continue;
         for (int iter = 0; iter < (round < warmup ? 1 : iterations); ++iter) {
           double ms = run(method);
@@ -317,7 +335,7 @@ int main(int argc, char** argv) {
         }
       }
     }
-    for (int method = 0; method < 3; ++method) {
+    for (int method = 0; method < 5; ++method) {
       auto& v = samples[method];
       if (v.empty()) continue;
       std::sort(v.begin(), v.end());
