@@ -152,6 +152,7 @@ struct GatedGrouped {
     // Block 0's collective, by value. Empty when Dispatcher is NoDispatch.
     Dispatcher dispatcher{};
     int dispatcher_blocks = Dispatcher::kBlocks;
+    bool dispatcher_join = false;
 
     // Optional per-output-tile completion flags.  The resident collective can
     // consume a (M,N) tile immediately after its CUTLASS epilogue reaches
@@ -193,11 +194,13 @@ struct GatedGrouped {
         // Params is passed by const reference.
         Dispatcher d = params_gated.dispatcher;
         d();
-        return;
+        if (!params_gated.dispatcher_join) return;
       }
     }
     int const kShift =
-        Dispatcher::kEnabled ? params_gated.dispatcher_blocks : 0;
+        Dispatcher::kEnabled && !params_gated.dispatcher_join
+            ? params_gated.dispatcher_blocks
+            : 0;
 
     ProblemVisitor problem_visitor(params.problem_visitor,
                                    shared_storage.problem_visitor,

@@ -566,6 +566,7 @@ struct ResidentRouterDispatch {
   uint32_t const* completed = nullptr;
   int columns = 0, tileRows = 0, tileColumns = 0;
   uint32_t* gathered = nullptr;
+  bool gatherLocalReady = false;
   CUTLASS_DEVICE void operator()() {
     __shared__ uint4 storage[sizeof(Transport) / 16];
     __shared__ uint64_t ticket;
@@ -588,7 +589,7 @@ struct ResidentRouterDispatch {
       p.tileRows = tileRows;
       p.tileColumns = tileColumns;
       p.gathered = gathered;
-      p.gatherLocalReady = gathered != nullptr;
+      p.gatherLocalReady = gatherLocalReady;
     }
     __syncthreads();
     size_t tiles =
@@ -613,6 +614,7 @@ struct ResidentProducer {
   virtual void configureGather(int localM,
                                std::vector<MemorySpan> const& localA) = 0;
   virtual int gridLimit(int rank) const = 0;
+  virtual bool decodeGather() const = 0;
   virtual void launch(int rank, cudaStream_t stream, Command const* commands,
                       Dispatch* dispatch, int transportBlocks,
                       bool producerOnly, size_t packetElements = 0) = 0;
@@ -637,6 +639,7 @@ struct ResidentGemm : ResidentProducer {
     int64_t lda, ldb, ldc, ldd;
   };
   std::array<RegisteredMemory, kMaxRanks> metadata, completionFlags, tileTrace;
+  std::array<cudaGraphExec_t, kMaxRanks> decodeGraphs{};
   std::array<typename Op::Params, kMaxRanks> params;
   std::array<int, kMaxRanks> gridLimits;
   std::vector<MemorySpan> inputsA, inputsB, outputs, localInputs;
@@ -728,6 +731,9 @@ struct ResidentGemm : ResidentProducer {
     }
   }
   int gridLimit(int rank) const override { return gridLimits[rank]; }
+  bool decodeGather() const override {
+    return contributionElements && m <= 64;
+  }
   bool matches(PacketProgram const& plan, int rank, void const* input,
                void const* output) const override {
     if (contributionElements)
@@ -754,10 +760,17 @@ struct ResidentGemm : ResidentProducer {
       params[r].completed = nullptr;
       params[r].dispatcher.completed = nullptr;
       params[r].dispatcher.gathered = flag;
+      // Small decode row groups have no useful local-row overlap. Let the
+      // resident consumer copy the local shard with its remote peers, avoiding
+      // a separate device copy before each cooperative launch.
+      bool decode = m <= 64;
+      params[r].dispatcher.gatherLocalReady = !decode;
+      params[r].dispatcher_join = decode;
       params[r].input_completed = flag;
       params[r].input_contribution_elements = contributionElements;
       params[r].input_local_begin = size_t(r) * contributionElements;
-      params[r].input_local_end = size_t(r + 1) * contributionElements;
+      params[r].input_local_end =
+          decode ? 0 : size_t(r + 1) * contributionElements;
       params[r].tile_m_offset = (r * localM) / TileM;
       if (localM % TileM == 0) {
         params[r].tile_m_offset = 0;
@@ -768,6 +781,11 @@ struct ResidentGemm : ResidentProducer {
     }
   }
   ~ResidentGemm() override {
+    for (int r = 0; r < ranks; ++r)
+      if (decodeGraphs[r]) {
+        cudaSetDevice(outputs[r].device);
+        cudaGraphExecDestroy(decodeGraphs[r]);
+      }
     char const* path = std::getenv("UCCL_LITE_GPU_TIMELINE_PATH");
     if (!path) return;
     FILE* file = std::fopen(path, "a");
@@ -804,29 +822,63 @@ struct ResidentGemm : ResidentProducer {
         if (!packetElements)
           throw std::invalid_argument("AG GEMM requires transport");
         p.input_packet_elements = packetElements;
-        CUDA(cudaMemsetAsync(arrivalFlags[rank].data(), 0, sizeof(uint32_t),
-                             stream));
+        if (!p.dispatcher_join)
+          CUDA(cudaMemsetAsync(arrivalFlags[rank].data(), 0,
+                               sizeof(uint32_t), stream));
         // Make this rank's complete rows valid before any worker can read them.
         // The dispatcher omits its local slice, so it cannot race these reads.
-        CUDA(cudaMemcpyAsync(static_cast<Elem*>(inputsA[rank].address) +
-                                 rank * contributionElements,
-                             localInputs[rank].address,
-                             contributionElements * sizeof(Elem),
-                             cudaMemcpyDeviceToDevice, stream));
+        if (p.dispatcher.gatherLocalReady)
+          CUDA(cudaMemcpyAsync(static_cast<Elem*>(inputsA[rank].address) +
+                                   rank * contributionElements,
+                               localInputs[rank].address,
+                               contributionElements * sizeof(Elem),
+                               cudaMemcpyDeviceToDevice, stream));
       }
     }
     int workers = gridLimits[rank] - transportBlocks;
     if (workers < 1)
       throw std::invalid_argument("transport leaves no resident GEMM worker");
-    p.base.threadblock_count = workers;
+    p.base.threadblock_count =
+        workers + (p.dispatcher_join && !producerOnly ? transportBlocks : 0);
     p.dispatcher_blocks = producerOnly ? 0 : transportBlocks;
     p.dispatcher.commands = commands;
     p.dispatcher.dispatch = dispatch;
-    CUDA(cudaMemsetAsync(completionFlags[rank].data(), 0, flagBytes, stream));
+    if (!contributionElements)
+      CUDA(cudaMemsetAsync(completionFlags[rank].data(), 0, flagBytes, stream));
     if (p.tile_times)
       CUDA(cudaMemsetAsync(tileTrace[rank].data(), 0,
                            sizeof(uint64_t) + flagBytes * 4, stream));
     void* args[] = {&p};
+    if (p.dispatcher_join && !producerOnly) {
+      // The decode launch shape is fixed by prepareAllGatherGemm. Package the
+      // readiness reset and cooperative kernel into one host graph launch.
+      if (!decodeGraphs[rank]) {
+        cudaGraph_t graph;
+        cudaGraphNode_t clear, kernel;
+        CUDA(cudaGraphCreate(&graph, 0));
+        cudaMemsetParams memset{};
+        memset.dst = arrivalFlags[rank].data();
+        memset.elementSize = sizeof(uint32_t);
+        memset.width = 1;
+        memset.height = 1;
+        CUDA(cudaGraphAddMemsetNode(&clear, graph, nullptr, 0, &memset));
+        cudaKernelNodeParams node{};
+        node.func = reinterpret_cast<void*>(gatedGroupedKernel<Op>);
+        node.gridDim = dim3(workers + p.dispatcher_blocks);
+        node.blockDim = dim3(Op::kThreadCount);
+        node.sharedMemBytes = sizeof(typename Op::SharedStorage);
+        node.kernelParams = args;
+        CUDA(cudaGraphAddKernelNode(&kernel, graph, &clear, 1, &node));
+        cudaKernelNodeAttrValue cooperative{};
+        cooperative.cooperative = true;
+        CUDA(cudaGraphKernelNodeSetAttribute(
+            kernel, cudaKernelNodeAttributeCooperative, &cooperative));
+        CUDA(cudaGraphInstantiate(&decodeGraphs[rank], graph, 0));
+        CUDA(cudaGraphDestroy(graph));
+      }
+      CUDA(cudaGraphLaunch(decodeGraphs[rank], stream));
+      return;
+    }
     // Cooperative occupancy admits the WHOLE grid before any CTA can wait.
     // Every flag writer is a resident worker of this same grid.
     CUDA(cudaLaunchCooperativeKernel(
@@ -1817,6 +1869,10 @@ struct PacketPipeline::Impl {
                                              options.packetBytes,
                                              options.fusedTransportCrew)
                      : std::max(1, maxBlocks[rank] / 2);
+      if (fusedGemm && gemm->decodeGather() &&
+          plan.layout == PacketLayout::Concatenate &&
+          !options.fusedTransportCrew)
+        crew = maxBlocks[rank];
       size_t egress = plan.layout == PacketLayout::Concatenate ? work * ranks
                       : plan.layout == PacketLayout::Scatter
                           ? std::min(work, plan.inputElements / ranks)
@@ -1827,10 +1883,19 @@ struct PacketPipeline::Impl {
           crew,
           std::max<size_t>(1, (work * 2 + options.transportGrainBytes - 1) /
                                   options.transportGrainBytes));
+      if (fusedGemm && gemm->decodeGather() &&
+          plan.layout == PacketLayout::Concatenate)
+        producerBlocks[rank] =
+            std::min(producerBlocks[rank], maxBlocks[rank] - 1);
       consumerBlocks[rank] = std::min<size_t>(
           crew,
           std::max<size_t>(1, (egress * 2 + options.transportGrainBytes - 1) /
                                   options.transportGrainBytes));
+      if (fusedGemm && gemm->decodeGather() &&
+          plan.layout == PacketLayout::Concatenate)
+        consumerBlocks[rank] =
+            std::min(consumerBlocks[rank],
+                     maxBlocks[rank] - producerBlocks[rank]);
       int blocks = producerBlocks[rank] + consumerBlocks[rank];
       if (blocks >= 256)
         throw std::invalid_argument("router graph grid limit exceeded");
