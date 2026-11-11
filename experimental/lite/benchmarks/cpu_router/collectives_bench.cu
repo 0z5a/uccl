@@ -436,12 +436,15 @@ int main(int argc, char** argv) {
           cfg.smallReduceScatterPacketBytes;
       options.smallReduceScatterGpuProgress =
           cfg.smallReduceScatterGpuProgress;
-      if (cfg.shmOnly && !cfg.gpuReduce && cfg.workersPerNode == 23 &&
+      if (cfg.devices.size() == 8 && !cfg.gpuReduce &&
+          cfg.workersPerNode == 23 &&
           cfg.transportBlocks == 64) {
         options.smallAllReduceWorkersPerNode = 4;
         options.smallAllReduceTransportBlocks = 16;
-        options.smallReduceScatterGpuProgress64K = true;
       }
+      if (cfg.shmOnly && !cfg.gpuReduce && cfg.workersPerNode == 23 &&
+          cfg.transportBlocks == 64)
+        options.smallReduceScatterGpuProgress64K = true;
       options.reduction = cfg.gpuReduce ? cpu_router::ReductionPlacement::Gpu
                                         : cpu_router::ReductionPlacement::Cpu;
       options.interleaveScatter = cfg.interleaveScatter;

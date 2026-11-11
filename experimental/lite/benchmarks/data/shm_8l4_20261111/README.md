@@ -46,23 +46,25 @@ UCCL-Lite path at each size and every 1 KiB–1 GiB latency result.
 
 The updated [SHM figure summary](figure_summary.csv) reuses the tuned
 AllGather UCCL-Lite curve from the [8xL4 GPU AllGather run](../ag_packet_8l4_20261111/README.md)
-because both testbeds use the same host-packet router path. It retains the
-NCCL SHM curve from this archive. Its `uccl_source` and `nccl_source` columns
-identify each curve. These AllGather curves were measured in separate runs;
-the original paired AllGather measurements remain in `summary.csv`.
+and the 128/256 KiB AllReduce points from the [compact router run](../ar_compact_8l4_20261111/README.md).
+Both testbeds use the same host-packet router path. NCCL SHM values remain
+from this archive. The `uccl_source` and `nccl_source` columns identify each
+curve. Reused UCCL-Lite points and NCCL SHM controls were measured in separate
+runs; the original paired measurements remain in `summary.csv`.
 
 | Operation and full tensor size | UCCL-Lite | NCCL SHM | Speedup |
 | --- | ---: | ---: | ---: |
 | AllReduce, 1 KiB | 101.1 µs | 132.1 µs | 1.31× |
-| AllReduce, 128 KiB | 201.7 µs | 215.6 µs | 1.07× |
+| AllReduce, 128 KiB | 202.5 µs | 215.6 µs | 1.06× |
+| AllReduce, 256 KiB | 231.9 µs | 304.4 µs | 1.31× |
 | AllReduce, 1 GiB | 279.4 ms | 403.7 ms | 1.44× |
 | AllGather, 1 KiB | 98.0 µs | 119.8 µs | 1.22× |
 | AllGather, 1 GiB | 166.6 ms | 195.6 ms | 1.17× |
 | ReduceScatter, 64 KiB | 115.7 µs | 139.5 µs | 1.21× |
 | ReduceScatter, 1 GiB | 172.1 ms | 218.0 ms | 1.27× |
 
-These rows use the updated figure summary; its AllGather comparison is
-cross-run. All 63 aggregate medians favor UCCL-Lite, but 64 KiB AllReduce differs by
+These rows use the updated figure summary; AllGather and 128/256 KiB AllReduce
+are cross-run comparisons. All 63 aggregate medians favor UCCL-Lite, but 64 KiB AllReduce differs by
 only about 1.2%; that point should be treated as a tie. The full summary
 preserves small gaps and run-order variation instead of claiming uniform
 statistical significance.

@@ -187,7 +187,7 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
   if (options_.interleaveScatter) key << ";scatter=interleaved-v2";
   if (options_.gpuProgress) key << ";progress=gpu-v1";
   if (options_.smallAllReduceWorkersPerNode)
-    key << ";small-ar-128k-workers-v1="
+    key << ";small-ar-128-256k-workers-v1="
         << options_.smallAllReduceWorkersPerNode << ','
         << options_.smallAllReduceTransportBlocks;
   if (options_.smallReduceScatterGpuProgress64K)
@@ -295,7 +295,8 @@ size_t CollectiveDispatcher::packetBytesFor(CollectiveCall const& call) const {
 int CollectiveDispatcher::workersPerNodeFor(CollectiveCall const& call) const {
   return options_.smallAllReduceWorkersPerNode &&
                  call.collective == Collective::AllReduce &&
-                 call.workload().bytes == (128UL << 10)
+                 call.workload().bytes >= (128UL << 10) &&
+                 call.workload().bytes <= (256UL << 10)
              ? options_.smallAllReduceWorkersPerNode
              : options_.workersPerNode;
 }
@@ -303,7 +304,8 @@ int CollectiveDispatcher::transportBlocksFor(
     CollectiveCall const& call) const {
   return options_.smallAllReduceTransportBlocks &&
                  call.collective == Collective::AllReduce &&
-                 call.workload().bytes == (128UL << 10)
+                 call.workload().bytes >= (128UL << 10) &&
+                 call.workload().bytes <= (256UL << 10)
              ? options_.smallAllReduceTransportBlocks
              : options_.transportBlocks;
 }

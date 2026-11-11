@@ -65,6 +65,8 @@ No interpolation or best-neighbor size policy is applied.
 
 For AllReduce through 4 MiB and ReduceScatter from 256 KiB through 4 MiB,
 the adaptive dispatcher prepares the router with 128 KiB packets by default.
+On 8xL4 GPU, 128/256 KiB AllReduce also uses four CPU workers per NUMA node
+and 16 transport blocks, based on paired local and NCCL measurements.
 At exactly 128 KiB, ReduceScatter uses GPU reduction and GPU progress with
 the regular packet limit. Other calls use the 512 KiB packet default and CPU
 reduction. These choices happen in `prepare`, outside the timed invocation.

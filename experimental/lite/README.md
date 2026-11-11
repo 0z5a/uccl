@@ -75,9 +75,11 @@ This comparison uses GPUs 0–3 on NUMA node 0 and 4–7 on node 1.
 AllReduce is in place; AllGather and ReduceScatter are out of place. Each UCCL Lite curve
 uses the fastest measured project-owned path at that size, chosen without
 looking at NCCL. The CPU router is selected for all large AR/AG/RS sizes.
-At 128 KiB, AR selects the local path and RS selects GPU reduction/progress;
-RS uses the CPU-reduction router at other sizes. Its 256 KiB–4 MiB calls use
-128 KiB packets.
+At 128 and 256 KiB, AllReduce uses a compact CPU router with four workers
+per NUMA node and 16 transport blocks. [Paired measurements](benchmarks/data/ar_compact_8l4_20261111/README.md)
+replace the earlier 128 KiB local-path selection. At 128 KiB, ReduceScatter
+selects GPU reduction/progress; RS uses the CPU-reduction router at other
+sizes. Its 256 KiB–4 MiB calls use 128 KiB packets.
 AllGather uses 512 KiB packets below 4 MiB and 2 MiB packets from 4 MiB
 through 1 GiB. The [paired AllGather measurements](benchmarks/data/ag_packet_8l4_20261111/README.md)
 and packet-size screening support this choice.
@@ -100,13 +102,14 @@ This testbed reuses the eight-GPU host but disables every GPU peer link in
 UCCL-Lite's benchmark topology. NCCL P2P is disabled and its GPU channels
 are verified to use SHM. The physical PCIe topology is unchanged. UCCL-Lite
 uses host-memory packets for AllReduce, AllGather, and ReduceScatter; the
-128 KiB AllReduce and 64 KiB ReduceScatter cases use size-specific router
+128–256 KiB AllReduce and 64 KiB ReduceScatter cases use size-specific router
 settings. AllGather uses the SM-kernel host-packet path. AllReduce is in
 place; the others are out of place.
 The SHM AllGather figure reuses the tuned UCCL-Lite host-packet timings from
-the 8xL4 GPU sweep; its NCCL SHM curve comes from the earlier SHM sweep.
-The two curves are from separate runs. AllReduce and ReduceScatter retain
-their paired SHM measurements. [SHM results and transport evidence](benchmarks/data/shm_8l4_20261111/README.md)
+the 8xL4 GPU sweep. Its 128/256 KiB AllReduce points likewise reuse the
+compact router run. NCCL SHM curves come from the earlier SHM sweep, so
+these points compare separate runs. Other AllReduce and ReduceScatter points
+retain their paired SHM measurements. [SHM results and transport evidence](benchmarks/data/shm_8l4_20261111/README.md)
 include the source of every plotted curve.
 
 ##### AllReduce on single 8xL4 SHM

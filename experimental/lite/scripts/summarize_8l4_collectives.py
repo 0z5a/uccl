@@ -91,6 +91,11 @@ def main() -> None:
         ag_rows = {int(row["bytes"]): row for row in csv.DictReader(stream)}
     if set(ag_rows) != set(SMALL_SIZES + LARGE_SIZES):
         raise ValueError("incomplete tuned eight-L4 AllGather summary")
+    ar_path = DATA / "ar_compact_8l4_20261111/summary.csv"
+    with ar_path.open() as stream:
+        ar_rows = {int(row["bytes"]): row for row in csv.DictReader(stream)}
+    if set(ar_rows) != {128 << 10, 256 << 10}:
+        raise ValueError("incomplete compact eight-L4 AllReduce summary")
     updated = []
     for operation, size, placement, path, candidate, control, speedup in results:
         if operation == "all_gather":
@@ -99,6 +104,14 @@ def main() -> None:
             row = ag_rows[size]
             candidate = float(row["uccl_median_us"])
             control = float(row["nccl_median_us"])
+            speedup = control / candidate
+        elif operation == "all_reduce" and size in ar_rows:
+            row = ar_rows[size]
+            candidate = float(row["uccl_median_us"])
+            control = float(row["nccl_median_us"])
+            if candidate >= float(row["local_median_us"]):
+                raise ValueError(f"compact router did not beat local: {size}")
+            path = "cpu-router"
             speedup = control / candidate
         updated.append((operation, size, placement, path, candidate,
                         control, speedup))
