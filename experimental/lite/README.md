@@ -112,6 +112,18 @@ retained.
 
 ![8xL4 SHM AllGather: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL SHM](docs/assets/collectives-8l4-shm-allgather.svg)
 
+AllGather transport comparison on the same host, using slowest-rank latency
+(lower is better). The figure above shows the copy-engine path.
+
+| Complete output per GPU | SM kernel | Copy engine | Copy / SM |
+| --- | ---: | ---: | ---: |
+| 1 KiB | 99.6 µs | 448.0 µs | 4.50× |
+| 1 MiB | 304.1 µs | 816.1 µs | 2.68× |
+| 64 MiB | 11.53 ms | 11.88 ms | 1.03× |
+| 1 GiB | 180.34 ms | 181.76 ms | 1.01× |
+
+[All 21 shapes and paired samples](benchmarks/data/shm_8l4_20261111/README.md)
+
 ##### ReduceScatter on single 8xL4 SHM
 
 ![8xL4 SHM ReduceScatter: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL SHM](docs/assets/collectives-8l4-shm-reducescatter.svg)

@@ -69,6 +69,42 @@ and their corresponding [logs](ag_kernel_run1.log) and [logs](ag_kernel_run2.log
 The full summary retains every DMA result, including regressions. The 64 KiB
 AllReduce point is also effectively tied.
 
+### AllGather: copy engine versus SM kernel
+
+The two paths use the same eight GPUs, SHM-only policy, tensor sizes, output
+checks, and timing method. Values are the median of the two process runs;
+each run contributes the median of three repetition medians. **Copy / SM**
+above 1× means the copy-engine path is slower. The [machine-readable table](ag_transport_comparison.csv)
+also retains both run-level medians.
+
+| Complete output per GPU | SM kernel (µs) | Copy engine (µs) | Copy / SM |
+| --- | ---: | ---: | ---: |
+| 1 KiB | 99.6 | 448.0 | 4.50× |
+| 2 KiB | 99.3 | 480.0 | 4.83× |
+| 4 KiB | 98.6 | 474.9 | 4.82× |
+| 8 KiB | 99.6 | 443.9 | 4.46× |
+| 16 KiB | 102.7 | 451.1 | 4.39× |
+| 32 KiB | 109.3 | 451.3 | 4.13× |
+| 64 KiB | 114.2 | 452.4 | 3.96× |
+| 128 KiB | 128.3 | 460.5 | 3.59× |
+| 256 KiB | 161.3 | 761.1 | 4.72× |
+| 512 KiB | 205.3 | 773.9 | 3.77× |
+| 1 MiB | 304.1 | 816.1 | 2.68× |
+| 2 MiB | 484.6 | 896.0 | 1.85× |
+| 4 MiB | 840.2 | 1,158.4 | 1.38× |
+| 8 MiB | 1,561.6 | 1,857.8 | 1.19× |
+| 16 MiB | 2,987.0 | 3,327.0 | 1.11× |
+| 32 MiB | 5,848.3 | 6,247.9 | 1.07× |
+| 64 MiB | 11,534.1 | 11,883.3 | 1.03× |
+| 128 MiB | 22,771.7 | 23,207.7 | 1.02× |
+| 256 MiB | 45,343.7 | 45,897.0 | 1.01× |
+| 512 MiB | 90,221.6 | 90,998.5 | 1.01× |
+| 1 GiB | 180,336.6 | 181,759.0 | 1.01× |
+
+The SM kernel is faster at every measured size. The large-message difference
+is small; at 1 GiB it is about 0.8%. Small messages pay for the DMA path's
+per-packet control kernels and multiple copy submissions.
+
 ## Reproduce
 
 From `experimental/lite`, with the local NCCL shim described in the

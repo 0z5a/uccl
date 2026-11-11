@@ -69,6 +69,24 @@ def main():
                                  f"{n / u:.4f}"))
     print(path.relative_to(ROOT))
 
+    comparison = DATA / "ag_transport_comparison.csv"
+    kernel = [load("ag_kernel", "all_gather", run) for run in (1, 2)]
+    copy = [load("ag", "all_gather", run) for run in (1, 2)]
+    with comparison.open("w", newline="") as stream:
+        writer = csv.writer(stream, lineterminator="\n")
+        writer.writerow(("bytes", "sm_run1_us", "copy_run1_us",
+                         "sm_run2_us", "copy_run2_us", "sm_median_us",
+                         "copy_median_us", "copy_over_sm"))
+        for size in SIZES:
+            sm = [run[size, run[size, "path"]] for run in kernel]
+            dma = [run[size, run[size, "path"]] for run in copy]
+            sm_median, dma_median = statistics.median(sm), statistics.median(dma)
+            writer.writerow((size, *(f"{v:.3f}" for v in
+                                    (sm[0], dma[0], sm[1], dma[1],
+                                     sm_median, dma_median)),
+                             f"{dma_median / sm_median:.4f}"))
+    print(comparison.relative_to(ROOT))
+
 
 if __name__ == "__main__":
     main()
