@@ -24,6 +24,10 @@ NCCL 2.28.7 **69.57/44.15/42.61 µs**. At 1 KiB, AR and AG still lose;
 RS is slightly faster. The main latency panels use a labeled log scale
 because the default NCCL control has 256–512 KiB spikes; the raw control
 logs and alternative-protocol diagnostics are kept in the data record.
+The [targeted NCCL diagnosis](../benchmarks/data/nccl_spike_2x4l4_20261111/README.md)
+shows that default `RING + LL` causes the spike on this topology; forcing
+`SIMPLE` while keeping the ring and two channels removes it. The exact
+internal LL wait remains unisolated.
 
 ## Previous adaptive local schedules
 
