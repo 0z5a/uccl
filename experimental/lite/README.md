@@ -55,20 +55,6 @@ the two-node launcher.
 
 ### Single-node collectives
 
-#### AllReduce on single 4xL4 GPU (FP32)
-
-![AllReduce latency and bus throughput, UCCL Lite versus NCCL](docs/assets/collectives-4l4-allreduce-refresh.svg)
-
-#### AllGather on single 4xL4 GPU (FP32)
-
-![AllGather latency and bus throughput, UCCL Lite versus NCCL](docs/assets/collectives-4l4-allgather-optimized.svg)
-
-#### ReduceScatter on single 4xL4 GPU (FP32)
-
-![ReduceScatter latency and bus throughput, UCCL Lite versus NCCL](docs/assets/collectives-4l4-reducescatter-optimized.svg)
-
-[Four-L4 FP32 data](benchmarks/data/optimization_20261110/README.md)
-
 #### AllReduce on single 4xL4 GPU (BF16 CPU router, in place)
 
 ![Four-L4 BF16 AllReduce: UCCL Lite CPU router at every size versus NCCL](docs/assets/collectives-4l4-bf16-router-allreduce.svg)

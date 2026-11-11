@@ -88,7 +88,7 @@ router, including 4/8 MiB losses. The paired measurement profiles are
 `ag_full_cpu_blocks248_packet4m_out.profile` and
 `ag_full_cpu_blocks248_packet4m_in.profile`. They are valid only for the
 recorded exact host/software/configuration key; the module's global default
-and main FP32 figures are unchanged.
+and archived FP32 figures are unchanged.
 
 ## Interpretation and artifacts
 

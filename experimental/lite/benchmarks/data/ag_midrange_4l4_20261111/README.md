@@ -1,10 +1,10 @@
 # Single-node 4×L4 AllGather midrange optimization (2026-11-11)
 
-Both `mibura-sky-test-02` (owner) and `l40` (`mibura-sky-test-01`, test node) ran the exact same source SHA and NCCL 2.28.7 library SHA; their driver versions differ and their results are kept separate. The main README figure uses only the l40 paired sweep. See `hardware_software.txt` for topology, versions and hashes.
+Both `mibura-sky-test-02` (owner) and `l40` (`mibura-sky-test-01`, test node) ran the exact same source SHA and NCCL 2.28.7 library SHA; their driver versions differ and their results are kept separate. The archived FP32 figure in `docs/peer-ag-rs.md` uses only the l40 paired sweep. The main README now shows separate BF16 CPU-router figures. See `hardware_software.txt` for topology, versions and hashes.
 
 FP32 out-of-place AllGather, four peer-accessible L4 GPUs in a 2+2 NUMA layout. Each source GPU launches one CTA. That CTA copies its input shard into each rank-ordered output slice, one destination at a time; a CTA barrier separates destinations. The destination order rotates by source rank to spread writes. This avoids the earlier concurrent multi-peer fan-out collapse and removes 16 peer-copy submissions and cross-device completion waits from the small-message path. The default candidate applies through 2 MiB complete output bytes per GPU; above that the measured direct peer-copy path is selected. The host-staged CPU router is retained only as a detailed candidate.
 
-Command on both hosts: `peer_ag_rs --router-ag -b 1024 -e 1073741824 -w 20 -n 10 -r 3`. The same harness rotates UCCL candidates and NCCL; every warmup and timed call checks all output elements. The selected CSV chooses the fastest correct non-CPU-router UCCL median per size without consulting NCCL. The table and main SVG use slowest-GPU per-call CUDA-event latency, median of three run means. Host-clock launch-to-completion samples are separately retained in `*_samples.csv` and are not mixed with event values.
+Command on both hosts: `peer_ag_rs --router-ag -b 1024 -e 1073741824 -w 20 -n 10 -r 3`. The same harness rotates UCCL candidates and NCCL; every warmup and timed call checks all output elements. The selected CSV chooses the fastest correct non-CPU-router UCCL median per size without consulting NCCL. The table and archived FP32 SVG use slowest-GPU per-call CUDA-event latency, median of three run means. Host-clock launch-to-completion samples are separately retained in `*_samples.csv` and are not mixed with event values.
 
 | Full output bytes/GPU | l40 UCCL path | l40 UCCL (µs) | l40 NCCL (µs) |
 | ---: | --- | ---: | ---: |
@@ -43,4 +43,4 @@ Extending the direct peer-read kernel above 32 KiB is a negative result (`pull_e
 - `owner_full.log` and `l40_full.log`: raw paired sweeps, including all UCCL candidates, NCCL and per-call checks. `*_samples.csv`: 2,430 timed calls per host; `*_candidates.csv` and `*_selected.csv`: all candidate and selected medians.
 - `owner_tail_1008.log` and `l40_tail_1008.log`: non-power-of-two shard tail passes; `owner_rs_regression.log` and `l40_rs_regression.log`: default ReduceScatter path passes.
 - `final_build.log`, `l40_build.log`, `hardware_software.txt`, and the two Nsight reports record build and measurement identity.
-- `scripts/summarize_ag_midrange.py` validates every size, repetition, call count and selected path. `scripts/plot_optimized_collectives.py` regenerates the main SVG in the established eight-L4 style.
+- `scripts/summarize_ag_midrange.py` validates every size, repetition, call count and selected path. `scripts/plot_optimized_collectives.py` regenerates the archived FP32 SVG in the established eight-L4 style.

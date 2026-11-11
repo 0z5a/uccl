@@ -14,8 +14,8 @@ records give their own topology and measurement protocol.
 
 - Four NVIDIA L4 GPUs per node, PCIe Gen4, no NVLink; dual Xeon Silver 4410Y.
 - NUMA pairs `(0,1)` and `(2,3)`; two-node tests use two local network rails.
-- Refreshed four-L4 and two-node AllReduce/AllGather/ReduceScatter: float32;
-  dense fusion: FP16; MoE: BF16.
+- Archived refreshed four-L4 and current two-node AR/AG/RS: FP32; current
+  main four-L4 CPU-router AR/AG/RS: BF16; dense fusion: FP16; MoE: BF16.
 - Speedup is baseline latency divided by compared latency. Above 1× is faster.
 - AllReduce bus bandwidth and All-to-All aggregate bandwidth are different
   metrics; do not compare their numerical values as if they were the same.
@@ -95,6 +95,9 @@ blue for UCCL-Lite and orange for NCCL; historical figures retain their
 recorded palettes. The fusion figures use paired latency bars for each shape.
 The recorded min–max timing ranges remain in the CSVs rather than being
 presented as confidence intervals.
+The main four-L4 BF16 CPU-router figures use the same two-panel style and
+show the router at every size, including losses; archived four-L4 FP32
+figures stay in the detailed documents.
 
 The November 10 refresh uses the same two-panel latency/throughput style
 as the current eight-L4 figures, with only the selected correct UCCL

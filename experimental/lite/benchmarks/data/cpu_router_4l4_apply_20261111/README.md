@@ -122,4 +122,6 @@ building, choose new output paths and run:
 ```
 
 Add `--in-place` and use distinct output paths for the second placement.
-No router policy or main README figure was changed by this experiment.
+This original calibration did not change the main README at the time. The
+later [BF16 figures](../cpu_router_4l4_figures_20261111/README.md) use fresh
+paired runs and show the router at every size.

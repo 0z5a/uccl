@@ -36,7 +36,8 @@ mode rejects an explicit NCCL fallback and a disabled router.
 The AR/RS and AG rows are from separate, correctly paired benchmark windows
 on the same host and executable/NCCL library. They are not one interleaved
 three-operation run. The older **FP32** direct-peer four-L4 figures remain
-separate because their dtype and implementation differ.
+in [the detailed archive](../../../docs/peer-ag-rs.md); they are removed
+from the main README because their dtype and implementation differ.
 
 Representative losses and gains, in µs unless marked ms:
 

@@ -1,6 +1,6 @@
 # Four-GPU peer AllGather and ReduceScatter
 
-## Current four-L4 AllGather
+## Archived FP32 four-L4 AllGather
 
 The [November 11 paired sweep](../benchmarks/data/ag_midrange_4l4_20261111/README.md)
 adds a single-CTA source-side push. Each GPU writes its shard to all four
@@ -16,17 +16,17 @@ On l40, the selected non-CPU-router path takes 15.85 versus 32.36 µs at
 The 4-MiB point still loses: 239.43 versus 234.39 µs. A second four-L4 host
 reproduces the 16 KiB–1 MiB gains. Both sweeps use FP32, full output checks
 on every call, 20 warmups, three rotated runs of ten calls, and the same
-per-call CUDA-event timer for each paired backend. The main figure uses only
-the l40 sweep, with one selected UCCL path and NCCL.
+per-call CUDA-event timer for each paired backend. The archived FP32 figure
+below uses only the l40 sweep, with one selected UCCL path and NCCL.
 
-## Current four-L4 ReduceScatter
+## Archived FP32 four-L4 ReduceScatter
 
 The [new paired sweep and candidate data](../benchmarks/data/rs_ar_serial_4l4_20261111/README.md)
 uses one source-side CTA per GPU to visit peer scratch regions sequentially.
 Through 1 MiB, the destination's same kernel waits for system-scope source
 flags and reduces the four contributions. An LL16 packet form is selected at
 8 KiB. From 2–8 MiB, a sequential push followed by the destination reduction
-wins; larger sizes retain the peer-copy path. The main figure uses the l40
+wins; larger sizes retain the peer-copy path. The archived FP32 figure uses the l40
 selected path and paired NCCL values.
 
 On l40, the selected path takes 21.76 versus 29.43 µs at 32 KiB and 85.57
@@ -46,7 +46,7 @@ use 4 MiB chunks and compare against direct peer paths and NCCL 2.28.7.
 The [original CUDA-allocated host-slot sweep](../benchmarks/data/cpu_router_ag_4l4_20261111/README.md)
 is retained as an ablation.
 This is an experimental host-staged candidate, separate from the BF16 CPU
-router module and from the main README's selected direct-peer curve.
+router module and from the archived FP32 direct-peer curve in this document.
 
 ## Previous pull and peer-copy sweep
 
