@@ -1,5 +1,10 @@
 # Four-L4 CPU-router worker tuning (2026-11-11)
 
+A later [transport-geometry follow-up](../cpu_router_ag_4l4_geometry_20261111/README.md)
+raises the four-L4 AllGather grid to 248 blocks and uses a 4-MiB packet cap;
+its 1-GiB paired latency falls to 37.577 ms out of place. The measurements
+below remain the original worker-count sweep and eight-worker profile.
+
 This follow-up tests the [previous 23-worker-per-NUMA calibration](../cpu_router_4l4_apply_20261111/README.md)
 on `mibura-sky-test-02`. The host has two Xeon Silver 4410Y sockets,
 **12 physical cores / 24 logical CPUs per NUMA node**. The previous

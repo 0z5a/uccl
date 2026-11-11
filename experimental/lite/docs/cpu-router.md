@@ -128,6 +128,13 @@ on distinct physical cores. The new **AllGather-only** eight-worker profile
 selects seven stable AG sizes in either placement; AR/RS always fall back
 to NCCL. Fewer workers did not rescue AR/RS and made large AR slower,
 so this host-specific profile does not change the module's global default.
+The subsequent [AllGather transport-geometry sweep](../benchmarks/data/cpu_router_ag_4l4_geometry_20261111/README.md)
+finds that the original 64-block grid and small per-source tiles limit the
+four-L4 large-message path. A machine-specific 248-block upper bound
+(180 actual blocks at 1 GiB), 4-MiB-cap profile
+cuts out-of-place 1-GiB AG from about 42.8 to 37.6 ms in separate checked
+paired windows, with NCCL near 48.1 ms in both. It still falls back at
+4/8 MiB, where the larger grid regresses.
 
 `off` always retains the existing backend. `force` is a diagnostic override;
 it still rejects unsupported dtypes, missing capabilities, or insufficient
