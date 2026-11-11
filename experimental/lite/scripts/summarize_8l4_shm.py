@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "benchmarks/data/shm_8l4_20261111"
 OPERATIONS = (("ar", "all_reduce", "in_place"),
-              ("ag_kernel", "all_gather", "out_of_place"),
+              ("ag", "all_gather", "out_of_place"),
               ("rs", "reduce_scatter", "out_of_place"))
 SIZES = tuple(1 << power for power in range(10, 31))
 
@@ -68,24 +68,6 @@ def main():
                                    (uccl[0], nccl[0], uccl[1], nccl[1], u, n)),
                                  f"{n / u:.4f}"))
     print(path.relative_to(ROOT))
-
-    comparison = DATA / "ag_transport_comparison.csv"
-    kernel = [load("ag_kernel", "all_gather", run) for run in (1, 2)]
-    copy = [load("ag", "all_gather", run) for run in (1, 2)]
-    with comparison.open("w", newline="") as stream:
-        writer = csv.writer(stream, lineterminator="\n")
-        writer.writerow(("bytes", "sm_run1_us", "copy_run1_us",
-                         "sm_run2_us", "copy_run2_us", "sm_median_us",
-                         "copy_median_us", "copy_over_sm"))
-        for size in SIZES:
-            sm = [run[size, run[size, "path"]] for run in kernel]
-            dma = [run[size, run[size, "path"]] for run in copy]
-            sm_median, dma_median = statistics.median(sm), statistics.median(dma)
-            writer.writerow((size, *(f"{v:.3f}" for v in
-                                    (sm[0], dma[0], sm[1], dma[1],
-                                     sm_median, dma_median)),
-                             f"{dma_median / sm_median:.4f}"))
-    print(comparison.relative_to(ROOT))
 
 
 if __name__ == "__main__":

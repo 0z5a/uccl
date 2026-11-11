@@ -11,8 +11,8 @@ The host runs driver 580.178.04 and CUDA 12.9.
 NCCL 2.28.9 runs with `NCCL_P2P_DISABLE=1`, `NCCL_SHM_DISABLE=0`,
 `NCCL_IB_DISABLE=1`, and `NCCL_NET=Socket`. The
 [NCCL initialization probe](nccl_shm_probe.log) reports all 16 GPU channel
-edges as `via SHM/direct/direct`. UCCL-Lite uses NUMA-local registered host
-packets and does not issue GPU peer copies.
+edges as `via SHM/direct/direct`. The CPU-router GPU-kernel transport uses
+NUMA-local registered host packets and does not issue GPU peer copies.
 `--fallback nccl` supplies the external timing control; the forced
 UCCL-Lite path never calls it.
 
@@ -23,15 +23,8 @@ UCCL-Lite path never calls it.
   16 transport blocks instead of the usual 23 workers and 64 blocks.
 - At 64 and 128 KiB ReduceScatter, GPU progress handles packet handoff;
   the rest use the CPU-router placement appropriate to their operation.
-- The main AllGather results use the SM-kernel host-packet path. Each GPU
-  uploads a tile to pinned host memory; CPU workers publish readiness after
-  all eight uploads; GPU kernels gather remote tiles from mapped host memory.
-  The local shard is read directly from the GPU input. At a 1 GiB output
-  size, each GPU contributes 128 MiB in 2,048 tiles of 64 KiB.
-- A separate copy-engine path uses `cudaMemcpyAsync` for GPU-to-host uploads
-  and host-to-GPU gathers. Its 16 MiB packet configuration produces 64 tiles
-  of 2 MiB per GPU at a 1 GiB output size. The transport comparison below
-  retains its complete measurements.
+- AllGather uses SM kernels to upload pinned host packets and gather remote
+  packets into GPU output. CPU workers publish packet-ready signals.
 
 Two process runs cover every doubling size from 1 KiB through 1 GiB. Run 1
 uses ascending sizes and run 2 descending sizes. Each backend gets 20
@@ -44,7 +37,7 @@ and communicator setup are outside timing. The six sample files contain
 | Collective | Run 1 | Run 2 |
 | --- | --- | --- |
 | AllReduce | [samples](ar_run1.csv), [log](ar_run1.log) | [samples](ar_run2.csv), [log](ar_run2.log) |
-| AllGather (SM kernel) | [samples](ag_kernel_run1.csv), [log](ag_kernel_run1.log) | [samples](ag_kernel_run2.csv), [log](ag_kernel_run2.log) |
+| AllGather | [samples](ag_run1.csv), [log](ag_run1.log) | [samples](ag_run2.csv), [log](ag_run2.log) |
 | ReduceScatter | [samples](rs_run1.csv), [log](rs_run1.log) | [samples](rs_run2.csv), [log](rs_run2.log) |
 
 The [full summary](summary.csv) reports each run's median of repetition
@@ -61,48 +54,10 @@ UCCL-Lite path at each size and every 1 KiB–1 GiB latency result.
 | ReduceScatter, 64 KiB | 115.7 µs | 139.5 µs | 1.21× |
 | ReduceScatter, 1 GiB | 172.1 ms | 218.0 ms | 1.27× |
 
-All 63 aggregate medians favor UCCL-Lite. At 64 KiB, the AllReduce gain is
-only about 1.2% and should be treated as a tie. The separate copy-engine
-AllGather runs remain in [run 1 samples](ag_run1.csv),
-[run 2 samples](ag_run2.csv), and their [run 1 log](ag_run1.log) and
-[run 2 log](ag_run2.log). They are excluded from the main NCCL comparison
-and figure, but included in the transport comparison below.
-
-### AllGather: copy engine versus SM kernel
-
-The two paths use the same eight GPUs, SHM-only policy, tensor sizes, output
-checks, and timing method. Values are the median of the two process runs;
-each run contributes the median of three repetition medians. **Copy / SM**
-above 1× means the copy-engine path is slower. The [machine-readable table](ag_transport_comparison.csv)
-also retains both run-level medians.
-
-| Complete output per GPU | SM kernel (µs) | Copy engine (µs) | Copy / SM |
-| --- | ---: | ---: | ---: |
-| 1 KiB | 99.6 | 448.0 | 4.50× |
-| 2 KiB | 99.3 | 480.0 | 4.83× |
-| 4 KiB | 98.6 | 474.9 | 4.82× |
-| 8 KiB | 99.6 | 443.9 | 4.46× |
-| 16 KiB | 102.7 | 451.1 | 4.39× |
-| 32 KiB | 109.3 | 451.3 | 4.13× |
-| 64 KiB | 114.2 | 452.4 | 3.96× |
-| 128 KiB | 128.3 | 460.5 | 3.59× |
-| 256 KiB | 161.3 | 761.1 | 4.72× |
-| 512 KiB | 205.3 | 773.9 | 3.77× |
-| 1 MiB | 304.1 | 816.1 | 2.68× |
-| 2 MiB | 484.6 | 896.0 | 1.85× |
-| 4 MiB | 840.2 | 1,158.4 | 1.38× |
-| 8 MiB | 1,561.6 | 1,857.8 | 1.19× |
-| 16 MiB | 2,987.0 | 3,327.0 | 1.11× |
-| 32 MiB | 5,848.3 | 6,247.9 | 1.07× |
-| 64 MiB | 11,534.1 | 11,883.3 | 1.03× |
-| 128 MiB | 22,771.7 | 23,207.7 | 1.02× |
-| 256 MiB | 45,343.7 | 45,897.0 | 1.01× |
-| 512 MiB | 90,221.6 | 90,998.5 | 1.01× |
-| 1 GiB | 180,336.6 | 181,759.0 | 1.01× |
-
-The SM kernel is faster at every measured size. The large-message difference
-is small; at 1 GiB it is about 0.8%. Small messages pay for the DMA path's
-per-packet control kernels and multiple copy submissions.
+All 63 aggregate medians favor UCCL-Lite, but 64 KiB AllReduce differs by
+only about 1.2%; that point should be treated as a tie. The full summary
+preserves small gaps and run-order variation instead of claiming uniform
+statistical significance.
 
 ## Reproduce
 
@@ -123,9 +78,7 @@ env -i HOME="$HOME" PATH=/usr/local/cuda-12.9/bin:/usr/bin:/bin \
 ```
 
 For AllGather and ReduceScatter, use `--op allgather` or
-`--op reducescatter` and omit `--in-place`. Add `--allgather-kernel` to
-reproduce the main AllGather figure and summary; without it, the SHM testbed
-selects the copy-engine alternative. Add `--reverse` for the second
+`--op reducescatter` and omit `--in-place`. Add `--reverse` for the second
 run, with distinct sample/profile paths. `scripts/summarize_8l4_shm.py`
 regenerates the summary from the archived six CSVs, and
 `scripts/plot_8l4_shm.py` regenerates the figures. NCCL's

@@ -149,13 +149,6 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
        options_.smallAllReducePacketBytes > options_.packetBytes ||
        options_.smallAllReducePacketBytes % 16))
     throw std::invalid_argument("invalid small AllReduce packet size");
-  if (options_.allGatherDma &&
-      (options_.allGatherDmaPacketBytes < options_.minPacketBytes ||
-       options_.allGatherDmaPacketBytes % 16))
-    throw std::invalid_argument("invalid AllGather DMA packet size");
-  if (options_.allGatherDma &&
-      options_.reduction == cpu_router::ReductionPlacement::Gpu)
-    throw std::invalid_argument("AllGather DMA requires CPU-router placement");
   if (options_.smallReduceScatterPacketBytes &&
       (options_.smallReduceScatterPacketBytes < options_.minPacketBytes ||
        options_.smallReduceScatterPacketBytes > options_.packetBytes ||
@@ -194,8 +187,6 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
         << options_.smallAllReduceTransportBlocks;
   if (options_.smallReduceScatterGpuProgress64K)
     key << ";small-rs-64k-progress-v1";
-  if (options_.allGatherDma)
-    key << ";allgather-dma-v1=" << options_.allGatherDmaPacketBytes;
   for (int cpu : options_.workerCpus) key << ";worker=" << cpu;
   for (int node : options_.numaNodes) key << ";numa=" << node;
   topology_.identity += key.str();
@@ -278,8 +269,6 @@ BackendDecision CollectiveDispatcher::decision(
   return policy_.select(topology_, w);
 }
 size_t CollectiveDispatcher::packetBytesFor(CollectiveCall const& call) const {
-  if (options_.allGatherDma && call.collective == Collective::AllGather)
-    return options_.allGatherDmaPacketBytes;
   if (call.collective == Collective::AllReduce &&
       call.workload().bytes <= (4UL << 20) &&
       options_.smallAllReducePacketBytes)
@@ -291,12 +280,6 @@ size_t CollectiveDispatcher::packetBytesFor(CollectiveCall const& call) const {
     return std::min(options_.packetBytes,
                     options_.smallReduceScatterPacketBytes);
   return options_.packetBytes;
-}
-cpu_router::TransportBackend CollectiveDispatcher::backendFor(
-    CollectiveCall const& call) const {
-  return options_.allGatherDma && call.collective == Collective::AllGather
-             ? cpu_router::TransportBackend::Dma
-             : options_.backend;
 }
 int CollectiveDispatcher::workersPerNodeFor(CollectiveCall const& call) const {
   return options_.smallAllReduceWorkersPerNode &&
@@ -325,13 +308,11 @@ bool CollectiveDispatcher::smallReduceScatterGpuProgressFor(
 BackendDecision CollectiveDispatcher::prepare(CollectiveCall const& call) {
   auto selected = decision(call);
   size_t packetBytes = packetBytesFor(call);
-  auto backend = backendFor(call);
   int workersPerNode = workersPerNodeFor(call);
   int transportBlocks = transportBlocksFor(call);
   bool smallGpu = smallReduceScatterGpuProgressFor(call);
   if (selected.cpuRouter &&
       (!router_ || routerPacketBytes_ != packetBytes ||
-       routerBackend_ != backend ||
        routerWorkersPerNode_ != workersPerNode ||
        routerTransportBlocks_ != transportBlocks ||
        routerSmallReduceScatterGpuProgress_ != smallGpu)) {
@@ -346,7 +327,6 @@ BackendDecision CollectiveDispatcher::prepare(CollectiveCall const& call) {
     router_.reset();
     auto activeOptions = options_;
     activeOptions.packetBytes = packetBytes;
-    activeOptions.backend = backend;
     activeOptions.workersPerNode = workersPerNode;
     activeOptions.transportBlocks = transportBlocks;
     if (workersPerNode != options_.workersPerNode &&
@@ -369,7 +349,6 @@ BackendDecision CollectiveDispatcher::prepare(CollectiveCall const& call) {
     router->prepare(call.ports);
     router_ = std::move(router);
     routerPacketBytes_ = packetBytes;
-    routerBackend_ = backend;
     routerWorkersPerNode_ = workersPerNode;
     routerTransportBlocks_ = transportBlocks;
     routerSmallReduceScatterGpuProgress_ = smallGpu;
@@ -387,8 +366,6 @@ BackendDecision CollectiveDispatcher::enqueue(CollectiveCall const& call) {
   size_t packetBytes = packetBytesFor(call);
   if (routerPacketBytes_ != packetBytes)
     throw std::logic_error("prepare CPU-router for this packet size");
-  if (routerBackend_ != backendFor(call))
-    throw std::logic_error("prepare CPU-router for this transport backend");
   if (routerWorkersPerNode_ != workersPerNodeFor(call) ||
       routerTransportBlocks_ != transportBlocksFor(call))
     throw std::logic_error("prepare CPU-router for this worker/grid choice");

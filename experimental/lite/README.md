@@ -98,9 +98,8 @@ UCCL-Lite's benchmark topology. NCCL P2P is disabled and its GPU channels
 are verified to use SHM. The physical PCIe topology is unchanged. UCCL-Lite
 uses host-memory packets for AllReduce, AllGather, and ReduceScatter; the
 128 KiB AllReduce and 64 KiB ReduceScatter cases use size-specific router
-settings. The AllGather figure uses the SM-kernel host-packet path; the
-copy-engine alternative is compared below. AllReduce is in place; the
-others are out of place.
+settings. AllGather uses the SM-kernel host-packet path. AllReduce is in
+place; the others are out of place.
 Two ascending and descending sweeps check every call. [Full SHM results
 and transport evidence](benchmarks/data/shm_8l4_20261111/README.md) are
 retained.
@@ -113,26 +112,12 @@ retained.
 
 ![8xL4 SHM AllGather: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL SHM](docs/assets/collectives-8l4-shm-allgather.svg)
 
-AllGather transport comparison on the same host, using slowest-rank latency
-(lower is better). The figure above shows the SM-kernel path.
-
-| Complete output per GPU | SM kernel | Copy engine | Copy / SM |
-| --- | ---: | ---: | ---: |
-| 1 KiB | 99.6 µs | 448.0 µs | 4.50× |
-| 1 MiB | 304.1 µs | 816.1 µs | 2.68× |
-| 64 MiB | 11.53 ms | 11.88 ms | 1.03× |
-| 1 GiB | 180.34 ms | 181.76 ms | 1.01× |
-
-[All 21 shapes and paired samples](benchmarks/data/shm_8l4_20261111/README.md)
-
 ##### ReduceScatter on single 8xL4 SHM
 
 ![8xL4 SHM ReduceScatter: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL SHM](docs/assets/collectives-8l4-shm-reducescatter.svg)
 
 At 1 GiB, UCCL-Lite takes **279.4 / 180.3 / 172.1 ms** for AR / AG / RS,
-versus **403.7 / 195.6 / 218.0 ms** with NCCL SHM. The copy-engine
-AllGather alternative has substantial launch overhead for small messages;
-its 1 KiB latency is **448 µs** versus **99.6 µs** for the SM kernel. At 64 KiB,
+versus **403.7 / 195.6 / 218.0 ms** with NCCL SHM. At 64 KiB,
 AllReduce differs by only about 1%, so that point is effectively tied.
 
 ### Multi-node collectives
