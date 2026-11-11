@@ -163,42 +163,49 @@ AllReduce differs by only about 1%, so that point is effectively tied.
 
 The eight L4s span two NUMA groups. Figures compare cuBLAS + NCCL, cuBLAS +
 CPU router, and fused GEMM + CPU router. Values are slowest-GPU CUDA-event
-latencies, aggregated across two runs. [Methods and samples](benchmarks/data/fusion_8l4_models_20261111/README.md).
+latencies, aggregated across two runs. Data: [AR](benchmarks/data/fusion_8l4_models_20261111/README.md),
+[AG/RS](benchmarks/data/fusion_8l4_models_ag_rs_20261111/README.md).
 
 #### GEMM + AllReduce on single 8xL4 GPU
 
-BF16 TP=8 FFN down projection: decode `M=1,16,32`; prefill
+BF16 TP=8 FFN down projection: decode `M=1,32,64`; prefill
 `M=2048,4096,8192`. Each model's `N` and per-GPU `K` appear in the figures.
 
-![Eight-L4 GEMM plus AllReduce decode latency bars for four model shapes at M=1,16,32](docs/assets/fusion-8l4-model-gemm-ar-decode-labeled-bars.svg)
+![Eight-L4 GEMM plus AllReduce decode latency bars for four model shapes at M=1,32,64](docs/assets/fusion-8l4-model-gemm-ar-decode-m64-labeled-bars.svg)
 
 ![Eight-L4 GEMM plus AllReduce prefill latency bars for four model shapes at M=2048,4096,8192](docs/assets/fusion-8l4-model-gemm-ar-prefill-labeled-bars.svg)
 
-Fused has the lowest aggregate median at 23/24 shapes. Qwen3.5-9B `M=16`
-favors NCCL by 0.005 ms; Qwen3.5-27B `M=16` changes winner between runs.
-The 12 prefill points show 1.17–1.44× speedup over NCCL. These are isolated
+Fused has the lowest median at all 24 shapes in both runs. The 12 prefill
+points show 1.17–1.44× speedup over NCCL. These are isolated
 GEMM + AR timings. [Full results](benchmarks/data/fusion_8l4_models_20261111/README.md)
 and the [older five-shape figure](docs/assets/fusion-8l4-gemm-ar.svg) are
 available separately.
 
 #### AllGather + GEMM on single 8xL4 GPU
 
-![Eight-GPU AllGather plus GEMM latency bars by shape for NCCL, sequential CPU router, and fused CPU router](docs/assets/fusion-8l4-ag-gemm.svg)
+Decode uses `M=8,32,64`; the eight-rank AllGather cannot split `M=1`
+into input shards. Prefill uses `M=2048,4096,8192`.
 
-The sequential CPU-router path is fastest at all three tested shapes; at
-`(128,1024,1024)` it takes **0.144 versus 0.203 ms** for cuBLAS + NCCL.
-The tuned resident fused kernel also beats NCCL at the two larger shapes,
-but it remains slower than the sequential router path and regresses at the
-smallest shape.
+![Eight-L4 AllGather plus GEMM decode latency bars for four model shapes at M=8,32,64](docs/assets/fusion-8l4-model-ag-gemm-decode-labeled-bars.svg)
+
+![Eight-L4 AllGather plus GEMM prefill latency bars for four model shapes at M=2048,4096,8192](docs/assets/fusion-8l4-model-ag-gemm-prefill-labeled-bars.svg)
+
+Sequential CPU router is fastest at all 12 decode shapes; fused is fastest
+at all 12 prefill shapes. [Data](benchmarks/data/fusion_8l4_models_ag_rs_20261111/README.md)
+and the [older figure](docs/assets/fusion-8l4-ag-gemm.svg).
 
 #### GEMM + ReduceScatter on single 8xL4 GPU
 
-![Eight-GPU GEMM plus ReduceScatter latency bars by shape for NCCL, sequential CPU router, and fused CPU router](docs/assets/fusion-8l4-gemm-rs.svg)
+Decode uses `M=1,32,64`; prefill uses `M=2048,4096,8192`.
 
-The fused path takes **0.214 ms versus 0.270 ms** for cuBLAS + NCCL at
-`(128,1024,1024)` and **0.391 ms versus 0.452 ms** at `(256,2048,2048)`.
-At `(512,4096,4096)`, separate cuBLAS + CPU router is slightly faster than
-the fused path; the difference is small across the two runs.
+![Eight-L4 GEMM plus ReduceScatter decode latency bars for four model shapes at M=1,32,64](docs/assets/fusion-8l4-model-gemm-rs-decode-labeled-bars.svg)
+
+![Eight-L4 GEMM plus ReduceScatter prefill latency bars for four model shapes at M=2048,4096,8192](docs/assets/fusion-8l4-model-gemm-rs-prefill-labeled-bars.svg)
+
+Fused has the lowest aggregate median at all 12 decode shapes; sequential
+CPU router wins all 12 prefill shapes. At Qwen3.5-9B `M=64`, one decode run
+favors NCCL. [Data](benchmarks/data/fusion_8l4_models_ag_rs_20261111/README.md)
+and the [older figure](docs/assets/fusion-8l4-gemm-rs.svg).
 
 #### Other fusion workloads
 

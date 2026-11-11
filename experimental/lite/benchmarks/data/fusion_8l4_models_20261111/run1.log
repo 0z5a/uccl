@@ -286,3 +286,51 @@ $ /home/wxzheng/uccl-zhongjie-dev/experimental/lite/build/uccl_lite_router_fusio
 op=gemm-ar shape=8192x5120x3200 method=cublas+nccl packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=34.5702 median_ms=34.7812 max_ms=35.0515 samples=50
 op=gemm-ar shape=8192x5120x3200 method=cublas+router packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=29.1113 median_ms=29.5383 max_ms=29.8394 samples=50
 op=gemm-ar shape=8192x5120x3200 method=fused+router packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=23.0779 median_ms=23.9329 max_ms=25.3041 samples=50
+$ /home/wxzheng/uccl-zhongjie-dev/experimental/lite/build/uccl_lite_router_fusion_8l4 --op gemm-ar --m 64 --n 4096 --k 1536 --warmup 2 --iterations 10 --repeats 5 --samples /home/wxzheng/uccl-zhongjie-dev/experimental/lite/benchmarks/data/fusion_8l4_models_20261111/samples_run1.csv
+# NUMA group0 host_node=0 ranks=0(device0),1(device1),2(device2),3(device3),
+# NUMA group1 host_node=1 ranks=4(device4),5(device5),6(device6),7(device7),
+# PacketPipeline transport=kernel; registered spans; shared BF16 executor; generational ownership; ranks=8 NUMA_groups=2
+# packet_progress=cpu routing_cpu_workers=46
+# CPU-router BF16: packet=131072 slots=2 blocks<=64 threads=256 CPU<=23/node grain=8192; no NCCL collective fallback
+# reduction_placement=cpu
+# scatter_packet_order=flat
+# Resident cooperative GEMM BF16 tile=64x128 Ktile=32 stages=4 Mgroup=1 shared=49168 registers=126 local=112 grid_limit=58; same-grid tile publication
+op=gemm-ar shape=64x4096x1536 method=cublas+nccl packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=0.4669 median_ms=0.4915 max_ms=0.5939 samples=50
+op=gemm-ar shape=64x4096x1536 method=cublas+router packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=0.3901 median_ms=0.4127 max_ms=0.4516 samples=50
+op=gemm-ar shape=64x4096x1536 method=fused+router packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=0.3410 median_ms=0.3635 max_ms=1.2390 samples=50
+$ /home/wxzheng/uccl-zhongjie-dev/experimental/lite/build/uccl_lite_router_fusion_8l4 --op gemm-ar --m 64 --n 5120 --k 2176 --warmup 2 --iterations 10 --repeats 5 --samples /home/wxzheng/uccl-zhongjie-dev/experimental/lite/benchmarks/data/fusion_8l4_models_20261111/samples_run1.csv
+# NUMA group0 host_node=0 ranks=0(device0),1(device1),2(device2),3(device3),
+# NUMA group1 host_node=1 ranks=4(device4),5(device5),6(device6),7(device7),
+# PacketPipeline transport=kernel; registered spans; shared BF16 executor; generational ownership; ranks=8 NUMA_groups=2
+# packet_progress=cpu routing_cpu_workers=46
+# CPU-router BF16: packet=131072 slots=2 blocks<=64 threads=256 CPU<=23/node grain=8192; no NCCL collective fallback
+# reduction_placement=cpu
+# scatter_packet_order=flat
+# Resident cooperative GEMM BF16 tile=64x128 Ktile=32 stages=4 Mgroup=1 shared=49168 registers=126 local=112 grid_limit=58; same-grid tile publication
+op=gemm-ar shape=64x5120x2176 method=cublas+nccl packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=0.5212 median_ms=0.5427 max_ms=0.6052 samples=50
+op=gemm-ar shape=64x5120x2176 method=cublas+router packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=0.4229 median_ms=0.4413 max_ms=0.4844 samples=50
+op=gemm-ar shape=64x5120x2176 method=fused+router packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=0.3758 median_ms=0.4014 max_ms=0.7045 samples=50
+$ /home/wxzheng/uccl-zhongjie-dev/experimental/lite/build/uccl_lite_router_fusion_8l4 --op gemm-ar --m 64 --n 5376 --k 2688 --warmup 2 --iterations 10 --repeats 5 --samples /home/wxzheng/uccl-zhongjie-dev/experimental/lite/benchmarks/data/fusion_8l4_models_20261111/samples_run1.csv
+# NUMA group0 host_node=0 ranks=0(device0),1(device1),2(device2),3(device3),
+# NUMA group1 host_node=1 ranks=4(device4),5(device5),6(device6),7(device7),
+# PacketPipeline transport=kernel; registered spans; shared BF16 executor; generational ownership; ranks=8 NUMA_groups=2
+# packet_progress=cpu routing_cpu_workers=46
+# CPU-router BF16: packet=131072 slots=2 blocks<=64 threads=256 CPU<=23/node grain=8192; no NCCL collective fallback
+# reduction_placement=cpu
+# scatter_packet_order=flat
+# Resident cooperative GEMM BF16 tile=64x128 Ktile=32 stages=4 Mgroup=1 shared=49168 registers=126 local=112 grid_limit=58; same-grid tile publication
+op=gemm-ar shape=64x5376x2688 method=cublas+nccl packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=0.5468 median_ms=0.5622 max_ms=0.6052 samples=50
+op=gemm-ar shape=64x5376x2688 method=cublas+router packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=0.4239 median_ms=0.4516 max_ms=0.5591 samples=50
+op=gemm-ar shape=64x5376x2688 method=fused+router packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=0.3973 median_ms=0.4188 max_ms=2.9092 samples=50
+$ /home/wxzheng/uccl-zhongjie-dev/experimental/lite/build/uccl_lite_router_fusion_8l4 --op gemm-ar --m 64 --n 5120 --k 3200 --warmup 2 --iterations 10 --repeats 5 --samples /home/wxzheng/uccl-zhongjie-dev/experimental/lite/benchmarks/data/fusion_8l4_models_20261111/samples_run1.csv
+# NUMA group0 host_node=0 ranks=0(device0),1(device1),2(device2),3(device3),
+# NUMA group1 host_node=1 ranks=4(device4),5(device5),6(device6),7(device7),
+# PacketPipeline transport=kernel; registered spans; shared BF16 executor; generational ownership; ranks=8 NUMA_groups=2
+# packet_progress=cpu routing_cpu_workers=46
+# CPU-router BF16: packet=131072 slots=2 blocks<=64 threads=256 CPU<=23/node grain=8192; no NCCL collective fallback
+# reduction_placement=cpu
+# scatter_packet_order=flat
+# Resident cooperative GEMM BF16 tile=64x128 Ktile=32 stages=4 Mgroup=1 shared=49168 registers=126 local=112 grid_limit=58; same-grid tile publication
+op=gemm-ar shape=64x5120x3200 method=cublas+nccl packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=0.5110 median_ms=0.5427 max_ms=0.6083 samples=50
+op=gemm-ar shape=64x5120x3200 method=cublas+router packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=0.4250 median_ms=0.4424 max_ms=0.4803 samples=50
+op=gemm-ar shape=64x5120x3200 method=fused+router packet_kib=128 tile=0x0x0 stages=0 blocks=64 workers=23 mgroup=0 min_ms=0.3891 median_ms=0.4106 max_ms=0.4721 samples=50

@@ -19,7 +19,7 @@ MODELS = (
     ("qwen3-32b", 5120, 3200),
 )
 PREFILL_M = (2048, 4096, 8192)
-DECODE_M = (1, 16, 32)
+DECODE_M = (1, 32, 64)
 METHODS = ("cublas+nccl", "cublas+router", "fused+router")
 SAMPLES_PER_METHOD = 50
 

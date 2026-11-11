@@ -20,7 +20,7 @@ MODELS = (
     ("Gemma 4 31B IT", 5376, 2688),
     ("Qwen3-32B", 5120, 3200),
 )
-PHASES = (("decode", (1, 16, 32)), ("prefill", (2048, 4096, 8192)))
+PHASES = (("decode", (1, 32, 64)), ("prefill", (2048, 4096, 8192)))
 METHODS = (
     ("cublas+nccl", "cuBLAS + NCCL", "#D65A00"),
     ("cublas+router", "cuBLAS + UCCL-Lite", "#0068B5"),
@@ -99,7 +99,8 @@ def plot(data, phase, sizes, preview):
                ncol=3, frameon=False, fontsize=10, labelcolor="black")
     fig.suptitle(f"8×L4 GEMM + AllReduce · {phase}", y=0.995,
                  fontsize=16, fontweight="bold", color="black")
-    save(fig, f"fusion-8l4-model-gemm-ar-{phase}-labeled-bars", preview)
+    suffix = "decode-m64" if phase == "decode" else "prefill"
+    save(fig, f"fusion-8l4-model-gemm-ar-{suffix}-labeled-bars", preview)
 
 
 def main():

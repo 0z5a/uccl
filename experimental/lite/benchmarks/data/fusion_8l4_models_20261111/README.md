@@ -13,7 +13,8 @@ intermediate size divided by eight.
 | [Qwen3.5-27B](https://huggingface.co/Qwen/Qwen3.5-27B/blob/main/config.json) | 5120 | 2176 |
 | [Gemma 4 31B IT](https://huggingface.co/google/gemma-4-31B-it/blob/main/config.json) | 5376 | 2688 |
 | [Qwen3-32B](https://huggingface.co/Qwen/Qwen3-32B/blob/main/config.json) | 5120 | 3200 |
-Decode uses `M=1,16,32`. Prefill uses `M=2048,4096,8192`, centered on the
+
+Decode uses `M=1,32,64`. Prefill uses `M=2048,4096,8192`, centered on the
 larger of the 24 GB GPU defaults: [SGLang chunked prefill 4096](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/arg_groups/memory_hook.py)
 and [vLLM API-server token budget 2048](https://github.com/vllm-project/vllm/blob/main/vllm/engine/arg_utils.py).
 
@@ -32,8 +33,10 @@ The router uses 128 KiB packets and CPU reduction workers. Each executable
 invocation has two warmup rounds and five measured rounds of ten calls per
 method; method order rotates each round. The executable checks every output
 element on all eight GPUs after every call, outside the timer. Each sample is
-the largest CUDA-event duration among the GPUs. Two independent runs cover
-all 24 shapes; the second reverses shape order. The reported value is the
+the largest CUDA-event duration among the GPUs. The 20 retained non-`M=64`
+shapes came from the original two runs, which also measured the archived
+`M=16` points. The four `M=64` shapes were measured later with the same
+settings in reverse model order between runs. The reported value is the
 median of the two per-run sample medians. Thus each method/shape has 50 checked
 samples per run and 100 total, with 7,200 measured calls across the sweep.
 The comparison also changes the GEMM kernel, so any fused gain cannot be
@@ -41,13 +44,9 @@ attributed solely to overlap.
 
 ## Results
 
-The fused path has the lowest aggregate median at 23 of the 24 shapes. At
-Qwen3.5-9B `M=16`, the cuBLAS + NCCL median is 0.292 ms and the fused median
-is 0.298 ms; the fused path loses by 1.8%. At Qwen3.5-27B `M=16`, the two
-runs disagree: NCCL versus fused is 0.320 versus 0.324 ms in run 1 and
-0.315 versus 0.267 ms in run 2. That aggregate win is sensitive to run order
-or transient effects. The 12 prefill shapes all favor the fused path in both
-runs, with aggregate NCCL/fused speedup from 1.17× to 1.44×.
+The fused path has the lowest median at all 24 shapes in both runs. For the
+four new `M=64` decode shapes, aggregate NCCL/fused speedup is 1.35×–1.39×.
+The 12 prefill shapes have aggregate NCCL/fused speedup of 1.17×–1.44×.
 
 | Model, `M=4096` | cuBLAS + NCCL | cuBLAS + router | Fused + router | NCCL/fused |
 | --- | ---: | ---: | ---: | ---: |
@@ -58,9 +57,16 @@ runs, with aggregate NCCL/fused speedup from 1.17× to 1.44×.
 
 The raw samples are [run 1](samples_run1.csv) and [run 2](samples_run2.csv).
 The [summary](summary.csv) records both run medians and their median. The
-[decode figure](../../../docs/assets/fusion-8l4-model-gemm-ar-decode-labeled-bars.svg) and
+[decode figure](../../../docs/assets/fusion-8l4-model-gemm-ar-decode-m64-labeled-bars.svg) and
 [prefill figure](../../../docs/assets/fusion-8l4-model-gemm-ar-prefill-labeled-bars.svg)
 show those summary values on linear latency axes.
+
+The previous `M=16` samples remain in [run 1](samples_m16_run1.csv),
+[run 2](samples_m16_run2.csv), and their [summary](summary_m16.csv). They
+include the Qwen3.5-9B case where NCCL was 0.292 ms versus 0.298 ms fused,
+and the Qwen3.5-27B case whose winner changed between runs. The
+[earlier decode figure](../../../docs/assets/fusion-8l4-model-gemm-ar-decode-labeled-bars.svg)
+is retained as a historical view.
 
 ## Reproduce
 
