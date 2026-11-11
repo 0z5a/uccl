@@ -89,12 +89,13 @@ different, much weaker baseline and must be labeled separately.
 
 ## Direct peer AllGather and ReduceScatter
 
-[peer_ag_rs.cu](../src/collectives/peer_ag_rs.cu) adds standalone four-GPU
-float32 AG and RS paths using source-side peer writes and destination-owned
-output. The matched NCCL sweep finds AG wins from 1–64 MiB and RS wins mainly
-at 8–32 MiB, with substantial small-message regressions. See the
-[algorithm, full sweep and timing scope](peer-ag-rs.md). This path does not
-replace the separate BF16/no-P2P CPU router.
+[peer_ag_rs.cu](../src/collectives/peer_ag_rs.cu) provides standalone four-GPU
+float32 AG and RS paths. The current AG candidate uses one source-side CTA per
+GPU and visits peer outputs sequentially through 2 MiB; direct peer copies
+serve larger messages. The [paired l40 sweep](peer-ag-rs.md) shows AG faster
+than NCCL at 20 of 21 sizes, with a remaining 4-MiB loss. RS retains its
+separate measured path and negative sizes. These paths are separate from the
+BF16/no-P2P CPU router.
 
 ## Eight-GPU BF16 local fallback
 

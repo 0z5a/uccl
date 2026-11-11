@@ -1,5 +1,24 @@
 # Four-GPU peer AllGather and ReduceScatter
 
+## Current four-L4 AllGather
+
+The [November 11 paired sweep](../benchmarks/data/ag_midrange_4l4_20261111/README.md)
+adds a single-CTA source-side push. Each GPU writes its shard to all four
+rank-ordered output slices, visiting one peer at a time; the four sources
+rotate destination order. This removes the many copy submissions and peer
+completion waits from the small-message path. The default benchmark includes
+this candidate through 2 MiB complete output bytes per GPU; larger messages
+use the measured direct peer-copy path. The optional vectorized pull and CPU
+router remain separate candidates in the detailed data.
+
+On l40, the selected non-CPU-router path takes 15.85 versus 32.36 µs at
+64 KiB and 72.88 versus 99.92 µs at 1 MiB (UCCL Lite versus NCCL 2.28.7).
+The 4-MiB point still loses: 239.43 versus 234.39 µs. A second four-L4 host
+reproduces the 16 KiB–1 MiB gains. Both sweeps use FP32, full output checks
+on every call, 20 warmups, three rotated runs of ten calls, and the same
+per-call CUDA-event timer for each paired backend. The main figure uses only
+the l40 sweep, with one selected UCCL path and NCCL.
+
 ## Host-staged AllGather candidate
 
 The optional `--router-ag` benchmark also measures a pipelined pinned-host
@@ -14,9 +33,9 @@ is retained as an ablation.
 This is an experimental host-staged candidate, separate from the BF16 CPU
 router module and from the main README's selected direct-peer curve.
 
-## Optimized small-message paths
+## Previous pull and peer-copy sweep
 
-The current four-L4 eager benchmark on l40 compares three correct paths in
+The previous four-L4 eager benchmark on l40 compared three correct paths in
 one process: the original source-side peer copies, destination-side peer
 reads, and NCCL 2.28.7. Every backend uses FP32 out-of-place buffers,
 slowest-rank per-call CUDA-event time, five warmups, ten timed calls, and

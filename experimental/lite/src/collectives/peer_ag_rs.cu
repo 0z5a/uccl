@@ -37,6 +37,8 @@ void ncclCheck(ncclResult_t status) {
 struct Config {
   size_t begin = 1UL << 10, end = 1UL << 26;
   size_t pullMaxBytes = 32UL << 10;
+  size_t pullVecMaxBytes = 0;
+  size_t pushSerialMaxBytes = 2UL << 20;
   size_t routerChunkBytes = 4UL << 20;
   int warmups = 5, iterations = 10, repeats = 3;
   bool routerAg = false;
@@ -53,7 +55,9 @@ Config parse(int argc, char** argv) {
     if (option == "--help") {
       std::puts("Usage: uccl_lite_peer_ag_rs [-b BYTES] [-e BYTES] "
                 "[-w WARMUPS] [-n ITERATIONS] [-r REPEATS] "
-                "[--pull-max-bytes BYTES] [--router-ag] "
+                "[--pull-max-bytes BYTES] [--pull-vec-max-bytes BYTES] "
+                "[--push-serial-max-bytes BYTES] "
+                "[--router-ag] "
                 "[--router-chunk-bytes BYTES] "
                 "[--router-host-placement local|cuda]\n"
                 "BYTES is full AllGather output / ReduceScatter input per "
@@ -69,6 +73,10 @@ Config parse(int argc, char** argv) {
     else if (option == "-r") cfg.repeats = std::atoi(value);
     else if (option == "--pull-max-bytes")
       cfg.pullMaxBytes = std::strtoull(value, nullptr, 0);
+    else if (option == "--pull-vec-max-bytes")
+      cfg.pullVecMaxBytes = std::strtoull(value, nullptr, 0);
+    else if (option == "--push-serial-max-bytes")
+      cfg.pushSerialMaxBytes = std::strtoull(value, nullptr, 0);
     else if (option == "--router-chunk-bytes")
       cfg.routerChunkBytes = std::strtoull(value, nullptr, 0);
     else if (option == "--router-host-placement") {
@@ -166,6 +174,40 @@ __global__ void pullGather(float const* in0, float const* in1,
   float const* input = source == 0 ? in0 : source == 1 ? in1 : source == 2 ? in2 : in3;
   output[size_t(source) * shard + index] = input[index];
 }
+__global__ void pullVecGather(float const* in0, float const* in1,
+                              float const* in2, float const* in3,
+                              float* output, size_t shard) {
+  size_t index = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+  int source = blockIdx.y;
+  float const* input = source == 0 ? in0 : source == 1 ? in1 : source == 2 ? in2 : in3;
+  size_t vectors = shard / 4;
+  if (index < vectors) {
+    auto* out = reinterpret_cast<uint4*>(output + size_t(source) * shard);
+    auto const* in = reinterpret_cast<uint4 const*>(input);
+    out[index] = in[index];
+  }
+  if (index == 0)
+    for (size_t tail = vectors * 4; tail < shard; ++tail)
+      output[size_t(source) * shard + tail] = input[tail];
+}
+__global__ void pushSerialGather(float const* input, float* out0,
+                                 float* out1, float* out2, float* out3,
+                                 size_t shard, int source) {
+  float* targets[4] = {out0, out1, out2, out3};
+  for (int phase = 0; phase < kRanks; ++phase) {
+    int dest = (source + phase) % kRanks;
+    float* output = targets[dest] + size_t(source) * shard;
+    if (shard % 4 == 0) {
+      auto const* in = reinterpret_cast<uint4 const*>(input);
+      auto* out = reinterpret_cast<uint4*>(output);
+      for (size_t i = threadIdx.x; i < shard / 4; i += blockDim.x)
+        out[i] = in[i];
+    } else
+      for (size_t i = threadIdx.x; i < shard; i += blockDim.x)
+        output[i] = input[i];
+    __syncthreads();
+  }
+}
 __global__ void pullScatter(float const* in0, float const* in1,
                             float const* in2, float const* in3, float* output,
                             size_t shard, int destination) {
@@ -179,13 +221,15 @@ __global__ void pullScatter(float const* in0, float const* in1,
   output[index] = value;
 }
 enum class Operation { Gather, Scatter };
-enum class Backend { Peer, Pull, Nccl, Router };
+enum class Backend { Peer, Pull, Nccl, Router, PullVec, PushSerial };
 char const* opName(Operation op) {
   return op == Operation::Gather ? "all_gather" : "reduce_scatter";
 }
 char const* backendName(Backend backend) {
   if (backend == Backend::Peer) return "peer";
   if (backend == Backend::Pull) return "pull";
+  if (backend == Backend::PullVec) return "pull-vec";
+  if (backend == Backend::PushSerial) return "push-serial";
   return backend == Backend::Router ? "cpu-router" : "nccl";
 }
 struct HostRouter {
@@ -387,6 +431,34 @@ void launchPull(std::array<Device*, kRanks> const& devices, Operation op,
     cudaCheck(cudaGetLastError());
   }
 }
+void launchPullVec(std::array<Device*, kRanks> const& devices, size_t shard) {
+  if (shard % 4) {
+    launchPull(devices, Operation::Gather, shard);
+    return;
+  }
+  for (int destination = 0; destination < kRanks; ++destination) {
+    auto& d = *devices[destination];
+    cudaCheck(cudaSetDevice(destination));
+    pullVecGather<<<dim3(int(((shard + 3) / 4 + 127) / 128), kRanks), 128,
+                    0, d.stream>>>(devices[0]->input, devices[1]->input,
+                                    devices[2]->input, devices[3]->input,
+                                    d.output, shard);
+    cudaCheck(cudaGetLastError());
+  }
+}
+void launchPushSerial(std::array<Device*, kRanks> const& devices,
+                      size_t shard) {
+  size_t fullBytes = shard * kRanks * sizeof(float);
+  int threads = fullBytes == (64UL << 10) ? 128 : 256;
+  for (int source = 0; source < kRanks; ++source) {
+    auto& d = *devices[source];
+    cudaCheck(cudaSetDevice(source));
+    pushSerialGather<<<1, threads, 0, d.stream>>>(
+        d.input, devices[0]->output, devices[1]->output,
+        devices[2]->output, devices[3]->output, shard, source);
+    cudaCheck(cudaGetLastError());
+  }
+}
 void launchNccl(std::array<Device*, kRanks> const& devices,
                 std::array<ncclComm_t, kRanks> const& comms, Operation op,
                 size_t shard) {
@@ -408,6 +480,8 @@ void launch(std::array<Device*, kRanks> const& devices,
             Backend backend, size_t shard, HostRouter* router) {
   if (backend == Backend::Peer) launchPeer(devices, op, shard);
   else if (backend == Backend::Pull) launchPull(devices, op, shard);
+  else if (backend == Backend::PullVec) launchPullVec(devices, shard);
+  else if (backend == Backend::PushSerial) launchPushSerial(devices, shard);
   else if (backend == Backend::Router) router->launch(devices, shard);
   else launchNccl(devices, comms, op, shard);
 }
@@ -567,8 +641,14 @@ int main(int argc, char** argv) {
       for (auto op : {Operation::Gather, Operation::Scatter}) {
         if (cfg.routerAg && op == Operation::Scatter) continue;
         bool pullEligible = bytes <= cfg.pullMaxBytes;
+        bool vecEligible = op == Operation::Gather &&
+                           bytes <= cfg.pullVecMaxBytes;
+        bool serialEligible = op == Operation::Gather &&
+                              bytes <= cfg.pushSerialMaxBytes;
         std::vector<Backend> backends{Backend::Peer};
         if (pullEligible) backends.push_back(Backend::Pull);
+        if (vecEligible) backends.push_back(Backend::PullVec);
+        if (serialEligible) backends.push_back(Backend::PushSerial);
         backends.push_back(Backend::Nccl);
         if (cfg.routerAg) backends.push_back(Backend::Router);
         for (int generation = 0; generation < 2; ++generation) {
@@ -579,7 +659,7 @@ int main(int argc, char** argv) {
             verify(devices, op, backend, shard, generation);
           }
         }
-        std::array<std::vector<double>, 4> samples;
+        std::array<std::vector<double>, 6> samples;
         for (int repeat = 0; repeat < cfg.repeats; ++repeat) {
           std::vector<Backend> order;
           if (pullEligible) {
@@ -593,6 +673,16 @@ int main(int argc, char** argv) {
             order = {Backend::Nccl, Backend::Peer};
           if (cfg.routerAg) {
             order.push_back(Backend::Router);
+            std::rotate(order.begin(), order.begin() + repeat % order.size(),
+                        order.end());
+          }
+          if (vecEligible) {
+            order.push_back(Backend::PullVec);
+            std::rotate(order.begin(), order.begin() + repeat % order.size(),
+                        order.end());
+          }
+          if (serialEligible) {
+            order.push_back(Backend::PushSerial);
             std::rotate(order.begin(), order.begin() + repeat % order.size(),
                         order.end());
           }
@@ -614,10 +704,21 @@ int main(int argc, char** argv) {
                       backendName(backend), median(run), *range.first,
                       *range.second);
         }
+        Backend best = Backend::Peer;
+        if (pullEligible && median(samples[static_cast<int>(Backend::Pull)]) <
+                                median(samples[static_cast<int>(best)]))
+          best = Backend::Pull;
+        if (vecEligible && median(samples[static_cast<int>(Backend::PullVec)]) <
+                               median(samples[static_cast<int>(best)]))
+          best = Backend::PullVec;
+        if (serialEligible &&
+            median(samples[static_cast<int>(Backend::PushSerial)]) <
+                median(samples[static_cast<int>(best)]))
+          best = Backend::PushSerial;
         char const* selected =
-            pullEligible && median(samples[static_cast<int>(Backend::Pull)]) <
-                                median(samples[static_cast<int>(Backend::Peer)])
-                ? "pull"
+            best == Backend::Pull ? "pull"
+                : best == Backend::PullVec ? "pull-vec"
+                : best == Backend::PushSerial ? "push-serial"
                 : op == Operation::Scatter && directSelfReduce(bytes)
                       ? "peer-noself"
                 : ((op == Operation::Gather && bytes <= kCompactGatherBytes) ||

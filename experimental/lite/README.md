@@ -13,7 +13,7 @@ optional CPU router, fusion kernels, and hardware probes. The direct peer paths
 target **four NVIDIA L4 GPUs on a PCIe Gen4 dual-socket node**; the network
 paths target **two such nodes**, with two NIC rails per node. The CPU router is
 a separate module for 1–32 local GPUs. Most collective and fusion paths
-use MSCCL++; standalone peer AG/RS uses CUDA peer copies.
+use MSCCL++; standalone peer AG/RS uses CUDA peer access.
 
 The eight-L4 results were measured on a separate host with four GPUs per
 NUMA node. Fresh four-L4, two-node, and eight-L4 dense fusion
