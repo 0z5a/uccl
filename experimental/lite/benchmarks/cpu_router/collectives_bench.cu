@@ -50,6 +50,7 @@ struct Config {
   int gpus = 8, warmup = 3, iterations = 10, repeats = 3;
   size_t begin = 1024, end = 1 << 20;
   size_t packetBytes = 512UL << 10;
+  size_t allGatherDmaPacketBytes = 16UL << 20;
   size_t smallAllReducePacketBytes = 128UL << 10;
   size_t smallReduceScatterPacketBytes = 128UL << 10;
   int workersPerNode = 23, transportBlocks = 64;
@@ -59,6 +60,7 @@ struct Config {
   bool gpuProgress = false;
   bool interleaveScatter = false;
   bool shmOnly = false;
+  bool allGatherKernel = false;
   bool reverse = false;
   std::string operation = "all", fallback = "local", profile, calibrate,
               samples;
@@ -209,6 +211,8 @@ int main(int argc, char** argv) {
         cfg.end = std::stoull(next());
       else if (arg == "--packet-bytes")
         cfg.packetBytes = std::stoull(next());
+      else if (arg == "--allgather-dma-packet-bytes")
+        cfg.allGatherDmaPacketBytes = std::stoull(next());
       else if (arg == "--small-ar-packet-bytes")
         cfg.smallAllReducePacketBytes = std::stoull(next());
       else if (arg == "--small-rs-packet-bytes")
@@ -235,6 +239,8 @@ int main(int argc, char** argv) {
         cfg.inPlace = true;
       else if (arg == "--shm-only")
         cfg.shmOnly = true;
+      else if (arg == "--allgather-kernel")
+        cfg.allGatherKernel = true;
       else if (arg == "--reverse")
         cfg.reverse = true;
       else if (arg == "--gpu-reduce")
@@ -260,6 +266,9 @@ int main(int argc, char** argv) {
             "local)\n"
             "  --shm-only: require NCCL SHM transport, disable all logical "
             "GPU peer links, and reject the P2P local fallback\n"
+            "  --allgather-kernel: retain the previous GPU-kernel AllGather "
+            "path in the SHM testbed\n"
+            "  --allgather-dma-packet-bytes BYTES (default 16777216)\n"
             "  --reverse: sweep message sizes from large to small\n"
             "  local requires two peer-accessible four-GPU NUMA groups\n"
             "  --begin BYTES --end BYTES --in-place\n"
@@ -315,6 +324,12 @@ int main(int argc, char** argv) {
         throw std::invalid_argument(
             "--shm-only requires --calibrate or explicit --backend force/off");
     }
+    if (cfg.allGatherKernel && !cfg.shmOnly)
+      throw std::invalid_argument("--allgather-kernel requires --shm-only");
+    if (cfg.allGatherDmaPacketBytes < (128UL << 10) ||
+        cfg.allGatherDmaPacketBytes > (32UL << 20) ||
+        cfg.allGatherDmaPacketBytes % 16)
+      throw std::invalid_argument("invalid AllGather DMA packet size");
     if (cfg.devices.empty() || cfg.devices.size() > 32 || cfg.begin < 128 ||
         cfg.end < cfg.begin || cfg.end > (1UL << 30) ||
         cfg.begin % (cfg.devices.size() * 2) || cfg.warmup < 1 ||
@@ -420,6 +435,9 @@ int main(int argc, char** argv) {
       cpu_router::CpuRouterOptions options;
       options.maxTensorBytes = cfg.end;
       options.packetBytes = cfg.packetBytes;
+      options.allGatherDma =
+          cfg.shmOnly && !cfg.allGatherKernel && !cfg.gpuReduce;
+      options.allGatherDmaPacketBytes = cfg.allGatherDmaPacketBytes;
       options.workersPerNode = cfg.workersPerNode;
       options.transportBlocks = cfg.transportBlocks;
       options.smallAllReducePacketBytes = cfg.smallAllReducePacketBytes;
@@ -476,7 +494,9 @@ int main(int argc, char** argv) {
         for (size_t bytes : sizes) {
           auto call = buffers.call(op, bytes, cfg.inPlace);
           char const* activeRouterName =
-              !cfg.gpuReduce && cfg.smallReduceScatterGpuProgress &&
+              options.allGatherDma && op == Collective::AllGather
+                  ? "cpu-router-dma-allgather"
+              : !cfg.gpuReduce && cfg.smallReduceScatterGpuProgress &&
                       op == Collective::ReduceScatter &&
                       (bytes == (128UL << 10) ||
                        (options.smallReduceScatterGpuProgress64K &&

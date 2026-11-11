@@ -42,6 +42,7 @@ class CollectiveDispatcher {
  private:
   void validatePorts(CollectiveCall const& call) const;
   size_t packetBytesFor(CollectiveCall const& call) const;
+  cpu_router::TransportBackend backendFor(CollectiveCall const& call) const;
   int workersPerNodeFor(CollectiveCall const& call) const;
   int transportBlocksFor(CollectiveCall const& call) const;
   bool smallReduceScatterGpuProgressFor(CollectiveCall const& call) const;
@@ -51,6 +52,8 @@ class CollectiveDispatcher {
   cpu_router::CpuRouterOptions options_;
   std::unique_ptr<cpu_router::CpuRouter> router_;
   size_t routerPacketBytes_ = 0;
+  cpu_router::TransportBackend routerBackend_ =
+      cpu_router::TransportBackend::GpuKernel;
   int routerWorkersPerNode_ = 0;
   int routerTransportBlocks_ = 0;
   bool routerSmallReduceScatterGpuProgress_ = false;
