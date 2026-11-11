@@ -1,8 +1,33 @@
 # Two-node collectives
 
-## Adaptive local schedules
+## Direct local schedules
 
-The follow-up on the same two four-L4 hosts keeps FP32, rank placement,
+The [November 11 two-node paired sweep](../benchmarks/data/multinode_serial_20261111/README.md)
+uses one CTA per GPU to visit the three local CUDA-IPC peers sequentially.
+GPU semaphores complete the local phases while the IB PortChannel remains
+independent. AllReduce uses direct local ReduceScatter, IB exchange, and
+direct local AllGather through 1 MiB. AllGather uses direct local writes
+through 2 MiB; ReduceScatter uses direct local writes and reduction through
+1 MiB. Larger sizes retain the previously measured ring and packed paths.
+
+![Two-node AllReduce latency and bus throughput](assets/collectives-2x4l4-allreduce-optimized.svg)
+
+![Two-node AllGather latency and bus throughput](assets/collectives-2x4l4-allgather-optimized.svg)
+
+![Two-node ReduceScatter latency and bus throughput](assets/collectives-2x4l4-reducescatter-optimized.svg)
+
+The current sweep matches eight FP32 ranks, placement, full bytes per rank,
+slowest-rank host enqueue+completion timing, 20 warmups, three alternating
+paired rounds of ten calls, and complete output checks on every invocation.
+At 64 KiB, UCCL Lite AR/AG/RS take **47.08/34.34/34.59 µs** versus
+NCCL 2.28.7 **69.57/44.15/42.61 µs**. At 1 KiB, AR and AG still lose;
+RS is slightly faster. The main latency panels use a labeled log scale
+because the default NCCL control has 256–512 KiB spikes; the raw control
+logs and alternative-protocol diagnostics are kept in the data record.
+
+## Previous adaptive local schedules
+
+The November 10 follow-up on the same two four-L4 hosts kept FP32, rank placement,
 NCCL 2.28.7, slowest-rank host enqueue+completion timing, five warmups,
 three backend-alternating runs, ten timed calls per run, and complete
 per-call output checks. A per-size UCCL policy uses flat local AG at
@@ -10,12 +35,6 @@ per-call output checks. A per-size UCCL policy uses flat local AG at
 256 KiB. ReduceScatter uses flat local reduction at 2 KiB–512 KiB,
 one-piece GPU-packed ring at 1–16 MiB, and direct ring at 1 KiB and from
 32 MiB upward. The path for every size is in the summary CSV.
-
-![Optimized two-node AllReduce latency and bus throughput](assets/collectives-2x4l4-allreduce-optimized.svg)
-
-![Optimized two-node AllGather latency and bus throughput](assets/collectives-2x4l4-allgather-optimized.svg)
-
-![Optimized two-node ReduceScatter latency and bus throughput](assets/collectives-2x4l4-reducescatter-optimized.svg)
 
 The packed RS path cuts 1-MiB UCCL latency from **276.3 to 135.1 µs**;
 its paired NCCL control takes **117.6 µs**, so this size still loses.
@@ -25,7 +44,7 @@ RS sizes improve by more than 3% over the earlier UCCL path, with
 non-overlapping run ranges at thirteen. AG improves at nine sizes and AR
 at seven by that median criterion. Small-message AR/AG/RS remain slower
 than NCCL; the later large-message crossover remains visible in the
-figures. The NCCL AR 1-MiB timing anomaly is retained separately and is
+recorded CSVs. The NCCL AR 1-MiB timing anomaly is retained separately and is
 not treated as a stable gain.
 
 [Complete optimized summary](../benchmarks/data/optimization_20261110/multinode_summary.csv) ·

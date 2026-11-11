@@ -56,7 +56,8 @@ def throughput(size: int, latency_us: float, factor: float) -> float:
     return factor * size / latency_us / 1000  # decimal GB/s
 
 
-def plot_operation(data, filename: str, factor: float, preview: bool) -> None:
+def plot_operation(data, filename: str, factor: float, preview: bool,
+                   log_small: bool = False) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.1))
     fig.subplots_adjust(left=0.085, right=0.985, top=0.78, bottom=0.20,
                         wspace=0.28)
@@ -77,8 +78,10 @@ def plot_operation(data, filename: str, factor: float, preview: bool) -> None:
             for size in ticks
         ])
         ax.set_xlabel("Complete tensor bytes per rank")
-        ax.set_ylabel(ylabel)
+        use_log = log_small and ax is axes[0]
+        ax.set_ylabel("Latency (µs, log scale)" if use_log else ylabel)
         upper = 0.0
+        lower = math.inf
         for field, label, color, marker, linestyle in (
             ("nccl_median_us", "NCCL 2.28.7", NCCL_COLOR, "s", (0, (5, 2.5))),
             ("uccl_median_us", "UCCL-Lite", UCCL_COLOR, "o", "-"),
@@ -86,11 +89,21 @@ def plot_operation(data, filename: str, factor: float, preview: bool) -> None:
             values = [measure(size, float(data[size][field]))
                       for size in sizes]
             upper = max(upper, *values)
+            lower = min(lower, *values)
             ax.plot(sizes, values, color=color, linewidth=2.8,
                     marker=marker, linestyle=linestyle, markersize=6.0,
                     markeredgecolor="white", markeredgewidth=0.7,
                     label=label)
-        ax.set_ylim(0, upper * 1.13)
+        if use_log:
+            ax.set_yscale("log")
+            ax.set_ylim(lower * 0.8, upper * 1.3)
+            ticks_y = [20, 30, 50, 100, 200, 500, 1000, 2000, 5000]
+            ax.set_yticks([tick for tick in ticks_y
+                           if lower * 0.8 < tick < upper * 1.3])
+            ax.set_yticklabels([str(tick) for tick in ticks_y
+                                if lower * 0.8 < tick < upper * 1.3])
+        else:
+            ax.set_ylim(0, upper * 1.13)
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles[::-1], labels[::-1], loc="upper center",
                bbox_to_anchor=(0.5, 0.99), ncol=2, frameon=False,

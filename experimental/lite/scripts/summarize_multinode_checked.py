@@ -32,7 +32,11 @@ OWN_SAMPLE = re.compile(r"^# sample,(allreduce|allgather|reducescatter),(\d+),(\
 
 
 def summarize(directory: Path, samples_path: Path, summary_path: Path,
-              auto: bool = False) -> None:
+              auto: bool = False, min_bytes: int = 1024,
+              max_bytes: int = 1 << 30) -> None:
+    if (min_bytes < 1024 or min_bytes > max_bytes or
+            min_bytes & (min_bytes - 1) or max_bytes & (max_bytes - 1)):
+        raise ValueError("size bounds must be powers of two from 1 KiB")
     own = defaultdict(dict)
     baseline = defaultdict(dict)
     selected_paths = {}
@@ -92,7 +96,8 @@ def summarize(directory: Path, samples_path: Path, summary_path: Path,
                                 "error": wrong})
     summary = []
     for operation in OPS:
-        for size in (1 << power for power in range(10, 31)):
+        for size in (1 << power for power in range(min_bytes.bit_length() - 1,
+                                                 max_bytes.bit_length())):
             own_runs, nccl_runs = [], []
             for repeat in (1, 2, 3):
                 own_calls = own[(operation, size, repeat)]
@@ -134,5 +139,8 @@ if __name__ == "__main__":
     parser.add_argument("samples", type=Path)
     parser.add_argument("summary", type=Path)
     parser.add_argument("--auto", action="store_true")
+    parser.add_argument("--min-bytes", type=int, default=1024)
+    parser.add_argument("--max-bytes", type=int, default=1 << 30)
     args = parser.parse_args()
-    summarize(args.directory, args.samples, args.summary, args.auto)
+    summarize(args.directory, args.samples, args.summary, args.auto,
+              args.min_bytes, args.max_bytes)

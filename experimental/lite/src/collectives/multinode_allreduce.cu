@@ -13,6 +13,8 @@
 
 #include <mscclpp/concurrency_device.hpp>
 #include <mscclpp/core.hpp>
+#include <mscclpp/memory_channel.hpp>
+#include <mscclpp/memory_channel_device.hpp>
 #include <mscclpp/port_channel.hpp>
 #include <mscclpp/port_channel_device.hpp>
 #include <mscclpp/semaphore.hpp>
@@ -60,10 +62,14 @@ constexpr int kWorld = kNodes * kLocalRanks;
   } while (0)
 
 using PortChan = mscclpp::PortChannelDeviceHandle;
+using MemChan = mscclpp::MemoryChannelDeviceHandle;
 __device__ mscclpp::DeviceSyncer gMultiNodeSyncer;
 
 struct LocalAgChans {
   PortChan c[kLocalRanks];
+};
+struct LocalDirectChans {
+  MemChan c[kLocalRanks];
 };
 
 struct Layout {
@@ -349,6 +355,63 @@ __global__ void __launch_bounds__(1024)
   }
 }
 
+// Small-message variant: one resident CTA directly pushes local shards through
+// CUDA IPC while the corresponding IB transfer is in flight.
+__global__ void hierarchicalAllGatherSerial(LocalDirectChans local,
+                                             PortChan ib, float* base,
+                                             size_t nelem, Layout layout,
+                                             int rank, int localRank) {
+  size_t shard = nelem / kWorld;
+  size_t units = shard / 4;
+  size_t ownOff = size_t(rank) * shard;
+  size_t remoteOff = size_t(rank ^ kLocalRanks) * shard;
+  char* bytes = reinterpret_cast<char*>(base);
+  auto* output = reinterpret_cast<float*>(bytes + layout.data);
+  auto const* input = reinterpret_cast<uint4 const*>(bytes + layout.ibSend);
+  auto* self = reinterpret_cast<uint4*>(output + ownOff);
+  for (size_t i = threadIdx.x; i < units; i += blockDim.x)
+    self[i] = input[i];
+  __syncthreads();
+  if (threadIdx.x == 0)
+    ib.putWithSignal(layout.data + ownOff * sizeof(float), layout.ibSend,
+                     shard * sizeof(float));
+  for (int step = 1; step < kLocalRanks; ++step) {
+    int peer = (localRank + step) % kLocalRanks;
+    auto* target = reinterpret_cast<uint4*>(
+        reinterpret_cast<char*>(local.c[peer].dst_) + layout.data +
+        ownOff * sizeof(float));
+    for (size_t i = threadIdx.x; i < units; i += blockDim.x)
+      target[i] = input[i];
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank) local.c[peer].signal();
+    ib.wait();
+  }
+  __syncthreads();
+  auto const* received = reinterpret_cast<uint4 const*>(output + remoteOff);
+  for (int step = 1; step < kLocalRanks; ++step) {
+    int peer = (localRank + step) % kLocalRanks;
+    auto* target = reinterpret_cast<uint4*>(
+        reinterpret_cast<char*>(local.c[peer].dst_) + layout.data +
+        remoteOff * sizeof(float));
+    for (size_t i = threadIdx.x; i < units; i += blockDim.x)
+      target[i] = received[i];
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank) local.c[peer].signal();
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank) {
+        local.c[peer].wait();
+        local.c[peer].wait();
+      }
+    ib.flush();
+  }
+}
+
 __device__ void gatherFourRing(PortChan send, PortChan recv, size_t baseOffset,
                                size_t shard, int nodeBase, int ringPos,
                                int tid) {
@@ -466,6 +529,164 @@ __global__ void __launch_bounds__(1024)
     ib.flush();
     for (int peer = 0; peer < kLocalRanks; ++peer)
       if (peer != localRank) localAg.c[peer].flush();
+  }
+}
+
+__global__ void hierarchicalReduceScatterSerial(LocalDirectChans local,
+                                                  PortChan ib, float* base,
+                                                  size_t nelem, Layout layout,
+                                                  int rank, int localRank) {
+  size_t shard = nelem / kWorld;
+  size_t units = shard / 4;
+  char* bytes = reinterpret_cast<char*>(base);
+  auto const* input = reinterpret_cast<float const*>(bytes + layout.data);
+  auto* scratch = reinterpret_cast<float*>(bytes + layout.localScratch);
+  auto* partial = reinterpret_cast<float*>(bytes + layout.ibSend);
+  auto const* remote = reinterpret_cast<float const*>(bytes + layout.ibScratch);
+  for (int step = 1; step < kLocalRanks; ++step) {
+    int dest = (localRank + step) % kLocalRanks;
+    for (int half = 0; half < kNodes; ++half) {
+      auto const* from = reinterpret_cast<uint4 const*>(
+          input + size_t(dest + half * kLocalRanks) * shard);
+      auto* target = reinterpret_cast<uint4*>(
+          reinterpret_cast<char*>(local.c[dest].dst_) +
+          layout.localScratch +
+          size_t(localRank * kNodes + half) * shard * sizeof(float));
+      for (size_t i = threadIdx.x; i < units; i += blockDim.x)
+        target[i] = from[i];
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank) local.c[peer].signal();
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank) local.c[peer].wait();
+  }
+  __syncthreads();
+  for (int half = 0; half < kNodes; ++half) {
+    auto const* own = reinterpret_cast<float4 const*>(
+        input + size_t(localRank + half * kLocalRanks) * shard);
+    auto const* received = reinterpret_cast<float4 const*>(scratch);
+    auto* out = reinterpret_cast<float4*>(partial + size_t(half) * shard);
+    for (size_t i = threadIdx.x; i < units; i += blockDim.x) {
+      float4 value = own[i];
+      for (int source = 0; source < kLocalRanks; ++source) {
+        if (source == localRank) continue;
+        float4 peer = received[size_t(source * kNodes + half) * units + i];
+        value.x += peer.x;
+        value.y += peer.y;
+        value.z += peer.z;
+        value.w += peer.w;
+      }
+      out[i] = value;
+    }
+  }
+  __syncthreads();
+  int ownHalf = rank < kLocalRanks ? 0 : 1;
+  if (threadIdx.x == 0) {
+    int sendHalf = ownHalf ^ 1;
+    ib.putWithSignal(layout.ibScratch,
+                     layout.ibSend + size_t(sendHalf) * shard * sizeof(float),
+                     shard * sizeof(float));
+    ib.wait();
+  }
+  __syncthreads();
+  auto* result = reinterpret_cast<float4*>(partial + size_t(ownHalf) * shard);
+  auto const* peerResult = reinterpret_cast<float4 const*>(remote);
+  for (size_t i = threadIdx.x; i < units; i += blockDim.x) {
+    float4 value = result[i], peer = peerResult[i];
+    value.x += peer.x;
+    value.y += peer.y;
+    value.z += peer.z;
+    value.w += peer.w;
+    result[i] = value;
+  }
+  __syncthreads();
+  if (threadIdx.x == 0) ib.flush();
+}
+
+__global__ void hierarchicalAllReduceSerial(LocalDirectChans local,
+                                             PortChan ib, float* base,
+                                             size_t nelem, Layout layout,
+                                             int localRank, int ringPos) {
+  constexpr int ownerChunk[kLocalRanks] = {1, 2, 0, 3};
+  size_t chunk = nelem / kLocalRanks;
+  size_t units = chunk / 4;
+  int ownChunk = (ringPos + 1) % kLocalRanks;
+  char* bytes = reinterpret_cast<char*>(base);
+  auto* data = reinterpret_cast<float*>(bytes + layout.data);
+  auto* scratch = reinterpret_cast<float*>(bytes + layout.localScratch);
+  auto* partial = reinterpret_cast<float*>(bytes + layout.ibSend);
+  auto const* remote = reinterpret_cast<float const*>(bytes + layout.ibScratch);
+  for (int step = 1; step < kLocalRanks; ++step) {
+    int dest = (localRank + step) % kLocalRanks;
+    auto const* from = reinterpret_cast<uint4 const*>(
+        data + size_t(ownerChunk[dest]) * chunk);
+    auto* target = reinterpret_cast<uint4*>(
+        reinterpret_cast<char*>(local.c[dest].dst_) +
+        layout.localScratch + size_t(localRank) * chunk * sizeof(float));
+    for (size_t i = threadIdx.x; i < units; i += blockDim.x)
+      target[i] = from[i];
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank) local.c[peer].signal();
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank) local.c[peer].wait();
+  }
+  __syncthreads();
+  auto const* own = reinterpret_cast<float4 const*>(
+      data + size_t(ownChunk) * chunk);
+  auto const* received = reinterpret_cast<float4 const*>(scratch);
+  auto* out = reinterpret_cast<float4*>(partial);
+  for (size_t i = threadIdx.x; i < units; i += blockDim.x) {
+    float4 value = own[i];
+    for (int source = 0; source < kLocalRanks; ++source) {
+      if (source == localRank) continue;
+      float4 peer = received[size_t(source) * units + i];
+      value.x += peer.x;
+      value.y += peer.y;
+      value.z += peer.z;
+      value.w += peer.w;
+    }
+    out[i] = value;
+  }
+  publish();
+  if (threadIdx.x == 0) {
+    ib.putWithSignal(layout.ibScratch, layout.ibSend,
+                     chunk * sizeof(float));
+    ib.wait();
+  }
+  __syncthreads();
+  auto const* other = reinterpret_cast<float4 const*>(remote);
+  auto* ownResult = reinterpret_cast<float4*>(
+      data + size_t(ownChunk) * chunk);
+  for (size_t i = threadIdx.x; i < units; i += blockDim.x) {
+    float4 value = out[i], peer = other[i];
+    value.x += peer.x;
+    value.y += peer.y;
+    value.z += peer.z;
+    value.w += peer.w;
+    ownResult[i] = value;
+  }
+  __syncthreads();
+  for (int step = 1; step < kLocalRanks; ++step) {
+    int peer = (localRank + step) % kLocalRanks;
+    auto* target = reinterpret_cast<float4*>(
+        reinterpret_cast<char*>(local.c[peer].dst_) + layout.data +
+        size_t(ownChunk) * chunk * sizeof(float));
+    for (size_t i = threadIdx.x; i < units; i += blockDim.x)
+      target[i] = ownResult[i];
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank) local.c[peer].signal();
+    for (int peer = 0; peer < kLocalRanks; ++peer)
+      if (peer != localRank) local.c[peer].wait();
+    ib.flush();
   }
 }
 
@@ -622,8 +843,10 @@ struct Config {
   bool arAuto = false;
   bool agRing = false;
   bool agAuto = false;
+  bool agSerialLocal = false;
   bool rsRing = false;
   bool rsAuto = false;
+  bool rsSerialLocal = false;
   bool rsFastPack = false;
   bool rsDirectRing = false;
   int rsPieces = 1;
@@ -635,14 +858,20 @@ struct Config {
   int warmup = 10;
   int iters = 20;
   int blocks = 24;
+  int rsFlatBlocks = 24;
   int threads = 512;
   size_t pipelineMinBytes = 4UL << 20;
   size_t pieceBytes = 2UL << 20;
   int pipelineDistance = 2;
   bool flatAg = false;
+  bool arSerialLocal = false;
   bool check = true;
   std::array<int, kLocalRanks> railMap{0, 0, 1, 1};
 };
+
+static constexpr size_t kSerialArMaxBytes = 1UL << 20;
+static constexpr size_t kSerialAgMaxBytes = 2UL << 20;
+static constexpr size_t kSerialRsMaxBytes = 1UL << 20;
 
 static bool autoPackedRs(size_t bytes) {
   return bytes >= (1UL << 20) && bytes <= (16UL << 20);
@@ -732,6 +961,8 @@ int main(int argc, char** argv) {
         cfg.flatAg = std::atoi(next()) != 0;
       else if (key == "--ar-auto")
         cfg.arAuto = std::atoi(next()) != 0;
+      else if (key == "--ar-serial-local")
+        cfg.arSerialLocal = std::atoi(next()) != 0;
       else if (key == "-c")
         cfg.check = std::atoi(next()) != 0;
       else if (key == "--rail-map")
@@ -747,10 +978,16 @@ int main(int argc, char** argv) {
         cfg.agRing = std::atoi(next()) != 0;
       else if (key == "--ag-auto")
         cfg.agAuto = std::atoi(next()) != 0;
+      else if (key == "--ag-serial-local")
+        cfg.agSerialLocal = std::atoi(next()) != 0;
       else if (key == "--rs-ring")
         cfg.rsRing = std::atoi(next()) != 0;
       else if (key == "--rs-auto")
         cfg.rsAuto = std::atoi(next()) != 0;
+      else if (key == "--rs-serial-local")
+        cfg.rsSerialLocal = std::atoi(next()) != 0;
+      else if (key == "--rs-flat-blocks")
+        cfg.rsFlatBlocks = std::atoi(next());
       else if (key == "--rs-fast-pack")
         cfg.rsFastPack = std::atoi(next()) != 0;
       else if (key == "--rs-direct-ring")
@@ -774,6 +1011,11 @@ int main(int argc, char** argv) {
     if (rank == 0) std::fprintf(stderr, "--ar-auto requires AllReduce\n");
     MPI_Abort(MPI_COMM_WORLD, 2);
   }
+  if (cfg.arSerialLocal && (cfg.allGather || cfg.reduceScatter)) {
+    if (rank == 0)
+      std::fprintf(stderr, "--ar-serial-local requires AllReduce\n");
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
   if (cfg.agAuto) cfg.agRing = true;
   if (cfg.rsAuto) {
     cfg.rsRing = true;
@@ -782,6 +1024,16 @@ int main(int argc, char** argv) {
   if (cfg.agRing && !cfg.allGather) {
     if (rank == 0)
       std::fprintf(stderr, "--ag-ring is only valid for --op allgather\n");
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
+  if (cfg.agSerialLocal && !cfg.allGather) {
+    if (rank == 0)
+      std::fprintf(stderr, "--ag-serial-local requires AllGather\n");
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
+  if (cfg.rsSerialLocal && !cfg.reduceScatter) {
+    if (rank == 0)
+      std::fprintf(stderr, "--rs-serial-local requires ReduceScatter\n");
     MPI_Abort(MPI_COMM_WORLD, 2);
   }
   if (cfg.rsRing && !cfg.reduceScatter) {
@@ -818,7 +1070,8 @@ int main(int argc, char** argv) {
   }
   if (cfg.minBytes < 1024 || cfg.maxBytes < cfg.minBytes ||
       cfg.minBytes % 512 || cfg.maxBytes % 512 || cfg.warmup < 0 ||
-      cfg.iters < 1 || cfg.blocks < 1 || cfg.threads < 1 ||
+      cfg.iters < 1 || cfg.blocks < 1 || cfg.rsFlatBlocks < 1 ||
+      cfg.threads < 1 ||
       cfg.threads > 1024 || cfg.pieceBytes < 512 ||
       cfg.pipelineDistance < 1) {
     if (rank == 0)
@@ -992,6 +1245,28 @@ int main(int argc, char** argv) {
   localAg.c[ringSuccessor(localRank)] = localSendObject.deviceHandle();
   localAg.c[ringPredecessor(localRank)] = localRecvObject.deviceHandle();
   localAg.c[localRank ^ 3] = localDiagObject.deviceHandle();
+  LocalDirectChans localDirect{};
+  std::array<std::unique_ptr<mscclpp::MemoryChannel>, 3> directObjects;
+  bool needsDirectLocal = cfg.agSerialLocal || cfg.rsSerialLocal ||
+                          cfg.arSerialLocal ||
+                          (cfg.agAuto && cfg.allGather &&
+                           cfg.minBytes <= kSerialAgMaxBytes) ||
+                          (cfg.rsAuto && cfg.reduceScatter &&
+                           cfg.minBytes <= kSerialRsMaxBytes) ||
+                          (cfg.arAuto && !cfg.allGather &&
+                           !cfg.reduceScatter &&
+                           cfg.minBytes <= kSerialArMaxBytes);
+  if (needsDirectLocal) {
+    std::array<std::shared_future<mscclpp::Semaphore>, 3> directSemaphores;
+    for (int i = 0; i < 3; ++i)
+      directSemaphores[i] =
+          comm.buildSemaphore(connections[i], peers[i], 320);
+    for (int i = 0; i < 3; ++i) {
+      directObjects[i] = std::make_unique<mscclpp::MemoryChannel>(
+          directSemaphores[i].get(), remoteMemory[i], localMemory, buffer);
+      localDirect.c[peers[i] - nodeBase] = directObjects[i]->deviceHandle();
+    }
+  }
   PortChan ib = ibObject.deviceHandle();
   localProxy->startProxy();
   ibProxy->startProxy();
@@ -1015,13 +1290,15 @@ int main(int argc, char** argv) {
     if (cfg.allGather)
       CUDACHECK(cudaMemsetAsync(buffer + layout.data, 0xff,
                                 count * sizeof(float), stream));
-    CUDACHECK(cudaMemcpyAsync(buffer + (cfg.allGather ? layout.ibSend :
-                                 cfg.rsRing &&
-                                         (!cfg.rsDirectRing ||
-                                          (cfg.rsAuto && autoPackedRs(
-                                                             count * sizeof(float))))
-                                     ? layout.immutableInput :
-                                              layout.data),
+    size_t inputOffset = cfg.allGather ? layout.ibSend : layout.data;
+    bool serialRs = cfg.rsSerialLocal ||
+                    (cfg.rsAuto && count * sizeof(float) <=
+                                      kSerialRsMaxBytes);
+    if (cfg.reduceScatter && !serialRs && cfg.rsRing &&
+        (!cfg.rsDirectRing ||
+         (cfg.rsAuto && autoPackedRs(count * sizeof(float)))))
+      inputOffset = layout.immutableInput;
+    CUDACHECK(cudaMemcpyAsync(buffer + inputOffset,
                               hostIn.data(), inputCount * sizeof(float),
                               cudaMemcpyHostToDevice, stream));
     CUDACHECK(cudaStreamSynchronize(stream));
@@ -1078,6 +1355,18 @@ int main(int argc, char** argv) {
   auto useAgRing = [&](size_t bytes) {
     return cfg.agAuto ? bytes == 1024 || bytes >= (1UL << 20) : cfg.agRing;
   };
+  auto useAgSerial = [&](size_t bytes) {
+    return cfg.agSerialLocal ||
+           (cfg.agAuto && bytes <= kSerialAgMaxBytes);
+  };
+  auto useRsSerial = [&](size_t bytes) {
+    return cfg.rsSerialLocal ||
+           (cfg.rsAuto && bytes <= kSerialRsMaxBytes);
+  };
+  auto useArSerial = [&](size_t bytes) {
+    return cfg.arSerialLocal ||
+           (cfg.arAuto && bytes <= kSerialArMaxBytes);
+  };
   auto useRsDirectRing = [&](size_t bytes) {
     return cfg.rsAuto ? autoDirectRs(bytes)
                       : cfg.rsDirectRing;
@@ -1088,7 +1377,11 @@ int main(int argc, char** argv) {
   auto launch = [&](size_t count, size_t bytes) {
     CUDACHECK(cudaSetDevice(localRank));
     if (cfg.allGather) {
-      if (useAgRing(bytes))
+      if (useAgSerial(bytes))
+        hierarchicalAllGatherSerial<<<1, 256, 0, stream>>>(
+            localDirect, ib, reinterpret_cast<float*>(buffer), count,
+            layout, rank, localRank);
+      else if (useAgRing(bytes))
         hierarchicalAllGatherRing<<<cfg.blocks, cfg.threads, 0, stream>>>(
             localSend, localRecv, ib, reinterpret_cast<float*>(buffer), count,
             layout, rank, localRank, ringPosition(localRank));
@@ -1099,7 +1392,11 @@ int main(int argc, char** argv) {
       return;
     }
     if (cfg.reduceScatter) {
-      if (useRsDirectRing(bytes)) {
+      if (useRsSerial(bytes))
+        hierarchicalReduceScatterSerial<<<1, 256, 0, stream>>>(
+            localDirect, ib, reinterpret_cast<float*>(buffer), count,
+            layout, rank, localRank);
+      else if (useRsDirectRing(bytes)) {
         int availablePieces =
             int(std::max<size_t>(1, count / kWorld / 32));
         int requestedPieces = cfg.rsTargetPieceBytes
@@ -1129,7 +1426,8 @@ int main(int argc, char** argv) {
             localSend, localRecv, ib, reinterpret_cast<float*>(buffer), count,
             layout, rank, ringPosition(localRank), fastPack, pieces);
       } else
-        hierarchicalReduceScatter<<<cfg.rsAuto ? 24 : cfg.blocks, cfg.threads,
+        hierarchicalReduceScatter<<<cfg.rsAuto ? cfg.rsFlatBlocks : cfg.blocks,
+                                    cfg.threads,
                                     0, stream>>>(
             localAg, ib, reinterpret_cast<float*>(buffer), count, layout,
             rank, localRank);
@@ -1144,10 +1442,15 @@ int main(int argc, char** argv) {
             : 1;
     int distance =
         pieces == 1 ? 1 : std::max(1, std::min(cfg.pipelineDistance, pieces));
-    hierarchicalAllReduce<<<cfg.blocks, cfg.threads, 0, stream>>>(
-        localSend, localRecv, localAg, ib, reinterpret_cast<float*>(buffer),
-        count, layout, localRank, ringPosition(localRank), pieces, distance,
-        useArFlatGather(bytes));
+    if (useArSerial(bytes))
+      hierarchicalAllReduceSerial<<<1, 256, 0, stream>>>(
+          localDirect, ib, reinterpret_cast<float*>(buffer), count, layout,
+          localRank, ringPosition(localRank));
+    else
+      hierarchicalAllReduce<<<cfg.blocks, cfg.threads, 0, stream>>>(
+          localSend, localRecv, localAg, ib, reinterpret_cast<float*>(buffer),
+          count, layout, localRank, ringPosition(localRank), pieces, distance,
+          useArFlatGather(bytes));
   };
 
   char host[MPI_MAX_PROCESSOR_NAME];
@@ -1173,9 +1476,11 @@ int main(int argc, char** argv) {
     if (cfg.allGather || cfg.reduceScatter)
       std::printf("# local %s, remote-rank IB exchange; rail map "
                   "%d,%d,%d,%d; RS pieces %d\n",
-                  cfg.allGather ? (cfg.agAuto ? "adaptive ring/multicast"
+                  cfg.allGather ? (cfg.agSerialLocal ? "serial direct local AG"
+                                   : cfg.agAuto ? "adaptive ring/multicast"
                                    : cfg.agRing ? "ring" : "multicast")
-                                : (cfg.rsAuto ? "adaptive direct/packed/flat reduction"
+                                : (cfg.rsSerialLocal ? "serial direct local reduction"
+                                   : cfg.rsAuto ? "adaptive direct/packed/flat reduction"
                                    : cfg.rsDirectRing ? "direct ring reduction"
                                    : cfg.rsRing ? (cfg.rsFastPack
                                                     ? "ring reduction + GPU pack"
@@ -1190,7 +1495,8 @@ int main(int argc, char** argv) {
       std::printf(
           "# local ring 0->1->3->2->0; AG %s; rail map %d,%d,%d,%d; "
           "piece %zu B; pipeline >= %zu B\n",
-          cfg.arAuto ? "adaptive flat/ring"
+          cfg.arSerialLocal ? "serial direct local AR"
+          : cfg.arAuto ? "adaptive flat/ring"
                      : cfg.flatAg ? "flat" : "ring",
           cfg.railMap[0], cfg.railMap[1],
           cfg.railMap[2], cfg.railMap[3], cfg.pieceBytes,
@@ -1205,7 +1511,8 @@ int main(int argc, char** argv) {
     size_t count = bytes / sizeof(float);
     size_t shardBytes = bytes / kLocalRanks;
     int pieces =
-        (cfg.rsRing && (!cfg.rsAuto || useRsDirectRing(bytes)))
+        (cfg.reduceScatter && useRsSerial(bytes)) ? 1
+        : (cfg.rsRing && (!cfg.rsAuto || useRsDirectRing(bytes)))
             ? std::min(
                   cfg.rsTargetPieceBytes
                       ? int(std::max<size_t>(
@@ -1222,11 +1529,14 @@ int main(int argc, char** argv) {
             : 1;
     if (rank == 0) {
       char const* selected =
-          cfg.allGather ? (useAgRing(bytes) ? "ring" : "multicast")
+          cfg.allGather ? (useAgSerial(bytes) ? "serial-local"
+                           : useAgRing(bytes) ? "ring" : "multicast")
           : cfg.reduceScatter
-              ? (useRsDirectRing(bytes) ? "direct-ring"
+              ? (useRsSerial(bytes) ? "serial-local"
+                 : useRsDirectRing(bytes) ? "direct-ring"
                  : autoPackedRs(bytes) ? "packed-ring" : "flat")
-              : (useArFlatGather(bytes) ? "flat-local-gather"
+              : (useArSerial(bytes) ? "serial-local"
+                 : useArFlatGather(bytes) ? "flat-local-gather"
                                         : "ring-local-gather");
       std::printf("# selected,%s,%zu,%s\n",
                   cfg.allGather ? "allgather"
