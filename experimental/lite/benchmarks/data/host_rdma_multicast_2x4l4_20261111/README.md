@@ -3,8 +3,9 @@
 An opt-in FP32 AllGather for two nodes with four L4 GPUs each. Two MPI processes per node each own one 2-GPU NUMA group. GPUs 0/1 upload shards into NUMA 0 pinned host packets; GPUs 2/3 upload into NUMA 1 packets. Each group sends the same two-shard packet to **both** remote NUMA groups over its local HCA and sends one copy to the other local group. The two destination groups therefore each hold a complete, NUMA-local set of eight source shards. CPU routing launches GPU SM consumers that read the same mapped host packet and write rank-ordered output; it does not make one CPU payload copy per GPU.
 
 Three immutable slots overlap D2H upload of chunk j, UCX/IB transfer of chunk j-1, and GPU host-packet consumption of chunk j-2. A slot is reused only after both GPU consumers and all three MPI sends have completed. The code is [multinode_host_allgather.cu](../../../src/collectives/multinode_host_allgather.cu); the optional target is `make multinode_host_allgather`. The complete output is checked on every invocation, including the non-power-of-two and three-chunk tails in `tail_checks/`.
-This is an eager standalone candidate; it is not graph-capturable or wired
-into the automatic collective dispatcher.
+This is a standalone candidate; it is not graph-capturable or wired into the
+automatic collective dispatcher. Its later 1–256-KiB figure selection is
+recorded [separately](../host_multicast_selected_2x4l4_20261111/README.md).
 
 For complete output B bytes per GPU, each source GPU contributes B/8. Each node sends B/2 bytes to the other node **twice**, one copy to each destination NUMA pool: B inter-node bytes per node. The intra-node packet exchange copies another B/2 bytes per node. Every GPU consumes B output bytes from its NUMA-local host packet set. `UCX_NET_DEVICES` binds the two group processes to `mlx5_0:1` and `mlx5_1:1`; `hardware_software.txt` records the GPU/NIC topology, versions and matching binary hashes on both hosts.
 

@@ -11,6 +11,7 @@ OPTIMIZED = ROOT / "benchmarks/data/optimization_20261110"
 MIDRANGE_AG = ROOT / "benchmarks/data/ag_midrange_4l4_20261111"
 SERIAL_RS = ROOT / "benchmarks/data/rs_ar_serial_4l4_20261111"
 TUNED_MULTI = ROOT / "benchmarks/data/nccl_tuned_2x4l4_20261111"
+HOST_MULTI_AG = ROOT / "benchmarks/data/host_multicast_selected_2x4l4_20261111"
 OPERATIONS = (
     ("l40_selected.csv", "operation", "allgather",
      "collectives-4l4-allgather-optimized", 3 / 4),
@@ -18,7 +19,7 @@ OPERATIONS = (
      "collectives-4l4-reducescatter-optimized", 3 / 4),
     ("tuned_summary.csv", "collective", "allreduce",
      "collectives-2x4l4-allreduce-optimized", 14 / 8),
-    ("tuned_summary.csv", "collective", "allgather",
+    ("selected_summary.csv", "collective", "allgather",
      "collectives-2x4l4-allgather-optimized", 7 / 8),
     ("tuned_summary.csv", "collective", "reducescatter",
      "collectives-2x4l4-reducescatter-optimized", 7 / 8),
@@ -35,6 +36,8 @@ def main() -> None:
             reference.DATA = MIDRANGE_AG
         elif filename == "collectives-4l4-reducescatter-optimized":
             reference.DATA = SERIAL_RS
+        elif filename == "collectives-2x4l4-allgather-optimized":
+            reference.DATA = HOST_MULTI_AG
         elif filename.startswith("collectives-2x4l4-"):
             reference.DATA = TUNED_MULTI
         else:
@@ -43,7 +46,10 @@ def main() -> None:
         reference.plot_operation(
             data, filename, factor, args.preview,
             nccl_label=("NCCL 2.28.7 tuned" if filename.startswith(
-                "collectives-2x4l4-") else "NCCL 2.28.7"))
+                "collectives-2x4l4-") else "NCCL 2.28.7"),
+            x_label=("Complete output bytes per GPU" if filename ==
+                     "collectives-2x4l4-allgather-optimized" else
+                     "Complete tensor bytes per rank"))
 
 
 if __name__ == "__main__":

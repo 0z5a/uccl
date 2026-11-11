@@ -6,9 +6,11 @@ The [November 11 two-node paired sweep](../benchmarks/data/multinode_serial_2026
 uses one CTA per GPU to visit the three local CUDA-IPC peers sequentially.
 GPU semaphores complete the local phases while the IB PortChannel remains
 independent. AllReduce uses direct local ReduceScatter, IB exchange, and
-direct local AllGather through 1 MiB. AllGather uses direct local writes
-through 2 MiB; ReduceScatter uses direct local writes and reduction through
-1 MiB. Larger sizes retain the previously measured ring and packed paths.
+direct local AllGather through 1 MiB. The direct AllGather candidate uses
+local writes through 2 MiB; the main figure now selects the host multicast
+candidate through 256 KiB and resumes the direct candidate at 512 KiB.
+ReduceScatter uses direct local writes and reduction through 1 MiB. Larger
+sizes retain the previously measured ring and packed paths.
 
 ![Two-node AllReduce latency and bus throughput](assets/collectives-2x4l4-allreduce-optimized.svg)
 
@@ -16,16 +18,21 @@ through 2 MiB; ReduceScatter uses direct local writes and reduction through
 
 ![Two-node ReduceScatter latency and bus throughput](assets/collectives-2x4l4-reducescatter-optimized.svg)
 
-The current sweep matches eight FP32 ranks, placement, full bytes per rank,
-slowest-rank host enqueue+completion timing, 20 warmups, three alternating
+The current figures match eight FP32 GPUs, full bytes per GPU,
+slowest-process host enqueue+completion timing, 20 warmups, three alternating
 paired rounds of ten calls, and complete output checks on every invocation.
-At 64 KiB, UCCL Lite AR/AG/RS take **47.08/34.34/34.59 µs** versus
-NCCL 2.28.7 **69.57/44.15/42.61 µs**. At 1 KiB, AR and AG still lose;
-RS is slightly faster. The main figures now use the
-[tuned NCCL protocol policy](../benchmarks/data/nccl_tuned_2x4l4_20261111/README.md):
-RING+SIMPLE at eight measured spike points and the default NCCL configuration
-elsewhere. Each targeted point has a fresh three-round paired UCCL/NCCL run.
-The latency panels return to the same linear style as the eight-L4 figures.
+At 64 KiB, selected UCCL Lite AR/AG/RS take **47.08/30.58/34.59 µs** versus
+their paired NCCL 2.28.7 controls **69.57/60.62/42.61 µs**. AllGather's
+selected point uses four MPI processes; AR/RS use eight. At 1 KiB, AR loses;
+the host-multicast AG median wins, with a retained outlier round. AR/RS and
+the larger AG points use the
+[tuned NCCL protocol policy](../benchmarks/data/nccl_tuned_2x4l4_20261111/README.md).
+The host-multicast AG points use default NCCL through 64 KiB and RING+SIMPLE
+at 128/256 KiB. Every selected point has its own paired NCCL control.
+The latency panels retain the same linear style as the eight-L4 figures.
+The [selected AllGather data](../benchmarks/data/host_multicast_selected_2x4l4_20261111/README.md)
+records the four-process host path through 256 KiB and the eight-process
+direct path after that threshold, each with a same-harness paired NCCL control.
 The [targeted NCCL diagnosis](../benchmarks/data/nccl_spike_2x4l4_20261111/README.md)
 shows that default `RING + LL` causes the spike on this topology; forcing
 `SIMPLE` while keeping the ring and two channels removes it. The exact
@@ -185,8 +192,10 @@ RDMA WRITE with 128 KiB packets takes 160.63 µs versus direct UCCL
 195.35 µs and NCCL 200.94 µs. The 4-MiB forced-write path ties direct
 UCCL and loses to NCCL; the 1-GiB path is slower. These candidate runs
 use four MPI processes controlling eight GPUs, while the direct path and
-the main NCCL control use eight processes. The path remains opt-in and is
-not spliced into the main figures.
+the previous main NCCL control use eight processes. The path remains opt-in
+at runtime. The main AllGather figure now selects its UCX-auto variant
+through 256 KiB; the [selection record](../benchmarks/data/host_multicast_selected_2x4l4_20261111/README.md)
+documents the MPI layout change and the 256-KiB regression versus direct UCCL.
 
 ## Pinned-host CPU router
 

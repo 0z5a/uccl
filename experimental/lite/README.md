@@ -142,7 +142,8 @@ AllReduce differs by only about 1%, so that point is effectively tied.
 
 ![Two-node ReduceScatter latency and bus throughput, UCCL Lite versus NCCL](docs/assets/collectives-2x4l4-reducescatter-optimized.svg)
 
-[Two-node data](benchmarks/data/optimization_20261110/README.md)
+[Two-node AllGather selected data](benchmarks/data/host_multicast_selected_2x4l4_20261111/README.md) ·
+[AllReduce and ReduceScatter data](benchmarks/data/nccl_tuned_2x4l4_20261111/README.md)
 
 ### Fusion on single 4xL4 GPU
 

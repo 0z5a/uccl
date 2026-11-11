@@ -58,7 +58,8 @@ def throughput(size: int, latency_us: float, factor: float) -> float:
 
 def plot_operation(data, filename: str, factor: float, preview: bool,
                    log_small: bool = False,
-                   nccl_label: str = "NCCL 2.28.7") -> None:
+                   nccl_label: str = "NCCL 2.28.7",
+                   x_label: str = "Complete tensor bytes per rank") -> None:
     fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.1))
     fig.subplots_adjust(left=0.085, right=0.985, top=0.78, bottom=0.20,
                         wspace=0.28)
@@ -78,7 +79,7 @@ def plot_operation(data, filename: str, factor: float, preview: bool,
             f"{size >> 20}M" if size < 1 << 30 else "1G"
             for size in ticks
         ])
-        ax.set_xlabel("Complete tensor bytes per rank")
+        ax.set_xlabel(x_label)
         use_log = log_small and ax is axes[0]
         ax.set_ylabel("Latency (µs, log scale)" if use_log else ylabel)
         upper = 0.0
