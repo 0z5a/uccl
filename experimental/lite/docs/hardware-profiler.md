@@ -69,6 +69,12 @@ placement and thread count; they do not prove a router or
 collective crossover. Use the paired collective calibration in
 [CPU-router selection](cpu-router.md) to decide whether to route a workload.
 
+A later [1.5-GiB-per-NUMA STREAM-style triad](../benchmarks/data/host_memory_bw_4l4_20261111/README.md)
+measures sustained host DRAM useful bandwidth at about 87 GB/s per socket
+with 12 physical-core threads, or about 175 GB/s for both sockets running
+simultaneously. It uses a different kernel and larger working set than the
+copy and BF16-reduction rows above.
+
 Regenerate the summary without GPU work using:
 
 ```bash

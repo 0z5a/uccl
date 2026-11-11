@@ -35,12 +35,13 @@ PROBES := gemm_probe mma_gemm_probe mma_peak_probe moe_overlap_probe cutlass_gem
 ALL_NAMES := $(COLLECTIVES) $(PEER_COLLECTIVES) $(NCCL_CONTROLS) $(MULTINODE) $(HOST_MULTINODE) host_allreduce $(FUSION) $(PROBES)
 BIN = $(addprefix $(BUILD)/uccl_lite_,$(1))
 
-.PHONY: all single-node peer-collectives eight-gpu-alltoall duplex-allgather-8l4 fusion probes multinode headers help $(ALL_NAMES)
+.PHONY: all single-node peer-collectives eight-gpu-alltoall duplex-allgather-8l4 host-memory-bw-triad fusion probes multinode headers help $(ALL_NAMES)
 all: single-node peer-collectives fusion probes headers
 single-node: $(call BIN,$(COLLECTIVES))
 peer-collectives: $(call BIN,$(PEER_COLLECTIVES))
 eight-gpu-alltoall: $(BUILD)/uccl_lite_alltoall_8l4
 duplex-allgather-8l4: $(BUILD)/uccl_lite_duplex_allgather_8l4
+host-memory-bw-triad: $(BUILD)/host_memory_bw_4l4_20261111/stream_triad
 fusion: $(call BIN,$(FUSION))
 probes: $(call BIN,$(PROBES))
 multinode: $(call BIN,$(MULTINODE) host_allreduce)
@@ -98,6 +99,10 @@ $(BUILD)/uccl_lite_cutlass_gemm_probe: benchmarks/probes/cutlass_gemm_probe.cu |
 $(BUILD)/uccl_lite_hardware_profiler: benchmarks/probes/hardware_profiler.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++17 $< -o $@ -Xcompiler=-pthread
 
+$(BUILD)/host_memory_bw_4l4_20261111/stream_triad: benchmarks/data/host_memory_bw_4l4_20261111/stream_triad.cc | $(BUILD)
+	mkdir -p $(@D)
+	$(CXX) -O3 -march=native -fopenmp -std=c++17 $< -o $@
+
 $(BUILD)/header_check.o: benchmarks/header_check.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++17 $(FUSION_FLAGS) $(FUSION_INC) -c $< -o $@
 
@@ -107,6 +112,7 @@ help:
 	@printf '%s\n' '  make eight-gpu-alltoall: BF16 host/peer paths against NCCL on two four-GPU NUMA groups'
 	@printf '%s\n' '  make nccl_4l4_mpi_baseline nccl_2x4l4_baseline: checked FP32 AllReduce and AR/AG/RS controls'
 	@printf '%s\n' '  make multinode_host_allgather: experimental two-copy host-RDMA AllGather + NCCL control'
+	@printf '%s\n' '  make host-memory-bw-triad: NUMA-local large-working-set host DRAM probe'
 
 include src/cpu_router/module.mk
 
