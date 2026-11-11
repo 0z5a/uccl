@@ -14,8 +14,8 @@ records give their own topology and measurement protocol.
 
 - Four NVIDIA L4 GPUs per node, PCIe Gen4, no NVLink; dual Xeon Silver 4410Y.
 - NUMA pairs `(0,1)` and `(2,3)`; two-node tests use two local network rails.
-- Archived refreshed four-L4 and current two-node AR/AG/RS: FP32; current
-  main four-L4 CPU-router AR/AG/RS: BF16; dense fusion: FP16; MoE: BF16.
+- Current main four-L4 and two-node AR/AG/RS: FP32; archived four-L4
+  CPU-router AR/AG/RS: BF16; dense fusion: FP16; MoE: BF16.
 - Speedup is baseline latency divided by compared latency. Above 1× is faster.
 - AllReduce bus bandwidth and All-to-All aggregate bandwidth are different
   metrics; do not compare their numerical values as if they were the same.
@@ -36,7 +36,8 @@ records give their own topology and measurement protocol.
 | [cpu_router_4l4_apply_20261111](data/cpu_router_4l4_apply_20261111/README.md) | Fresh BF16 CPU-router transfer test on this single four-L4 host: paired NCCL over 1 KiB–1 GiB in both placements, 8,940 checked timed samples, automatic replay, compact/GPU-progress negative variants, and topology identity. |
 | [cpu_router_4l4_workers_20261111](data/cpu_router_4l4_workers_20261111/README.md) | Four-L4 BF16 CPU worker sweep and adapted eight-worker-per-NUMA AllGather-only profile: 29,100 paired timed calls, both placements, negative AR/RS results, and 126 fresh-process selection checks. |
 | [cpu_router_ag_4l4_geometry_20261111](data/cpu_router_ag_4l4_geometry_20261111/README.md) | Four-L4 BF16 AllGather transfer-grid and packet-cap optimization: 248-block/4-MiB-cap profile, 3,900 checked paired calls, 126 automatic decisions, negative small-size results, and Nsight diagnosis. |
-| [cpu_router_4l4_figures_20261111](data/cpu_router_4l4_figures_20261111/README.md) | Main README BF16 four-L4 AR/AG/RS figures: every UCCL point runs the CPU router, including regressions; NCCL 2.28.7 is a paired control only. |
+| [cpu_router_4l4_figures_20261111](data/cpu_router_4l4_figures_20261111/README.md) | Archived BF16 four-L4 AR/AG/RS figures: every UCCL point runs the CPU router, including regressions; NCCL 2.28.7 is a paired control only. |
+| [fp32_packet_ag_4l4_20261111](data/fp32_packet_ag_4l4_20261111/README.md) | Current main four-L4 FP32 AllGather: old source-side push/peer paths through 16 MiB, bitwise host-packet router from 32 MiB, 2,070 checked paired calls and all negative candidates. |
 | [host_memory_bw_4l4_20261111](data/host_memory_bw_4l4_20261111/README.md) | Large-working-set STREAM-style host DRAM triad on this four-L4 machine: per-NUMA isolated and simultaneous two-socket bandwidth with 12 physical or 24 logical CPU threads, 24 raw runs and 240 timed passes. |
 | [refresh_20261110/README.md](data/refresh_20261110/README.md) | Fresh four-L4 and two-node AR/AG/RS plus dense/MoE fusion. Raw logs, per-call or per-round samples, selected paths, hardware/software identities, matched timing scopes, and negative results. The old mixed-timer two-node archive is excluded from new comparisons. |
 | [hardware_profile_4l4_20261110_summary.csv](data/hardware_profile_4l4_20261110_summary.csv) and [raw runs](data/hardware_profile_4l4_20261110_run1.txt) | November 10: standalone GPU topology, directed and four-GPU concurrent peer copies, concurrent H2D/D2H, and NUMA CPU copy/BF16 reduction. Three complete runs × three repetitions, useful-byte bandwidth; no NCCL baseline or collective timing. [Method and limits](../docs/hardware-profiler.md). |
@@ -95,9 +96,9 @@ blue for UCCL-Lite and orange for NCCL; historical figures retain their
 recorded palettes. The fusion figures use paired latency bars for each shape.
 The recorded min–max timing ranges remain in the CSVs rather than being
 presented as confidence intervals.
-The main four-L4 BF16 CPU-router figures use the same two-panel style and
-show the router at every size, including losses; archived four-L4 FP32
-figures stay in the detailed documents.
+The current four-L4 FP32 figures use the same two-panel style. AllGather
+switches from direct GPU paths to the host-packet router at 32 MiB; the
+archived BF16 router-only figures remain in the detailed data.
 
 The November 10 refresh uses the same two-panel latency/throughput style
 as the current eight-L4 figures, with only the selected correct UCCL

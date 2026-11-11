@@ -10,12 +10,15 @@ import plot_refresh_collectives as reference
 
 OPTIMIZED = ROOT / "benchmarks/data/optimization_20261110"
 MIDRANGE_AG = ROOT / "benchmarks/data/ag_midrange_4l4_20261111"
+PACKET_AG = ROOT / "benchmarks/data/fp32_packet_ag_4l4_20261111"
 SERIAL_RS = ROOT / "benchmarks/data/rs_ar_serial_4l4_20261111"
 TUNED_MULTI = ROOT / "benchmarks/data/nccl_tuned_2x4l4_20261111"
 HOST_MULTI_AG = ROOT / "benchmarks/data/host_multicast_selected_2x4l4_20261111"
 OPERATIONS = (
     ("l40_selected.csv", "operation", "allgather",
      "collectives-4l4-allgather-optimized", 3 / 4),
+    ("selected.csv", "operation", "allgather",
+     "collectives-4l4-allgather-packet-router", 3 / 4),
     ("l40_selected.csv", "operation", "reducescatter",
      "collectives-4l4-reducescatter-optimized", 3 / 4),
     ("tuned_summary.csv", "collective", "allreduce",
@@ -35,6 +38,8 @@ def main() -> None:
     for source, field, operation, filename, factor in OPERATIONS:
         if filename == "collectives-4l4-allgather-optimized":
             reference.DATA = MIDRANGE_AG
+        elif filename == "collectives-4l4-allgather-packet-router":
+            reference.DATA = PACKET_AG
         elif filename == "collectives-4l4-reducescatter-optimized":
             reference.DATA = SERIAL_RS
         elif filename == "collectives-2x4l4-allgather-optimized":
@@ -48,8 +53,9 @@ def main() -> None:
             data, filename, factor, args.preview,
             nccl_label=("NCCL 2.28.7 tuned" if filename.startswith(
                 "collectives-2x4l4-") else "NCCL 2.28.7"),
-            x_label=("Complete output bytes per GPU" if filename ==
-                     "collectives-2x4l4-allgather-optimized" else
+            x_label=("Complete output bytes per GPU" if filename in (
+                     "collectives-2x4l4-allgather-optimized",
+                     "collectives-4l4-allgather-packet-router") else
                      "Complete tensor bytes per rank"))
         if filename == "collectives-2x4l4-allgather-optimized":
             shutil.copyfile(

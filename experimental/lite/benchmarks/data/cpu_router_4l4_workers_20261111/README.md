@@ -5,7 +5,7 @@ raises the four-L4 AllGather block upper bound to 248 (180 actual at 1 GiB)
 and uses a 4-MiB packet cap;
 its 1-GiB paired latency falls to 37.577 ms out of place. The measurements
 below remain the original worker-count sweep and eight-worker profile.
-The [current BF16 figures](../cpu_router_4l4_figures_20261111/README.md)
+The [archived BF16 figures](../cpu_router_4l4_figures_20261111/README.md)
 show the UCCL Lite router at every size. Automatic replay decisions below
 are historical diagnostics and do not replace any plotted UCCL point.
 

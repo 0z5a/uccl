@@ -4,6 +4,9 @@
 #include <cuda_runtime.h>
 #include <nccl.h>
 #include <mscclpp/packet_device.hpp>
+#ifdef UCCL_LITE_PACKET_ROUTER
+#include "uccl_lite/cpu_router/packet_pipeline.hpp"
+#endif
 #include <linux/mempolicy.h>
 #include <algorithm>
 #include <array>
@@ -44,8 +47,10 @@ struct Config {
   size_t rsLlMaxBytes = 8UL << 10;
   size_t rsFenceMaxBytes = 1UL << 20;
   size_t routerChunkBytes = 4UL << 20;
+  size_t packetRouterMinBytes = 4UL << 20;
   int warmups = 5, iterations = 10, repeats = 3;
   bool routerAg = false;
+  bool packetRouterAg = false;
   bool rsOnly = false;
   bool routerLocalNuma = true;
 };
@@ -55,6 +60,10 @@ Config parse(int argc, char** argv) {
     std::string option = argv[i];
     if (option == "--router-ag") {
       cfg.routerAg = true;
+      continue;
+    }
+    if (option == "--packet-router-ag") {
+      cfg.packetRouterAg = true;
       continue;
     }
     if (option == "--rs-only") {
@@ -69,7 +78,8 @@ Config parse(int argc, char** argv) {
                 "[--rs-push-serial-max-bytes BYTES] "
                 "[--rs-ll-max-bytes BYTES] "
                 "[--rs-fence-max-bytes BYTES] "
-                "[--router-ag] [--rs-only] "
+                "[--router-ag] [--packet-router-ag] [--rs-only] "
+                "[--packet-router-min-bytes BYTES] "
                 "[--router-chunk-bytes BYTES] "
                 "[--router-host-placement local|cuda]\n"
                 "BYTES is full AllGather output / ReduceScatter input per "
@@ -97,6 +107,8 @@ Config parse(int argc, char** argv) {
       cfg.rsFenceMaxBytes = std::strtoull(value, nullptr, 0);
     else if (option == "--router-chunk-bytes")
       cfg.routerChunkBytes = std::strtoull(value, nullptr, 0);
+    else if (option == "--packet-router-min-bytes")
+      cfg.packetRouterMinBytes = std::strtoull(value, nullptr, 0);
     else if (option == "--router-host-placement") {
       std::string placement = value;
       if (placement == "local") cfg.routerLocalNuma = true;
@@ -107,11 +119,18 @@ Config parse(int argc, char** argv) {
   }
   if (cfg.begin < 16 || cfg.begin > cfg.end || cfg.begin % 16 ||
       cfg.end % 16 || cfg.routerChunkBytes < 16 ||
-      cfg.routerChunkBytes % 16 || cfg.warmups < 0 || cfg.iterations < 1 ||
+      cfg.routerChunkBytes % 16 || cfg.packetRouterMinBytes % 16 ||
+      cfg.warmups < 0 || cfg.iterations < 1 ||
       cfg.repeats < 1)
     throw std::invalid_argument("invalid size or iteration settings");
   if (cfg.routerAg && cfg.rsOnly)
     throw std::invalid_argument("--router-ag and --rs-only conflict");
+  if (cfg.packetRouterAg && (cfg.routerAg || cfg.rsOnly))
+    throw std::invalid_argument("--packet-router-ag requires AllGather only");
+#ifndef UCCL_LITE_PACKET_ROUTER
+  if (cfg.packetRouterAg)
+    throw std::invalid_argument("build peer-ag-rs-packet for --packet-router-ag");
+#endif
   return cfg;
 }
 struct Device {
@@ -374,7 +393,7 @@ __global__ void pullScatter(float const* in0, float const* in1,
   output[index] = value;
 }
 enum class Operation { Gather, Scatter };
-enum class Backend { Peer, Pull, Nccl, Router, PullVec, PushSerial,
+enum class Backend { Peer, Pull, Nccl, Router, PacketRouter, PullVec, PushSerial,
                      ScatterLL, ScatterFence };
 char const* opName(Operation op) {
   return op == Operation::Gather ? "all_gather" : "reduce_scatter";
@@ -384,6 +403,7 @@ char const* backendName(Backend backend) {
   if (backend == Backend::Pull) return "pull";
   if (backend == Backend::PullVec) return "pull-vec";
   if (backend == Backend::PushSerial) return "push-serial";
+  if (backend == Backend::PacketRouter) return "packet-router";
   if (backend == Backend::ScatterLL) return "scatter-ll";
   if (backend == Backend::ScatterFence) return "scatter-fence";
   return backend == Backend::Router ? "cpu-router" : "nccl";
@@ -686,9 +706,40 @@ void launchNccl(std::array<Device*, kRanks> const& devices,
   }
   ncclCheck(ncclGroupEnd());
 }
+#ifdef UCCL_LITE_PACKET_ROUTER
+struct PacketRouter {
+  std::array<uccl_lite::cpu_router::PacketPort, kRanks> ports{};
+  uccl_lite::cpu_router::PacketPipeline pipeline;
+  static uccl_lite::cpu_router::PacketPipelineOptions options(size_t maxBytes) {
+    uccl_lite::cpu_router::PacketPipelineOptions result;
+    result.maxTensorBytes = maxBytes;
+    result.packetBytes = 4UL << 20;
+    result.workersPerNode = 8;
+    result.transportBlocks = 248;
+    return result;
+  }
+  PacketRouter(std::array<Device*, kRanks> const& devices, size_t maxBytes)
+      : pipeline(options(maxBytes)) {
+    for (int rank = 0; rank < kRanks; ++rank)
+      ports[rank] = {devices[rank]->input, devices[rank]->output,
+                     devices[rank]->stream, rank};
+    pipeline.prepare(ports);
+  }
+  void launch(size_t shard) {
+    // AllGather is a byte-for-byte copy: two BF16 storage units carry one FP32
+    // element, and the FP32 output checker validates the original bit pattern.
+    pipeline.enqueue(uccl_lite::cpu_router::PacketProgram::allGather(
+                         shard * sizeof(float) / sizeof(uint16_t), kRanks),
+                     ports);
+  }
+};
+#else
+struct PacketRouter {};
+#endif
 void launch(std::array<Device*, kRanks> const& devices,
             std::array<ncclComm_t, kRanks> const& comms, Operation op,
-            Backend backend, size_t shard, HostRouter* router) {
+            Backend backend, size_t shard, HostRouter* router,
+            PacketRouter* packetRouter) {
   if (backend == Backend::Peer) launchPeer(devices, op, shard);
   else if (backend == Backend::Pull) launchPull(devices, op, shard);
   else if (backend == Backend::PullVec) launchPullVec(devices, shard);
@@ -696,6 +747,14 @@ void launch(std::array<Device*, kRanks> const& devices,
   else if (backend == Backend::ScatterLL) launchScatterLL(devices, shard);
   else if (backend == Backend::ScatterFence) launchScatterFence(devices, shard);
   else if (backend == Backend::Router) router->launch(devices, shard);
+  else if (backend == Backend::PacketRouter) {
+#ifdef UCCL_LITE_PACKET_ROUTER
+    if (!packetRouter) throw std::invalid_argument("packet router not prepared");
+    packetRouter->launch(shard);
+#else
+    throw std::invalid_argument("packet router not linked");
+#endif
+  }
   else launchNccl(devices, comms, op, shard);
 }
 void synchronize(std::array<Device*, kRanks> const& devices) {
@@ -743,7 +802,7 @@ void verify(std::array<Device*, kRanks> const& devices, Operation op,
 double measure(std::array<Device*, kRanks> const& devices,
                std::array<ncclComm_t, kRanks> const& comms, Operation op,
                Backend backend, size_t shard, Config const& cfg, int repeat,
-               HostRouter* router) {
+               HostRouter* router, PacketRouter* packetRouter) {
   double timedSum = 0;
   double hostSum = 0;
   for (int n = 0; n < cfg.warmups + cfg.iterations; ++n) {
@@ -754,7 +813,7 @@ double measure(std::array<Device*, kRanks> const& devices,
       cudaCheck(cudaEventRecord(d->start, d->stream));
     }
     auto hostStart = std::chrono::steady_clock::now();
-    launch(devices, comms, op, backend, shard, router);
+    launch(devices, comms, op, backend, shard, router, packetRouter);
     for (auto* d : devices) {
       cudaCheck(cudaSetDevice(d->rank));
       cudaCheck(cudaEventRecord(d->end, d->stream));
@@ -832,6 +891,11 @@ int main(int argc, char** argv) {
     if (cfg.routerAg)
       router = std::make_unique<HostRouter>(cfg.routerChunkBytes,
                                             cfg.routerLocalNuma);
+    std::unique_ptr<PacketRouter> packetRouter;
+#ifdef UCCL_LITE_PACKET_ROUTER
+    if (cfg.packetRouterAg)
+      packetRouter = std::make_unique<PacketRouter>(devices, cfg.end);
+#endif
     std::printf("# four L4 peer AG/RS, float32; NCCL version=%d; "
                 "warmups=%d iterations=%d repeats=%d\n",
                 version, cfg.warmups, cfg.iterations, cfg.repeats);
@@ -850,12 +914,19 @@ int main(int argc, char** argv) {
                   cfg.routerLocalNuma ? "local" : "cuda",
                   router->hostNode[0], router->hostNode[1],
                   router->hostNode[2], router->hostNode[3]);
+    if (cfg.packetRouterAg)
+      std::printf("# packet-router AG: FP32 bitwise copy, 8 workers/NUMA, "
+                  "transport-block cap=248, packet cap=4194304 B, "
+                  "candidate from %zu B\n", cfg.packetRouterMinBytes);
     std::puts("collective,bytes,backend,median_us,min_us,max_us");
     for (size_t bytes = cfg.begin; bytes <= cfg.end; bytes *= 2) {
       size_t shard = bytes / sizeof(float) / kRanks;
       for (auto op : {Operation::Gather, Operation::Scatter}) {
         if (cfg.rsOnly && op == Operation::Gather) continue;
-        if (cfg.routerAg && op == Operation::Scatter) continue;
+        if ((cfg.routerAg || cfg.packetRouterAg) && op == Operation::Scatter)
+          continue;
+        bool packetEligible = cfg.packetRouterAg &&
+                              bytes >= cfg.packetRouterMinBytes;
         bool pullEligible = bytes <= cfg.pullMaxBytes;
         bool vecEligible = op == Operation::Gather &&
                            bytes <= cfg.pullVecMaxBytes;
@@ -874,15 +945,17 @@ int main(int argc, char** argv) {
         if (fenceEligible) backends.push_back(Backend::ScatterFence);
         backends.push_back(Backend::Nccl);
         if (cfg.routerAg) backends.push_back(Backend::Router);
+        if (packetEligible) backends.push_back(Backend::PacketRouter);
         for (int generation = 0; generation < 2; ++generation) {
           fill(devices, op, shard, generation);
           for (auto backend : backends) {
-            launch(devices, comms, op, backend, shard, router.get());
+            launch(devices, comms, op, backend, shard, router.get(),
+                   packetRouter.get());
             synchronize(devices);
             verify(devices, op, backend, shard, generation);
           }
         }
-        std::array<std::vector<double>, 8> samples;
+        std::array<std::vector<double>, 9> samples;
         for (int repeat = 0; repeat < cfg.repeats; ++repeat) {
           std::vector<Backend> order;
           if (pullEligible) {
@@ -896,6 +969,11 @@ int main(int argc, char** argv) {
             order = {Backend::Nccl, Backend::Peer};
           if (cfg.routerAg) {
             order.push_back(Backend::Router);
+            std::rotate(order.begin(), order.begin() + repeat % order.size(),
+                        order.end());
+          }
+          if (packetEligible) {
+            order.push_back(Backend::PacketRouter);
             std::rotate(order.begin(), order.begin() + repeat % order.size(),
                         order.end());
           }
@@ -922,11 +1000,12 @@ int main(int argc, char** argv) {
           for (auto backend : order)
             samples[static_cast<int>(backend)].push_back(
                 measure(devices, comms, op, backend, shard, cfg, repeat,
-                        router.get()));
+                        router.get(), packetRouter.get()));
         }
         fill(devices, op, shard, 2);
         for (auto backend : backends) {
-          launch(devices, comms, op, backend, shard, router.get());
+          launch(devices, comms, op, backend, shard, router.get(),
+                 packetRouter.get());
           synchronize(devices);
           verify(devices, op, backend, shard, 2);
         }

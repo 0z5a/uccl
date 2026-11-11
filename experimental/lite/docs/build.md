@@ -41,6 +41,8 @@ because the measured CUDA 12.9 compiler had a frontend failure with C++20.
 # Required paths can be supplied on every make invocation.
 make -j2 single-node MSCCLPP_HOME=/path/to/mscclpp
 make peer_ag_rs MSCCLPP_HOME=/path/to/mscclpp NCCL_HOME=/path/to/nccl/build
+make peer-ag-rs-packet MSCCLPP_HOME=/path/to/mscclpp \
+  NCCL_HOME=/path/to/nccl/build CUTLASS_HOME=/path/to/cutlass
 make nccl_4l4_mpi_baseline NCCL_HOME=/path/to/nccl/build MPICXX=/path/to/mpicxx
 make nccl_2x4l4_baseline NCCL_HOME=/path/to/nccl/build MPICXX=/path/to/mpicxx
 make multinode_host_allgather NCCL_HOME=/path/to/nccl/build MPICXX=/path/to/mpicxx
@@ -54,13 +56,16 @@ make headers MSCCLPP_HOME=/path/to/mscclpp CUTLASS_HOME=/path/to/cutlass
 
 `make all` builds single-node and peer collectives, fusion, probes, and the reusable-header
 compile check. Multi-node targets are separate. Individual target names are
-`allreduce`, `alltoall`, `peer_ag_rs`, `nccl_4l4_mpi_baseline`,
+`allreduce`, `alltoall`, `peer_ag_rs`, optional `peer-ag-rs-packet`, `nccl_4l4_mpi_baseline`,
 `nccl_2x4l4_baseline`, `multinode_host_allgather`, `dense_fusion`, `fused_moe`, `fused_moe_layer`,
 `fused_moe_layer_qwen`, `gemm_probe`, `mma_gemm_probe`, `mma_peak_probe`,
 `moe_overlap_probe`, `cutlass_gemm_probe`, and `hardware_profiler`. Executables have an `uccl_lite_`
 prefix, for example `build/uccl_lite_dense_fusion`.
 
 `peer_ag_rs` uses the MSCCL++ LL16 packet header but links no MSCCL++ library.
+`peer-ag-rs-packet` links the optional CPU-router library and adds the FP32
+AllGather host-packet candidate; the ordinary `peer_ag_rs` target remains
+independent of that library.
 
 Override `CUDA_HOME`, `NVCC`, `CUDA_ARCH`, `MSCCLPP_BUILD`, and
 `EXTRA_NVCC_FLAGS` as needed. Changing compiler flags or dependency paths does

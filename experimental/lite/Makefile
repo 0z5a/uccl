@@ -35,10 +35,11 @@ PROBES := gemm_probe mma_gemm_probe mma_peak_probe moe_overlap_probe cutlass_gem
 ALL_NAMES := $(COLLECTIVES) $(PEER_COLLECTIVES) $(NCCL_CONTROLS) $(MULTINODE) $(HOST_MULTINODE) host_allreduce $(FUSION) $(PROBES)
 BIN = $(addprefix $(BUILD)/uccl_lite_,$(1))
 
-.PHONY: all single-node peer-collectives eight-gpu-alltoall duplex-allgather-8l4 host-memory-bw-triad fusion probes multinode headers help $(ALL_NAMES)
+.PHONY: all single-node peer-collectives peer-ag-rs-packet eight-gpu-alltoall duplex-allgather-8l4 host-memory-bw-triad fusion probes multinode headers help $(ALL_NAMES)
 all: single-node peer-collectives fusion probes headers
 single-node: $(call BIN,$(COLLECTIVES))
 peer-collectives: $(call BIN,$(PEER_COLLECTIVES))
+peer-ag-rs-packet: $(BUILD)/uccl_lite_peer_ag_rs_packet
 eight-gpu-alltoall: $(BUILD)/uccl_lite_alltoall_8l4
 duplex-allgather-8l4: $(BUILD)/uccl_lite_duplex_allgather_8l4
 host-memory-bw-triad: $(BUILD)/host_memory_bw_4l4_20261111/stream_triad
@@ -56,6 +57,9 @@ $(call BIN,allreduce alltoall): $(BUILD)/uccl_lite_%: src/collectives/%.cu | $(B
 
 $(BUILD)/uccl_lite_peer_ag_rs: src/collectives/peer_ag_rs.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++17 $(MSCCLPP_INC) -I$(NCCL_HOME)/include $< -o $@ -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib
+
+$(BUILD)/uccl_lite_peer_ag_rs_packet: src/collectives/peer_ag_rs.cu $(BUILD)/cpu_router/libuccl_lite_cpu_router.a | $(BUILD)
+	$(NVCC) $(NVCC_FLAGS) -std=c++17 -DUCCL_LITE_PACKET_ROUTER $(MSCCLPP_INC) $(ROUTER_INC) -I$(NCCL_HOME)/include $< $(ROUTER_STATIC) -o $@ -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib -Xcompiler=-pthread -ldl
 
 $(BUILD)/uccl_lite_nccl_4l4_mpi_baseline: benchmarks/collectives/nccl_4l4_mpi_baseline.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++17 -I$(NCCL_HOME)/include $(MPI_INC) $< -o $@ -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib $(MPI_LIB) -lcudart
@@ -113,6 +117,7 @@ help:
 	@printf '%s\n' '  make nccl_4l4_mpi_baseline nccl_2x4l4_baseline: checked FP32 AllReduce and AR/AG/RS controls'
 	@printf '%s\n' '  make multinode_host_allgather: experimental two-copy host-RDMA AllGather + NCCL control'
 	@printf '%s\n' '  make host-memory-bw-triad: NUMA-local large-working-set host DRAM probe'
+	@printf '%s\n' '  make peer-ag-rs-packet: FP32 AllGather peer paths plus optional host-packet router'
 
 include src/cpu_router/module.mk
 

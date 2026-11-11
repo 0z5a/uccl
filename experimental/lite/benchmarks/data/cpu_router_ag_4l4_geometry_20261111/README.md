@@ -1,6 +1,6 @@
 # Four-L4 BF16 AllGather: CPU-router transfer geometry (2026-11-11)
 
-The [current BF16 figure](../cpu_router_4l4_figures_20261111/README.md)
+The [archived BF16 figure](../cpu_router_4l4_figures_20261111/README.md)
 plots the CPU router at **every size**, including the negative points below.
 NCCL is a paired external control only. The older automatic replay retained
 here is diagnostic and is not used to select the plotted UCCL path.

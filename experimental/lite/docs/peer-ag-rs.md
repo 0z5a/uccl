@@ -1,5 +1,15 @@
 # Four-GPU peer AllGather and ReduceScatter
 
+## Current four-L4 AllGather figure
+
+The [owner-host FP32 paired sweep](../benchmarks/data/fp32_packet_ag_4l4_20261111/README.md)
+keeps `push-serial` at 1 KiB–2 MiB and the direct peer path at 4–16 MiB,
+then uses the host-packet CPU router at 32 MiB–1 GiB. Every size uses the
+same four GPUs, FP32 dtype, out-of-place placement, CUDA-event timer and
+paired NCCL 2.28.7 control. The older l40 direct-peer sweep below remains
+archived. The main AllReduce and ReduceScatter figures retain their prior
+FP32 implementations and values.
+
 ## Archived FP32 four-L4 AllGather
 
 The [November 11 paired sweep](../benchmarks/data/ag_midrange_4l4_20261111/README.md)

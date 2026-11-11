@@ -110,7 +110,7 @@ actually demonstrates a stable gain; four GPUs are not categorically forbidden.
 
 The [November 11 four-L4 calibration](../benchmarks/data/cpu_router_4l4_apply_20261111/README.md)
 provides local BF16 evidence on `mibura-sky-test-02`. Its NCCL-backed
-automatic replay was a diagnostic experiment. The [current BF16 figures](../benchmarks/data/cpu_router_4l4_figures_20261111/README.md)
+automatic replay was a diagnostic experiment. The [archived BF16 figures](../benchmarks/data/cpu_router_4l4_figures_20261111/README.md)
 run the UCCL Lite CPU router at **all sizes** for AR, AG, and RS, including
 losses; NCCL is only an external paired control. This machine has peer
 access between all four GPUs, but the 8×L4 compact AR and GPU-progress RS
@@ -136,8 +136,10 @@ four-L4 large-message path. A machine-specific 248-block upper bound
 cuts out-of-place 1-GiB AG from about 42.8 to 37.6 ms in separate checked
 paired windows, with NCCL near 48.1 ms in both. The historical auto-policy
 replay would have chosen its NCCL control at 4/8 MiB, where the larger grid
-regresses. The current UCCL figure instead reports the router's slower
-4/8-MiB measurements directly.
+regresses. Those losses remain visible in the archived BF16 router-only
+figure. The [current FP32 AllGather figure](../benchmarks/data/fp32_packet_ag_4l4_20261111/README.md)
+uses direct GPU paths through 16 MiB and this host-packet geometry from
+32 MiB onward, with no NCCL fallback in the UCCL curve.
 The standalone benchmark's `--router-only` mode forces the CPU router at
 every size without constructing NCCL or another fallback. Its fresh
 [four-L4 BF16 figures and replay logs](../benchmarks/data/cpu_router_4l4_figures_20261111/README.md)

@@ -55,19 +55,21 @@ the two-node launcher.
 
 ### Single-node collectives
 
-#### AllReduce on single 4xL4 GPU (BF16 CPU router, in place)
+#### AllReduce on single 4xL4 GPU
 
-![Four-L4 BF16 AllReduce: UCCL Lite CPU router at every size versus NCCL](docs/assets/collectives-4l4-bf16-router-allreduce.svg)
+![AllReduce latency and bus throughput, UCCL Lite versus NCCL](docs/assets/collectives-4l4-allreduce-refresh.svg)
 
-#### AllGather on single 4xL4 GPU (BF16 CPU router, out of place)
+#### AllGather on single 4xL4 GPU
 
-![Four-L4 BF16 AllGather: UCCL Lite CPU router at every size versus NCCL](docs/assets/collectives-4l4-bf16-router-allgather.svg)
+![Four-L4 FP32 AllGather: direct GPU path for small and medium sizes, host-packet router for large sizes, versus NCCL](docs/assets/collectives-4l4-allgather-packet-router.svg)
 
-#### ReduceScatter on single 4xL4 GPU (BF16 CPU router, out of place)
+#### ReduceScatter on single 4xL4 GPU
 
-![Four-L4 BF16 ReduceScatter: UCCL Lite CPU router at every size versus NCCL](docs/assets/collectives-4l4-bf16-router-reducescatter.svg)
+![ReduceScatter latency and bus throughput, UCCL Lite versus NCCL](docs/assets/collectives-4l4-reducescatter-optimized.svg)
 
-[Four-L4 BF16 CPU-router figure data](benchmarks/data/cpu_router_4l4_figures_20261111/README.md)
+[Four-L4 AllReduce data](benchmarks/data/refresh_20261110/README.md) ·
+[Four-L4 ReduceScatter data](benchmarks/data/rs_ar_serial_4l4_20261111/README.md) ·
+[Four-L4 AllGather data](benchmarks/data/fp32_packet_ag_4l4_20261111/README.md)
 
 #### 8xL4 GPU
 

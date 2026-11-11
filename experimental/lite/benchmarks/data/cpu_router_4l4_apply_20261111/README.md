@@ -4,7 +4,7 @@ The [worker-count follow-up](../cpu_router_4l4_workers_20261111/README.md)
 reduces the AllGather-only configuration to eight physical-core workers per
 NUMA node and rechecks the AR/RS losses. The measurements below remain the
 original 23-worker-per-NUMA calibration.
-The [current BF16 figures](../cpu_router_4l4_figures_20261111/README.md)
+The [archived BF16 figures](../cpu_router_4l4_figures_20261111/README.md)
 show the router at every size, including losses. NCCL is only a comparison
 curve; the automatic replay below is historical diagnostic data.
 
@@ -123,5 +123,5 @@ building, choose new output paths and run:
 
 Add `--in-place` and use distinct output paths for the second placement.
 This original calibration did not change the main README at the time. The
-later [BF16 figures](../cpu_router_4l4_figures_20261111/README.md) use fresh
+later [archived BF16 figures](../cpu_router_4l4_figures_20261111/README.md) use fresh
 paired runs and show the router at every size.
