@@ -5,6 +5,7 @@
 #include <nccl.h>
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -31,16 +32,23 @@ void ncclCheck(ncclResult_t status) {
 struct Config {
   size_t begin = 1UL << 10, end = 1UL << 26;
   size_t pullMaxBytes = 32UL << 10;
+  size_t routerChunkBytes = 1UL << 20;
   int warmups = 5, iterations = 10, repeats = 3;
+  bool routerAg = false;
 };
 Config parse(int argc, char** argv) {
   Config cfg;
   for (int i = 1; i < argc; ++i) {
     std::string option = argv[i];
+    if (option == "--router-ag") {
+      cfg.routerAg = true;
+      continue;
+    }
     if (option == "--help") {
       std::puts("Usage: uccl_lite_peer_ag_rs [-b BYTES] [-e BYTES] "
                 "[-w WARMUPS] [-n ITERATIONS] [-r REPEATS] "
-                "[--pull-max-bytes BYTES]\n"
+                "[--pull-max-bytes BYTES] [--router-ag] "
+                "[--router-chunk-bytes BYTES]\n"
                 "BYTES is full AllGather output / ReduceScatter input per "
                 "rank; requires four peer-accessible GPUs.");
       std::exit(0);
@@ -54,10 +62,14 @@ Config parse(int argc, char** argv) {
     else if (option == "-r") cfg.repeats = std::atoi(value);
     else if (option == "--pull-max-bytes")
       cfg.pullMaxBytes = std::strtoull(value, nullptr, 0);
+    else if (option == "--router-chunk-bytes")
+      cfg.routerChunkBytes = std::strtoull(value, nullptr, 0);
     else throw std::invalid_argument("unknown option: " + option);
   }
   if (cfg.begin < 16 || cfg.begin > cfg.end || cfg.begin % 16 ||
-      cfg.end % 16 || cfg.warmups < 0 || cfg.iterations < 1 || cfg.repeats < 1)
+      cfg.end % 16 || cfg.routerChunkBytes < 16 ||
+      cfg.routerChunkBytes % 16 || cfg.warmups < 0 || cfg.iterations < 1 ||
+      cfg.repeats < 1)
     throw std::invalid_argument("invalid size or iteration settings");
   return cfg;
 }
@@ -154,14 +166,85 @@ __global__ void pullScatter(float const* in0, float const* in1,
   output[index] = value;
 }
 enum class Operation { Gather, Scatter };
-enum class Backend { Peer, Pull, Nccl };
+enum class Backend { Peer, Pull, Nccl, Router };
 char const* opName(Operation op) {
   return op == Operation::Gather ? "all_gather" : "reduce_scatter";
 }
 char const* backendName(Backend backend) {
   if (backend == Backend::Peer) return "peer";
-  return backend == Backend::Pull ? "pull" : "nccl";
+  if (backend == Backend::Pull) return "pull";
+  return backend == Backend::Router ? "cpu-router" : "nccl";
 }
+struct HostRouter {
+  size_t chunkBytes;
+  std::array<std::array<char*, 2>, kRanks> stage{};
+  std::array<cudaStream_t, kRanks> uploads{};
+  std::array<std::array<cudaEvent_t, 2>, kRanks> ready{};
+  std::array<std::array<cudaEvent_t, 2>, kRanks> consumed{};
+  explicit HostRouter(size_t bytes) : chunkBytes(bytes) {
+    for (int rank = 0; rank < kRanks; ++rank) {
+      cudaCheck(cudaSetDevice(rank));
+      cudaCheck(cudaStreamCreateWithFlags(&uploads[rank], cudaStreamNonBlocking));
+      for (int slot = 0; slot < 2; ++slot) {
+        cudaCheck(cudaHostAlloc(reinterpret_cast<void**>(&stage[rank][slot]),
+                                chunkBytes, cudaHostAllocPortable));
+        cudaCheck(cudaEventCreateWithFlags(&ready[rank][slot],
+                                           cudaEventDisableTiming));
+        cudaCheck(cudaEventCreateWithFlags(&consumed[rank][slot],
+                                           cudaEventDisableTiming));
+      }
+    }
+  }
+  ~HostRouter() {
+    for (int rank = 0; rank < kRanks; ++rank) {
+      cudaSetDevice(rank);
+      for (int slot = 0; slot < 2; ++slot) {
+        if (ready[rank][slot]) cudaEventDestroy(ready[rank][slot]);
+        if (consumed[rank][slot]) cudaEventDestroy(consumed[rank][slot]);
+        if (stage[rank][slot]) cudaFreeHost(stage[rank][slot]);
+      }
+      if (uploads[rank]) cudaStreamDestroy(uploads[rank]);
+    }
+  }
+  void launch(std::array<Device*, kRanks> const& devices, size_t shard) {
+    size_t shardBytes = shard * sizeof(float);
+    for (size_t offset = 0, piece = 0; offset < shardBytes;
+         offset += chunkBytes, ++piece) {
+      int slot = int(piece & 1);
+      size_t count = std::min(chunkBytes, shardBytes - offset);
+      for (int source = 0; source < kRanks; ++source) {
+        cudaCheck(cudaSetDevice(source));
+        // A slot cannot be overwritten until all four destination DMA reads
+        // from its previous chunk have completed.
+        if (piece >= 2)
+          for (int dest = 0; dest < kRanks; ++dest)
+            cudaCheck(cudaStreamWaitEvent(uploads[source],
+                                          consumed[dest][slot], 0));
+        cudaCheck(cudaMemcpyAsync(stage[source][slot],
+                                  reinterpret_cast<char*>(devices[source]->input) +
+                                      offset,
+                                  count, cudaMemcpyDeviceToHost,
+                                  uploads[source]));
+        cudaCheck(cudaEventRecord(ready[source][slot], uploads[source]));
+      }
+      for (int dest = 0; dest < kRanks; ++dest) {
+        cudaCheck(cudaSetDevice(dest));
+        // Each GPU reads all source shards through host memory. Two slots
+        // overlap the next uploads with the current fan-out.
+        for (int source = 0; source < kRanks; ++source) {
+          cudaCheck(cudaStreamWaitEvent(devices[dest]->stream,
+                                        ready[source][slot], 0));
+          cudaCheck(cudaMemcpyAsync(
+              reinterpret_cast<char*>(devices[dest]->output) +
+                  size_t(source) * shardBytes + offset,
+              stage[source][slot], count, cudaMemcpyHostToDevice,
+              devices[dest]->stream));
+        }
+        cudaCheck(cudaEventRecord(consumed[dest][slot], devices[dest]->stream));
+      }
+    }
+  }
+};
 void launchPeer(std::array<Device*, kRanks> const& devices, Operation op,
                 size_t shard) {
   size_t bytes = shard * sizeof(float);
@@ -263,9 +346,10 @@ void launchNccl(std::array<Device*, kRanks> const& devices,
 }
 void launch(std::array<Device*, kRanks> const& devices,
             std::array<ncclComm_t, kRanks> const& comms, Operation op,
-            Backend backend, size_t shard) {
+            Backend backend, size_t shard, HostRouter* router) {
   if (backend == Backend::Peer) launchPeer(devices, op, shard);
   else if (backend == Backend::Pull) launchPull(devices, op, shard);
+  else if (backend == Backend::Router) router->launch(devices, shard);
   else launchNccl(devices, comms, op, shard);
 }
 void synchronize(std::array<Device*, kRanks> const& devices) {
@@ -312,8 +396,10 @@ void verify(std::array<Device*, kRanks> const& devices, Operation op,
 }
 double measure(std::array<Device*, kRanks> const& devices,
                std::array<ncclComm_t, kRanks> const& comms, Operation op,
-               Backend backend, size_t shard, Config const& cfg, int repeat) {
+               Backend backend, size_t shard, Config const& cfg, int repeat,
+               HostRouter* router) {
   double timedSum = 0;
+  double hostSum = 0;
   for (int n = 0; n < cfg.warmups + cfg.iterations; ++n) {
     int generation = 10 + repeat * (cfg.warmups + cfg.iterations) + n;
     fill(devices, op, shard, generation);
@@ -321,12 +407,14 @@ double measure(std::array<Device*, kRanks> const& devices,
       cudaCheck(cudaSetDevice(d->rank));
       cudaCheck(cudaEventRecord(d->start, d->stream));
     }
-    launch(devices, comms, op, backend, shard);
+    auto hostStart = std::chrono::steady_clock::now();
+    launch(devices, comms, op, backend, shard, router);
     for (auto* d : devices) {
       cudaCheck(cudaSetDevice(d->rank));
       cudaCheck(cudaEventRecord(d->end, d->stream));
     }
     synchronize(devices);
+    auto hostEnd = std::chrono::steady_clock::now();
     double slowest = 0;
     for (auto* d : devices) {
       cudaCheck(cudaSetDevice(d->rank));
@@ -337,11 +425,23 @@ double measure(std::array<Device*, kRanks> const& devices,
     verify(devices, op, backend, shard, generation);
     if (n >= cfg.warmups) {
       timedSum += slowest;
+      double hostUs = std::chrono::duration<double, std::micro>(hostEnd -
+                                                                 hostStart)
+                          .count();
+      hostSum += hostUs;
       std::printf("# sample,%s,%zu,%s,%d,%d,%.3f\n", opName(op),
                   shard * kRanks * sizeof(float), backendName(backend),
                   repeat + 1, n - cfg.warmups + 1, slowest);
+      if (cfg.routerAg)
+        std::printf("# host_sample,%s,%zu,%s,%d,%d,%.3f\n", opName(op),
+                    shard * kRanks * sizeof(float), backendName(backend),
+                    repeat + 1, n - cfg.warmups + 1, hostUs);
     }
   }
+  if (cfg.routerAg)
+    std::printf("# host_run_mean,%s,%zu,%s,%d,%.3f\n", opName(op),
+                shard * kRanks * sizeof(float), backendName(backend),
+                repeat + 1, hostSum / cfg.iterations);
   return timedSum / cfg.iterations;
 }
 double median(std::vector<double> samples) {
@@ -380,6 +480,8 @@ int main(int argc, char** argv) {
     ncclCheck(ncclCommInitAll(comms.data(), kRanks, ranks));
     int version = 0;
     ncclCheck(ncclGetVersion(&version));
+    std::unique_ptr<HostRouter> router;
+    if (cfg.routerAg) router = std::make_unique<HostRouter>(cfg.routerChunkBytes);
     std::printf("# four L4 peer AG/RS, float32; NCCL version=%d; "
                 "warmups=%d iterations=%d repeats=%d\n",
                 version, cfg.warmups, cfg.iterations, cfg.repeats);
@@ -390,23 +492,29 @@ int main(int argc, char** argv) {
     std::printf("# compact peer completion through AG %zu B, RS %zu B\n",
                 kCompactGatherBytes, kCompactScatterBytes);
     std::puts("# RS direct self contribution at 256 KiB, 1-8 MiB, and >=32 MiB");
+    if (cfg.routerAg)
+      std::printf("# cpu-router AG: pinned host, two slots/source, chunk=%zu B; "
+                  "host_sample includes launch and completion\n",
+                  cfg.routerChunkBytes);
     std::puts("collective,bytes,backend,median_us,min_us,max_us");
     for (size_t bytes = cfg.begin; bytes <= cfg.end; bytes *= 2) {
       size_t shard = bytes / sizeof(float) / kRanks;
       for (auto op : {Operation::Gather, Operation::Scatter}) {
+        if (cfg.routerAg && op == Operation::Scatter) continue;
         bool pullEligible = bytes <= cfg.pullMaxBytes;
         std::vector<Backend> backends{Backend::Peer};
         if (pullEligible) backends.push_back(Backend::Pull);
         backends.push_back(Backend::Nccl);
+        if (cfg.routerAg) backends.push_back(Backend::Router);
         for (int generation = 0; generation < 2; ++generation) {
           fill(devices, op, shard, generation);
           for (auto backend : backends) {
-            launch(devices, comms, op, backend, shard);
+            launch(devices, comms, op, backend, shard, router.get());
             synchronize(devices);
             verify(devices, op, backend, shard, generation);
           }
         }
-        std::array<std::vector<double>, 3> samples;
+        std::array<std::vector<double>, 4> samples;
         for (int repeat = 0; repeat < cfg.repeats; ++repeat) {
           std::vector<Backend> order;
           if (pullEligible) {
@@ -418,13 +526,19 @@ int main(int argc, char** argv) {
             order = {Backend::Peer, Backend::Nccl};
           else
             order = {Backend::Nccl, Backend::Peer};
+          if (cfg.routerAg) {
+            order.push_back(Backend::Router);
+            std::rotate(order.begin(), order.begin() + repeat % order.size(),
+                        order.end());
+          }
           for (auto backend : order)
             samples[static_cast<int>(backend)].push_back(
-                measure(devices, comms, op, backend, shard, cfg, repeat));
+                measure(devices, comms, op, backend, shard, cfg, repeat,
+                        router.get()));
         }
         fill(devices, op, shard, 2);
         for (auto backend : backends) {
-          launch(devices, comms, op, backend, shard);
+          launch(devices, comms, op, backend, shard, router.get());
           synchronize(devices);
           verify(devices, op, backend, shard, 2);
         }

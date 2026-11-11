@@ -1,5 +1,16 @@
 # Four-GPU peer AllGather and ReduceScatter
 
+## Host-staged AllGather candidate
+
+The optional `--router-ag` benchmark also measures a pipelined pinned-host
+AllGather on four L4 GPUs. Each GPU uploads its shard in chunks to two reusable
+host slots; every GPU downloads all four shards in rank order. Cross-device
+CUDA events protect slot reuse while uploads of the next chunk overlap the
+current fan-out. The [full 21-size paired sweep and raw samples](../benchmarks/data/cpu_router_ag_4l4_20261111/README.md)
+use 1 MiB chunks and compare against direct peer paths and NCCL 2.28.7.
+This is an experimental host-staged candidate, separate from the BF16 CPU
+router module and from the main README's selected direct-peer curve.
+
 ## Optimized small-message paths
 
 The current four-L4 eager benchmark on l40 compares three correct paths in
