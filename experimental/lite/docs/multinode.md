@@ -21,9 +21,11 @@ slowest-rank host enqueue+completion timing, 20 warmups, three alternating
 paired rounds of ten calls, and complete output checks on every invocation.
 At 64 KiB, UCCL Lite AR/AG/RS take **47.08/34.34/34.59 µs** versus
 NCCL 2.28.7 **69.57/44.15/42.61 µs**. At 1 KiB, AR and AG still lose;
-RS is slightly faster. The main latency panels use a labeled log scale
-because the default NCCL control has 256–512 KiB spikes; the raw control
-logs and alternative-protocol diagnostics are kept in the data record.
+RS is slightly faster. The main figures now use the
+[tuned NCCL protocol policy](../benchmarks/data/nccl_tuned_2x4l4_20261111/README.md):
+RING+SIMPLE at eight measured spike points and the default NCCL configuration
+elsewhere. Each targeted point has a fresh three-round paired UCCL/NCCL run.
+The latency panels return to the same linear style as the eight-L4 figures.
 The [targeted NCCL diagnosis](../benchmarks/data/nccl_spike_2x4l4_20261111/README.md)
 shows that default `RING + LL` causes the spike on this topology; forcing
 `SIMPLE` while keeping the ring and two channels removes it. The exact

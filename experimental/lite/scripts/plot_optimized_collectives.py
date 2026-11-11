@@ -10,17 +10,17 @@ import plot_refresh_collectives as reference
 OPTIMIZED = ROOT / "benchmarks/data/optimization_20261110"
 MIDRANGE_AG = ROOT / "benchmarks/data/ag_midrange_4l4_20261111"
 SERIAL_RS = ROOT / "benchmarks/data/rs_ar_serial_4l4_20261111"
-SERIAL_MULTI = ROOT / "benchmarks/data/multinode_serial_20261111"
+TUNED_MULTI = ROOT / "benchmarks/data/nccl_tuned_2x4l4_20261111"
 OPERATIONS = (
     ("l40_selected.csv", "operation", "allgather",
      "collectives-4l4-allgather-optimized", 3 / 4),
     ("l40_selected.csv", "operation", "reducescatter",
      "collectives-4l4-reducescatter-optimized", 3 / 4),
-    ("summary.csv", "collective", "allreduce",
+    ("tuned_summary.csv", "collective", "allreduce",
      "collectives-2x4l4-allreduce-optimized", 14 / 8),
-    ("summary.csv", "collective", "allgather",
+    ("tuned_summary.csv", "collective", "allgather",
      "collectives-2x4l4-allgather-optimized", 7 / 8),
-    ("summary.csv", "collective", "reducescatter",
+    ("tuned_summary.csv", "collective", "reducescatter",
      "collectives-2x4l4-reducescatter-optimized", 7 / 8),
 )
 
@@ -36,13 +36,14 @@ def main() -> None:
         elif filename == "collectives-4l4-reducescatter-optimized":
             reference.DATA = SERIAL_RS
         elif filename.startswith("collectives-2x4l4-"):
-            reference.DATA = SERIAL_MULTI
+            reference.DATA = TUNED_MULTI
         else:
             reference.DATA = OPTIMIZED
         data = reference.load(source, field, operation)
         reference.plot_operation(
             data, filename, factor, args.preview,
-            log_small=filename.startswith("collectives-2x4l4-"))
+            nccl_label=("NCCL 2.28.7 tuned" if filename.startswith(
+                "collectives-2x4l4-") else "NCCL 2.28.7"))
 
 
 if __name__ == "__main__":

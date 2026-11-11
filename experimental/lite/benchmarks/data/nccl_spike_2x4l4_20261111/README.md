@@ -58,8 +58,9 @@ not a validated fix. One-run LL probes remained slow with GDR disabled,
 IB replaced by sockets, or local P2P disabled (`transport/`); those probes
 do not establish a transport-independent root cause.
 
-The main UCCL Lite figures retain the one explicit default-NCCL baseline.
-Its spike points are preserved as measurements and excluded from stable
-speedup claims. Forced SIMPLE here is a **diagnostic**, not a new baseline
-for those figures. Hardware, software versions, binary/library hashes, and
-the baseline launch configuration are in the linked two-node record.
+The [later tuned NCCL policy](../nccl_tuned_2x4l4_20261111/README.md)
+freshly pairs RING+SIMPLE at the affected sizes and supplies the current
+main figures. This diagnosis and the complete default-NCCL sweep preserve
+the original spikes. Hardware, software versions, binary/library hashes,
+and the original baseline launch configuration are in the linked two-node
+record.

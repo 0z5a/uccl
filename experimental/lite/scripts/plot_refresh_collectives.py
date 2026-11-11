@@ -57,7 +57,8 @@ def throughput(size: int, latency_us: float, factor: float) -> float:
 
 
 def plot_operation(data, filename: str, factor: float, preview: bool,
-                   log_small: bool = False) -> None:
+                   log_small: bool = False,
+                   nccl_label: str = "NCCL 2.28.7") -> None:
     fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.1))
     fig.subplots_adjust(left=0.085, right=0.985, top=0.78, bottom=0.20,
                         wspace=0.28)
@@ -83,7 +84,7 @@ def plot_operation(data, filename: str, factor: float, preview: bool,
         upper = 0.0
         lower = math.inf
         for field, label, color, marker, linestyle in (
-            ("nccl_median_us", "NCCL 2.28.7", NCCL_COLOR, "s", (0, (5, 2.5))),
+            ("nccl_median_us", nccl_label, NCCL_COLOR, "s", (0, (5, 2.5))),
             ("uccl_median_us", "UCCL-Lite", UCCL_COLOR, "o", "-"),
         ):
             values = [measure(size, float(data[size][field]))

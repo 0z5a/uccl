@@ -55,6 +55,13 @@ run_uccl() {
 
 run_nccl() {
   local op="$1"
+  local nccl_env=()
+  if [[ -n "${NCCL_CONTROL_ALGO:-}" ]]; then
+    nccl_env+=(-x "NCCL_ALGO=$NCCL_CONTROL_ALGO")
+  fi
+  if [[ -n "${NCCL_CONTROL_PROTO:-}" ]]; then
+    nccl_env+=(-x "NCCL_PROTO=$NCCL_CONTROL_PROTO")
+  fi
   if [[ -n "${NCCL_BASELINE_BIN:-}" ]]; then
     local library_path="$NCCL_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     timeout "${timeout_seconds}s" "${MPIRUN:-mpirun}" \
@@ -64,6 +71,7 @@ run_nccl() {
       -x "LD_LIBRARY_PATH=$library_path" \
       -x "NCCL_SOCKET_IFNAME=$SOCKET_IFNAME" \
       -x "NCCL_IB_HCA=${HCA_DEVICES:-mlx5_0,mlx5_1}" \
+      "${nccl_env[@]}" \
       "$NCCL_BASELINE_BIN" --op "$op" -b "$min_bytes" \
       -e "$max_bytes" -w "$warmups" -n "$iterations"
     return
@@ -91,6 +99,7 @@ run_nccl() {
     -x "LD_LIBRARY_PATH=$library_path" \
     -x "NCCL_SOCKET_IFNAME=$SOCKET_IFNAME" \
     -x "NCCL_IB_HCA=${HCA_DEVICES:-mlx5_0,mlx5_1}" \
+    "${nccl_env[@]}" \
     "$binary" -b "$min_bytes" -e "$max_bytes" -f 2 -g 1 -d float \
     -w "$warmups" -n "$iterations" -c "$iterations" -a 3 \
     "${blocking_args[@]}"
