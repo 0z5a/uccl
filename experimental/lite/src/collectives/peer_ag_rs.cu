@@ -3,16 +3,21 @@
 // peer copies and the destination reduction have completed.
 #include <cuda_runtime.h>
 #include <nccl.h>
+#include <linux/mempolicy.h>
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <sys/mman.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 namespace {
 constexpr int kRanks = 4;
@@ -32,9 +37,10 @@ void ncclCheck(ncclResult_t status) {
 struct Config {
   size_t begin = 1UL << 10, end = 1UL << 26;
   size_t pullMaxBytes = 32UL << 10;
-  size_t routerChunkBytes = 1UL << 20;
+  size_t routerChunkBytes = 4UL << 20;
   int warmups = 5, iterations = 10, repeats = 3;
   bool routerAg = false;
+  bool routerLocalNuma = true;
 };
 Config parse(int argc, char** argv) {
   Config cfg;
@@ -48,7 +54,8 @@ Config parse(int argc, char** argv) {
       std::puts("Usage: uccl_lite_peer_ag_rs [-b BYTES] [-e BYTES] "
                 "[-w WARMUPS] [-n ITERATIONS] [-r REPEATS] "
                 "[--pull-max-bytes BYTES] [--router-ag] "
-                "[--router-chunk-bytes BYTES]\n"
+                "[--router-chunk-bytes BYTES] "
+                "[--router-host-placement local|cuda]\n"
                 "BYTES is full AllGather output / ReduceScatter input per "
                 "rank; requires four peer-accessible GPUs.");
       std::exit(0);
@@ -64,6 +71,12 @@ Config parse(int argc, char** argv) {
       cfg.pullMaxBytes = std::strtoull(value, nullptr, 0);
     else if (option == "--router-chunk-bytes")
       cfg.routerChunkBytes = std::strtoull(value, nullptr, 0);
+    else if (option == "--router-host-placement") {
+      std::string placement = value;
+      if (placement == "local") cfg.routerLocalNuma = true;
+      else if (placement == "cuda") cfg.routerLocalNuma = false;
+      else throw std::invalid_argument("invalid router host placement");
+    }
     else throw std::invalid_argument("unknown option: " + option);
   }
   if (cfg.begin < 16 || cfg.begin > cfg.end || cfg.begin % 16 ||
@@ -177,17 +190,57 @@ char const* backendName(Backend backend) {
 }
 struct HostRouter {
   size_t chunkBytes;
+  bool localNuma;
   std::array<std::array<char*, 2>, kRanks> stage{};
+  std::array<int, kRanks> hostNode{};
   std::array<cudaStream_t, kRanks> uploads{};
   std::array<std::array<cudaEvent_t, 2>, kRanks> ready{};
   std::array<std::array<cudaEvent_t, 2>, kRanks> consumed{};
-  explicit HostRouter(size_t bytes) : chunkBytes(bytes) {
+  static int gpuNumaNode(int rank) {
+    cudaDeviceProp prop{};
+    cudaCheck(cudaGetDeviceProperties(&prop, rank));
+    char path[128];
+    std::snprintf(path, sizeof(path),
+                  "/sys/bus/pci/devices/%04x:%02x:%02x.0/numa_node",
+                  prop.pciDomainID, prop.pciBusID, prop.pciDeviceID);
+    FILE* file = std::fopen(path, "r");
+    if (!file) throw std::runtime_error("GPU PCI NUMA node unavailable");
+    int node = -1;
+    int parsed = std::fscanf(file, "%d", &node);
+    std::fclose(file);
+    if (parsed != 1 || node < 0 || node >= 8 * int(sizeof(unsigned long)))
+      throw std::runtime_error("invalid GPU PCI NUMA node");
+    return node;
+  }
+  explicit HostRouter(size_t bytes, bool placeLocal)
+      : chunkBytes(bytes), localNuma(placeLocal) {
     for (int rank = 0; rank < kRanks; ++rank) {
       cudaCheck(cudaSetDevice(rank));
+      hostNode[rank] = placeLocal ? gpuNumaNode(rank) : -1;
       cudaCheck(cudaStreamCreateWithFlags(&uploads[rank], cudaStreamNonBlocking));
       for (int slot = 0; slot < 2; ++slot) {
-        cudaCheck(cudaHostAlloc(reinterpret_cast<void**>(&stage[rank][slot]),
-                                chunkBytes, cudaHostAllocPortable));
+        if (placeLocal) {
+          void* address = mmap(nullptr, chunkBytes, PROT_READ | PROT_WRITE,
+                               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+          if (address == MAP_FAILED)
+            throw std::runtime_error("router host mmap failed");
+          unsigned long mask = 1UL << hostNode[rank];
+          if (syscall(SYS_mbind, address, chunkBytes, MPOL_BIND, &mask,
+                      8 * sizeof(mask), 0)) {
+            munmap(address, chunkBytes);
+            throw std::runtime_error("router host mbind failed");
+          }
+          std::memset(address, 0, chunkBytes);
+          auto status = cudaHostRegister(address, chunkBytes,
+                                         cudaHostRegisterPortable);
+          if (status != cudaSuccess) {
+            munmap(address, chunkBytes);
+            cudaCheck(status);
+          }
+          stage[rank][slot] = static_cast<char*>(address);
+        } else
+          cudaCheck(cudaHostAlloc(reinterpret_cast<void**>(&stage[rank][slot]),
+                                  chunkBytes, cudaHostAllocPortable));
         cudaCheck(cudaEventCreateWithFlags(&ready[rank][slot],
                                            cudaEventDisableTiming));
         cudaCheck(cudaEventCreateWithFlags(&consumed[rank][slot],
@@ -201,7 +254,13 @@ struct HostRouter {
       for (int slot = 0; slot < 2; ++slot) {
         if (ready[rank][slot]) cudaEventDestroy(ready[rank][slot]);
         if (consumed[rank][slot]) cudaEventDestroy(consumed[rank][slot]);
-        if (stage[rank][slot]) cudaFreeHost(stage[rank][slot]);
+        if (stage[rank][slot]) {
+          if (localNuma) {
+            cudaHostUnregister(stage[rank][slot]);
+            munmap(stage[rank][slot], chunkBytes);
+          } else
+            cudaFreeHost(stage[rank][slot]);
+        }
       }
       if (uploads[rank]) cudaStreamDestroy(uploads[rank]);
     }
@@ -481,7 +540,9 @@ int main(int argc, char** argv) {
     int version = 0;
     ncclCheck(ncclGetVersion(&version));
     std::unique_ptr<HostRouter> router;
-    if (cfg.routerAg) router = std::make_unique<HostRouter>(cfg.routerChunkBytes);
+    if (cfg.routerAg)
+      router = std::make_unique<HostRouter>(cfg.routerChunkBytes,
+                                            cfg.routerLocalNuma);
     std::printf("# four L4 peer AG/RS, float32; NCCL version=%d; "
                 "warmups=%d iterations=%d repeats=%d\n",
                 version, cfg.warmups, cfg.iterations, cfg.repeats);
@@ -494,8 +555,12 @@ int main(int argc, char** argv) {
     std::puts("# RS direct self contribution at 256 KiB, 1-8 MiB, and >=32 MiB");
     if (cfg.routerAg)
       std::printf("# cpu-router AG: pinned host, two slots/source, chunk=%zu B; "
+                  "placement=%s nodes=%d,%d,%d,%d; "
                   "host_sample includes launch and completion\n",
-                  cfg.routerChunkBytes);
+                  cfg.routerChunkBytes,
+                  cfg.routerLocalNuma ? "local" : "cuda",
+                  router->hostNode[0], router->hostNode[1],
+                  router->hostNode[2], router->hostNode[3]);
     std::puts("collective,bytes,backend,median_us,min_us,max_us");
     for (size_t bytes = cfg.begin; bytes <= cfg.end; bytes *= 2) {
       size_t shard = bytes / sizeof(float) / kRanks;
