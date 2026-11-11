@@ -19,6 +19,21 @@ on every call, 20 warmups, three rotated runs of ten calls, and the same
 per-call CUDA-event timer for each paired backend. The main figure uses only
 the l40 sweep, with one selected UCCL path and NCCL.
 
+## Current four-L4 ReduceScatter
+
+The [new paired sweep and candidate data](../benchmarks/data/rs_ar_serial_4l4_20261111/README.md)
+uses one source-side CTA per GPU to visit peer scratch regions sequentially.
+Through 1 MiB, the destination's same kernel waits for system-scope source
+flags and reduces the four contributions. An LL16 packet form is selected at
+8 KiB. From 2–8 MiB, a sequential push followed by the destination reduction
+wins; larger sizes retain the peer-copy path. The main figure uses the l40
+selected path and paired NCCL values.
+
+On l40, the selected path takes 21.76 versus 29.43 µs at 32 KiB and 85.57
+versus 90.48 µs at 1 MiB. It wins at 16 of 21 sizes; the five points from
+64 MiB through 1 GiB still lose. Both four-L4 hosts passed complete output
+checks on every warmup and timed call, plus non-power-of-two tail checks.
+
 ## Host-staged AllGather candidate
 
 The optional `--router-ag` benchmark also measures a pipelined pinned-host

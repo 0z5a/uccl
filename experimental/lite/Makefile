@@ -52,7 +52,7 @@ $(call BIN,allreduce alltoall): $(BUILD)/uccl_lite_%: src/collectives/%.cu | $(B
 	$(NVCC) $(NVCC_FLAGS) -std=c++20 $(MSCCLPP_INC) $< -o $@ $(MSCCLPP_LIB) -lcudart -lpthread
 
 $(BUILD)/uccl_lite_peer_ag_rs: src/collectives/peer_ag_rs.cu | $(BUILD)
-	$(NVCC) $(NVCC_FLAGS) -std=c++17 -I$(NCCL_HOME)/include $< -o $@ -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib
+	$(NVCC) $(NVCC_FLAGS) -std=c++17 $(MSCCLPP_INC) -I$(NCCL_HOME)/include $< -o $@ -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib
 
 $(BUILD)/uccl_lite_nccl_4l4_mpi_baseline: benchmarks/collectives/nccl_4l4_mpi_baseline.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++17 -I$(NCCL_HOME)/include $(MPI_INC) $< -o $@ -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib $(MPI_LIB) -lcudart

@@ -40,7 +40,7 @@ because the measured CUDA 12.9 compiler had a frontend failure with C++20.
 ```bash
 # Required paths can be supplied on every make invocation.
 make -j2 single-node MSCCLPP_HOME=/path/to/mscclpp
-make peer_ag_rs NCCL_HOME=/path/to/nccl/build
+make peer_ag_rs MSCCLPP_HOME=/path/to/mscclpp NCCL_HOME=/path/to/nccl/build
 make nccl_4l4_mpi_baseline NCCL_HOME=/path/to/nccl/build MPICXX=/path/to/mpicxx
 make nccl_2x4l4_baseline NCCL_HOME=/path/to/nccl/build MPICXX=/path/to/mpicxx
 make eight-gpu-alltoall NCCL_HOME=/path/to/nccl/build
@@ -58,6 +58,8 @@ compile check. Multi-node targets are separate. Individual target names are
 `fused_moe_layer_qwen`, `gemm_probe`, `mma_gemm_probe`, `mma_peak_probe`,
 `moe_overlap_probe`, `cutlass_gemm_probe`, and `hardware_profiler`. Executables have an `uccl_lite_`
 prefix, for example `build/uccl_lite_dense_fusion`.
+
+`peer_ag_rs` uses the MSCCL++ LL16 packet header but links no MSCCL++ library.
 
 Override `CUDA_HOME`, `NVCC`, `CUDA_ARCH`, `MSCCLPP_BUILD`, and
 `EXTRA_NVCC_FLAGS` as needed. Changing compiler flags or dependency paths does

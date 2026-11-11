@@ -3,6 +3,7 @@
 // peer copies and the destination reduction have completed.
 #include <cuda_runtime.h>
 #include <nccl.h>
+#include <mscclpp/packet_device.hpp>
 #include <linux/mempolicy.h>
 #include <algorithm>
 #include <array>
@@ -39,9 +40,13 @@ struct Config {
   size_t pullMaxBytes = 32UL << 10;
   size_t pullVecMaxBytes = 0;
   size_t pushSerialMaxBytes = 2UL << 20;
+  size_t rsPushSerialMaxBytes = 8UL << 20;
+  size_t rsLlMaxBytes = 8UL << 10;
+  size_t rsFenceMaxBytes = 1UL << 20;
   size_t routerChunkBytes = 4UL << 20;
   int warmups = 5, iterations = 10, repeats = 3;
   bool routerAg = false;
+  bool rsOnly = false;
   bool routerLocalNuma = true;
 };
 Config parse(int argc, char** argv) {
@@ -52,12 +57,19 @@ Config parse(int argc, char** argv) {
       cfg.routerAg = true;
       continue;
     }
+    if (option == "--rs-only") {
+      cfg.rsOnly = true;
+      continue;
+    }
     if (option == "--help") {
       std::puts("Usage: uccl_lite_peer_ag_rs [-b BYTES] [-e BYTES] "
                 "[-w WARMUPS] [-n ITERATIONS] [-r REPEATS] "
                 "[--pull-max-bytes BYTES] [--pull-vec-max-bytes BYTES] "
                 "[--push-serial-max-bytes BYTES] "
-                "[--router-ag] "
+                "[--rs-push-serial-max-bytes BYTES] "
+                "[--rs-ll-max-bytes BYTES] "
+                "[--rs-fence-max-bytes BYTES] "
+                "[--router-ag] [--rs-only] "
                 "[--router-chunk-bytes BYTES] "
                 "[--router-host-placement local|cuda]\n"
                 "BYTES is full AllGather output / ReduceScatter input per "
@@ -77,6 +89,12 @@ Config parse(int argc, char** argv) {
       cfg.pullVecMaxBytes = std::strtoull(value, nullptr, 0);
     else if (option == "--push-serial-max-bytes")
       cfg.pushSerialMaxBytes = std::strtoull(value, nullptr, 0);
+    else if (option == "--rs-push-serial-max-bytes")
+      cfg.rsPushSerialMaxBytes = std::strtoull(value, nullptr, 0);
+    else if (option == "--rs-ll-max-bytes")
+      cfg.rsLlMaxBytes = std::strtoull(value, nullptr, 0);
+    else if (option == "--rs-fence-max-bytes")
+      cfg.rsFenceMaxBytes = std::strtoull(value, nullptr, 0);
     else if (option == "--router-chunk-bytes")
       cfg.routerChunkBytes = std::strtoull(value, nullptr, 0);
     else if (option == "--router-host-placement") {
@@ -92,21 +110,33 @@ Config parse(int argc, char** argv) {
       cfg.routerChunkBytes % 16 || cfg.warmups < 0 || cfg.iterations < 1 ||
       cfg.repeats < 1)
     throw std::invalid_argument("invalid size or iteration settings");
+  if (cfg.routerAg && cfg.rsOnly)
+    throw std::invalid_argument("--router-ag and --rs-only conflict");
   return cfg;
 }
 struct Device {
   int rank;
   float *input = nullptr, *output = nullptr, *scratch = nullptr,
         *reference = nullptr;
+  mscclpp::LL16Packet* packets = nullptr;
+  uint32_t* flags = nullptr;
   unsigned int* wrong = nullptr;
   cudaStream_t stream = nullptr;
   cudaEvent_t start = nullptr, end = nullptr, transferDone = nullptr,
               reduceDone = nullptr, transferAllDone = nullptr;
-  Device(int r, size_t bytes) : rank(r) {
+  Device(int r, size_t bytes, size_t llBytes, bool needFlags) : rank(r) {
     cudaCheck(cudaSetDevice(rank));
     cudaCheck(cudaMalloc(&input, bytes));
     cudaCheck(cudaMalloc(&output, bytes));
     cudaCheck(cudaMalloc(&scratch, bytes));
+    if (llBytes) {
+      cudaCheck(cudaMalloc(&packets, 2 * llBytes));
+      cudaCheck(cudaMemset(packets, 0, 2 * llBytes));
+    }
+    if (needFlags) {
+      cudaCheck(cudaMalloc(&flags, kRanks * sizeof(uint32_t)));
+      cudaCheck(cudaMemset(flags, 0, kRanks * sizeof(uint32_t)));
+    }
     cudaCheck(cudaMalloc(&reference, bytes));
     cudaCheck(cudaMalloc(&wrong, sizeof(unsigned int)));
     cudaCheck(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
@@ -127,6 +157,8 @@ struct Device {
     if (reference) cudaFree(reference);
     if (wrong) cudaFree(wrong);
     if (scratch) cudaFree(scratch);
+    if (packets) cudaFree(packets);
+    if (flags) cudaFree(flags);
     if (output) cudaFree(output);
     if (input) cudaFree(input);
   }
@@ -208,6 +240,127 @@ __global__ void pushSerialGather(float const* input, float* out0,
     __syncthreads();
   }
 }
+__global__ void pushSerialScatter(float const* input, float* scratch0,
+                                  float* scratch1, float* scratch2,
+                                  float* scratch3, size_t shard, int source,
+                                  bool directSelf) {
+  float* targets[4] = {scratch0, scratch1, scratch2, scratch3};
+  for (int phase = 0; phase < kRanks; ++phase) {
+    int dest = (source + phase) % kRanks;
+    if (!(directSelf && dest == source)) {
+      float const* from = input + size_t(dest) * shard;
+      float* to = targets[dest] + size_t(source) * shard;
+      if (shard % 4 == 0) {
+        auto const* in = reinterpret_cast<uint4 const*>(from);
+        auto* out = reinterpret_cast<uint4*>(to);
+        for (size_t i = threadIdx.x; i < shard / 4; i += blockDim.x)
+          out[i] = in[i];
+      } else
+        for (size_t i = threadIdx.x; i < shard; i += blockDim.x)
+          to[i] = from[i];
+    }
+    __syncthreads();
+  }
+}
+__global__ void scatterPacketLL(float const* input, float* output,
+                                mscclpp::LL16Packet* packets0,
+                                mscclpp::LL16Packet* packets1,
+                                mscclpp::LL16Packet* packets2,
+                                mscclpp::LL16Packet* packets3,
+                                size_t shard, int rank, uint32_t flag) {
+  mscclpp::LL16Packet* packets[4] = {packets0, packets1, packets2,
+                                     packets3};
+  size_t units = shard / 2;
+  for (size_t i = threadIdx.x; i < units; i += blockDim.x) {
+    for (int phase = 1; phase < kRanks; ++phase) {
+      int dest = (rank + phase) % kRanks;
+      float2 value = reinterpret_cast<float2 const*>(
+          input + size_t(dest) * shard)[i];
+      packets[dest][size_t(rank) * units + i].write(
+          make_uint2(__float_as_uint(value.x), __float_as_uint(value.y)), flag);
+    }
+    float2 sum = reinterpret_cast<float2 const*>(
+        input + size_t(rank) * shard)[i];
+    for (int source = 0; source < kRanks; ++source) {
+      if (source == rank) continue;
+      uint2 value = packets[rank][size_t(source) * units + i].read(flag);
+      sum.x += __uint_as_float(value.x);
+      sum.y += __uint_as_float(value.y);
+    }
+    reinterpret_cast<float2*>(output)[i] = sum;
+  }
+}
+__device__ void releaseSystemFlag(uint32_t* address, uint32_t value) {
+  asm volatile("st.release.sys.global.u32 [%0], %1;" ::
+                   "l"(address), "r"(value) : "memory");
+}
+__device__ uint32_t acquireSystemFlag(uint32_t const* address) {
+  uint32_t value;
+  asm volatile("ld.acquire.sys.global.u32 %0, [%1];" :
+                   "=r"(value) : "l"(address) : "memory");
+  return value;
+}
+__global__ void scatterFenceFused(float const* input, float* output,
+                                  float* scratch0, float* scratch1,
+                                  float* scratch2, float* scratch3,
+                                  uint32_t* flags0, uint32_t* flags1,
+                                  uint32_t* flags2, uint32_t* flags3,
+                                  size_t shard, int rank, uint32_t flag) {
+  float* scratches[4] = {scratch0, scratch1, scratch2, scratch3};
+  uint32_t* flags[4] = {flags0, flags1, flags2, flags3};
+  for (int phase = 1; phase < kRanks; ++phase) {
+    int dest = (rank + phase) % kRanks;
+    float const* from = input + size_t(dest) * shard;
+    float* to = scratches[dest] + size_t(rank) * shard;
+    if (shard % 4 == 0) {
+      auto const* in = reinterpret_cast<uint4 const*>(from);
+      auto* out = reinterpret_cast<uint4*>(to);
+      for (size_t i = threadIdx.x; i < shard / 4; i += blockDim.x)
+        out[i] = in[i];
+    } else
+      for (size_t i = threadIdx.x; i < shard; i += blockDim.x)
+        to[i] = from[i];
+    __syncthreads();
+  }
+  // Every thread publishes its own peer stores before one leader signals.
+  __threadfence_system();
+  __syncthreads();
+  if (threadIdx.x == 0) {
+    for (int dest = 0; dest < kRanks; ++dest)
+      if (dest != rank) releaseSystemFlag(flags[dest] + rank, flag);
+    for (int source = 0; source < kRanks; ++source) {
+      if (source == rank) continue;
+      while (acquireSystemFlag(flags[rank] + source) != flag)
+        __nanosleep(64);
+    }
+  }
+  __syncthreads();
+  if (shard % 4 == 0) {
+    auto const* own = reinterpret_cast<float4 const*>(
+        input + size_t(rank) * shard);
+    auto const* peer = reinterpret_cast<float4 const*>(scratches[rank]);
+    auto* out = reinterpret_cast<float4*>(output);
+    for (size_t i = threadIdx.x; i < shard / 4; i += blockDim.x) {
+      float4 value = own[i];
+      for (int source = 0; source < kRanks; ++source) {
+        if (source == rank) continue;
+        float4 remote = peer[size_t(source) * (shard / 4) + i];
+        value.x += remote.x;
+        value.y += remote.y;
+        value.z += remote.z;
+        value.w += remote.w;
+      }
+      out[i] = value;
+    }
+  } else
+    for (size_t i = threadIdx.x; i < shard; i += blockDim.x) {
+      float value = input[size_t(rank) * shard + i];
+      for (int source = 0; source < kRanks; ++source)
+        if (source != rank)
+          value += scratches[rank][size_t(source) * shard + i];
+      output[i] = value;
+    }
+}
 __global__ void pullScatter(float const* in0, float const* in1,
                             float const* in2, float const* in3, float* output,
                             size_t shard, int destination) {
@@ -221,7 +374,8 @@ __global__ void pullScatter(float const* in0, float const* in1,
   output[index] = value;
 }
 enum class Operation { Gather, Scatter };
-enum class Backend { Peer, Pull, Nccl, Router, PullVec, PushSerial };
+enum class Backend { Peer, Pull, Nccl, Router, PullVec, PushSerial,
+                     ScatterLL, ScatterFence };
 char const* opName(Operation op) {
   return op == Operation::Gather ? "all_gather" : "reduce_scatter";
 }
@@ -230,6 +384,8 @@ char const* backendName(Backend backend) {
   if (backend == Backend::Pull) return "pull";
   if (backend == Backend::PullVec) return "pull-vec";
   if (backend == Backend::PushSerial) return "push-serial";
+  if (backend == Backend::ScatterLL) return "scatter-ll";
+  if (backend == Backend::ScatterFence) return "scatter-fence";
   return backend == Backend::Router ? "cpu-router" : "nccl";
 }
 struct HostRouter {
@@ -447,15 +603,70 @@ void launchPullVec(std::array<Device*, kRanks> const& devices, size_t shard) {
   }
 }
 void launchPushSerial(std::array<Device*, kRanks> const& devices,
-                      size_t shard) {
+                      Operation op, size_t shard) {
   size_t fullBytes = shard * kRanks * sizeof(float);
   int threads = fullBytes == (64UL << 10) ? 128 : 256;
+  bool directSelf = op == Operation::Scatter && directSelfReduce(fullBytes);
   for (int source = 0; source < kRanks; ++source) {
     auto& d = *devices[source];
     cudaCheck(cudaSetDevice(source));
-    pushSerialGather<<<1, threads, 0, d.stream>>>(
-        d.input, devices[0]->output, devices[1]->output,
-        devices[2]->output, devices[3]->output, shard, source);
+    if (op == Operation::Scatter)
+      for (int dest = 0; dest < kRanks; ++dest)
+        cudaCheck(cudaStreamWaitEvent(d.stream, devices[dest]->reduceDone, 0));
+    if (op == Operation::Gather)
+      pushSerialGather<<<1, threads, 0, d.stream>>>(
+          d.input, devices[0]->output, devices[1]->output,
+          devices[2]->output, devices[3]->output, shard, source);
+    else
+      pushSerialScatter<<<1, threads, 0, d.stream>>>(
+          d.input, devices[0]->scratch, devices[1]->scratch,
+          devices[2]->scratch, devices[3]->scratch, shard, source,
+          directSelf);
+    cudaCheck(cudaGetLastError());
+    if (op == Operation::Scatter)
+      cudaCheck(cudaEventRecord(d.transferDone, d.stream));
+  }
+  if (op == Operation::Scatter) {
+    for (int dest = 0; dest < kRanks; ++dest) {
+      auto& d = *devices[dest];
+      cudaCheck(cudaSetDevice(dest));
+      for (int source = 0; source < kRanks; ++source)
+        cudaCheck(cudaStreamWaitEvent(d.stream,
+                                      devices[source]->transferDone, 0));
+      sumFour<<<int((shard + 255) / 256), 256, 0, d.stream>>>(
+          d.scratch, d.input, d.output, shard, dest, directSelf);
+      cudaCheck(cudaGetLastError());
+      cudaCheck(cudaEventRecord(d.reduceDone, d.stream));
+    }
+  }
+}
+void launchScatterLL(std::array<Device*, kRanks> const& devices,
+                     size_t shard) {
+  static uint32_t nextFlag = 1;
+  uint32_t flag = nextFlag++;
+  if (!flag) throw std::runtime_error("scatter packet flag exhausted");
+  for (int rank = 0; rank < kRanks; ++rank) {
+    auto& d = *devices[rank];
+    cudaCheck(cudaSetDevice(rank));
+    scatterPacketLL<<<1, 256, 0, d.stream>>>(
+        d.input, d.output, devices[0]->packets, devices[1]->packets,
+        devices[2]->packets, devices[3]->packets, shard, rank, flag);
+    cudaCheck(cudaGetLastError());
+  }
+}
+void launchScatterFence(std::array<Device*, kRanks> const& devices,
+                        size_t shard) {
+  static uint32_t nextFlag = 1;
+  uint32_t flag = nextFlag++;
+  if (!flag) throw std::runtime_error("scatter fence flag exhausted");
+  for (int rank = 0; rank < kRanks; ++rank) {
+    auto& d = *devices[rank];
+    cudaCheck(cudaSetDevice(rank));
+    scatterFenceFused<<<1, 256, 0, d.stream>>>(
+        d.input, d.output, devices[0]->scratch, devices[1]->scratch,
+        devices[2]->scratch, devices[3]->scratch, devices[0]->flags,
+        devices[1]->flags, devices[2]->flags, devices[3]->flags,
+        shard, rank, flag);
     cudaCheck(cudaGetLastError());
   }
 }
@@ -481,7 +692,9 @@ void launch(std::array<Device*, kRanks> const& devices,
   if (backend == Backend::Peer) launchPeer(devices, op, shard);
   else if (backend == Backend::Pull) launchPull(devices, op, shard);
   else if (backend == Backend::PullVec) launchPullVec(devices, shard);
-  else if (backend == Backend::PushSerial) launchPushSerial(devices, shard);
+  else if (backend == Backend::PushSerial) launchPushSerial(devices, op, shard);
+  else if (backend == Backend::ScatterLL) launchScatterLL(devices, shard);
+  else if (backend == Backend::ScatterFence) launchScatterFence(devices, shard);
   else if (backend == Backend::Router) router->launch(devices, shard);
   else launchNccl(devices, comms, op, shard);
 }
@@ -605,7 +818,9 @@ int main(int argc, char** argv) {
     std::array<std::unique_ptr<Device>, kRanks> owned;
     std::array<Device*, kRanks> devices{};
     for (int rank = 0; rank < kRanks; ++rank) {
-      owned[rank] = std::make_unique<Device>(rank, cfg.end);
+      owned[rank] = std::make_unique<Device>(
+          rank, cfg.end, std::min(cfg.end, cfg.rsLlMaxBytes),
+          cfg.rsFenceMaxBytes != 0);
       devices[rank] = owned[rank].get();
     }
     std::array<ncclComm_t, kRanks> comms{};
@@ -639,16 +854,24 @@ int main(int argc, char** argv) {
     for (size_t bytes = cfg.begin; bytes <= cfg.end; bytes *= 2) {
       size_t shard = bytes / sizeof(float) / kRanks;
       for (auto op : {Operation::Gather, Operation::Scatter}) {
+        if (cfg.rsOnly && op == Operation::Gather) continue;
         if (cfg.routerAg && op == Operation::Scatter) continue;
         bool pullEligible = bytes <= cfg.pullMaxBytes;
         bool vecEligible = op == Operation::Gather &&
                            bytes <= cfg.pullVecMaxBytes;
-        bool serialEligible = op == Operation::Gather &&
-                              bytes <= cfg.pushSerialMaxBytes;
+        bool serialEligible = op == Operation::Gather
+                                  ? bytes <= cfg.pushSerialMaxBytes
+                                  : bytes <= cfg.rsPushSerialMaxBytes;
+        bool llEligible = op == Operation::Scatter && shard % 2 == 0 &&
+                          bytes <= cfg.rsLlMaxBytes;
+        bool fenceEligible = op == Operation::Scatter &&
+                             bytes <= cfg.rsFenceMaxBytes;
         std::vector<Backend> backends{Backend::Peer};
         if (pullEligible) backends.push_back(Backend::Pull);
         if (vecEligible) backends.push_back(Backend::PullVec);
         if (serialEligible) backends.push_back(Backend::PushSerial);
+        if (llEligible) backends.push_back(Backend::ScatterLL);
+        if (fenceEligible) backends.push_back(Backend::ScatterFence);
         backends.push_back(Backend::Nccl);
         if (cfg.routerAg) backends.push_back(Backend::Router);
         for (int generation = 0; generation < 2; ++generation) {
@@ -659,7 +882,7 @@ int main(int argc, char** argv) {
             verify(devices, op, backend, shard, generation);
           }
         }
-        std::array<std::vector<double>, 6> samples;
+        std::array<std::vector<double>, 8> samples;
         for (int repeat = 0; repeat < cfg.repeats; ++repeat) {
           std::vector<Backend> order;
           if (pullEligible) {
@@ -683,6 +906,16 @@ int main(int argc, char** argv) {
           }
           if (serialEligible) {
             order.push_back(Backend::PushSerial);
+            std::rotate(order.begin(), order.begin() + repeat % order.size(),
+                        order.end());
+          }
+          if (llEligible) {
+            order.push_back(Backend::ScatterLL);
+            std::rotate(order.begin(), order.begin() + repeat % order.size(),
+                        order.end());
+          }
+          if (fenceEligible) {
+            order.push_back(Backend::ScatterFence);
             std::rotate(order.begin(), order.begin() + repeat % order.size(),
                         order.end());
           }
@@ -715,10 +948,20 @@ int main(int argc, char** argv) {
             median(samples[static_cast<int>(Backend::PushSerial)]) <
                 median(samples[static_cast<int>(best)]))
           best = Backend::PushSerial;
+        if (llEligible &&
+            median(samples[static_cast<int>(Backend::ScatterLL)]) <
+                median(samples[static_cast<int>(best)]))
+          best = Backend::ScatterLL;
+        if (fenceEligible &&
+            median(samples[static_cast<int>(Backend::ScatterFence)]) <
+                median(samples[static_cast<int>(best)]))
+          best = Backend::ScatterFence;
         char const* selected =
             best == Backend::Pull ? "pull"
                 : best == Backend::PullVec ? "pull-vec"
                 : best == Backend::PushSerial ? "push-serial"
+                : best == Backend::ScatterLL ? "scatter-ll"
+                : best == Backend::ScatterFence ? "scatter-fence"
                 : op == Operation::Scatter && directSelfReduce(bytes)
                       ? "peer-noself"
                 : ((op == Operation::Gather && bytes <= kCompactGatherBytes) ||

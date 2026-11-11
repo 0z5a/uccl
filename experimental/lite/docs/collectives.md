@@ -66,6 +66,12 @@ fastest correct three-run median at each size; there is no portable runtime
 autotuner. At 1 GiB, the recorded ring reaches 20.13 GB/s bus bandwidth. For four
 ranks, bus bandwidth is algorithm bandwidth multiplied by `2*(4-1)/4 = 1.5`.
 
+Single-CTA serial peer-write AllReduce prototypes were checked on both
+four-L4 hosts. They did not give a repeatable gain over A1/A2, especially
+above 32 KiB, so the selected AllReduce algorithms and figure are unchanged.
+The [source and negative measurements](../benchmarks/data/rs_ar_serial_4l4_20261111/README.md)
+are retained separately from the NCCL-paired result.
+
 ## All-to-All
 
 Source: [alltoall.cu](../src/collectives/alltoall.cu).
@@ -93,9 +99,11 @@ different, much weaker baseline and must be labeled separately.
 float32 AG and RS paths. The current AG candidate uses one source-side CTA per
 GPU and visits peer outputs sequentially through 2 MiB; direct peer copies
 serve larger messages. The [paired l40 sweep](peer-ag-rs.md) shows AG faster
-than NCCL at 20 of 21 sizes, with a remaining 4-MiB loss. RS retains its
-separate measured path and negative sizes. These paths are separate from the
-BF16/no-P2P CPU router.
+than NCCL at 20 of 21 sizes, with a remaining 4-MiB loss. RS now uses a
+single-CTA fused peer-write/reduction path through 1 MiB and a sequential
+peer-write path through 8 MiB. Its selected l40 path wins at 16 of 21 sizes;
+64 MiB–1 GiB remain slower. These paths are separate from the BF16/no-P2P
+CPU router.
 
 ## Eight-GPU BF16 local fallback
 
