@@ -256,6 +256,27 @@ The `Process (CPU)` operators can be used in different collectives:
 - **Deduplicate** removes repeated token records in dispatch/combine. The
   included fixed-width operator is intended for small routing metadata.
 
+### 8xL4 collective packet flows
+
+These animations follow one packet. AllGather and ReduceScatter show GPU 0
+as a representative destination; the other GPUs run the same process for
+their own output. Packets from a larger tensor are pipelined.
+
+#### AllReduce
+
+![Animated AllReduce: eight GPU uploads, two NUMA-local CPU reductions, cross-NUMA merge, and result multicast](docs/assets/cpu-router-8l4-allreduce.gif)
+
+#### AllGather
+
+![Animated AllGather: each GPU uploads its shard once, CPU publishes readiness, and each GPU reads the other seven shards](docs/assets/cpu-router-8l4-allgather.gif)
+
+#### ReduceScatter
+
+![Animated ReduceScatter: seven remote contributions are reduced on CPUs and the destination GPU adds its retained shard](docs/assets/cpu-router-8l4-reducescatter.gif)
+
+Regenerate all three GIFs with `python3 scripts/animate_cpu_router.py` from
+`experimental/lite` (requires Pillow).
+
 ## Documentation
 
 - [Build targets and correctness commands](docs/build.md)
