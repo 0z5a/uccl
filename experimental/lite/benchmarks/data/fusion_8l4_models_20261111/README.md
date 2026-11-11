@@ -58,8 +58,8 @@ runs, with aggregate NCCL/fused speedup from 1.17× to 1.44×.
 
 The raw samples are [run 1](samples_run1.csv) and [run 2](samples_run2.csv).
 The [summary](summary.csv) records both run medians and their median. The
-[decode figure](../../../docs/assets/fusion-8l4-model-gemm-ar-decode-bars.svg) and
-[prefill figure](../../../docs/assets/fusion-8l4-model-gemm-ar-prefill-bars.svg)
+[decode figure](../../../docs/assets/fusion-8l4-model-gemm-ar-decode-labeled-bars.svg) and
+[prefill figure](../../../docs/assets/fusion-8l4-model-gemm-ar-prefill-labeled-bars.svg)
 show those summary values on linear latency axes.
 
 ## Reproduce

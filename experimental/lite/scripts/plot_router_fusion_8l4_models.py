@@ -23,8 +23,8 @@ MODELS = (
 PHASES = (("decode", (1, 16, 32)), ("prefill", (2048, 4096, 8192)))
 METHODS = (
     ("cublas+nccl", "cuBLAS + NCCL", "#D65A00"),
-    ("cublas+router", "cuBLAS + UCCL Lite", "#0068B5"),
-    ("fused+router", "Fused UCCL Lite", "#148D91"),
+    ("cublas+router", "cuBLAS + UCCL-Lite", "#0068B5"),
+    ("fused+router", "Fused UCCL-Lite", "#148D91"),
 )
 
 
@@ -76,25 +76,30 @@ def plot(data, phase, sizes, preview):
                         hspace=0.4, wspace=0.25)
     upper = max(data[(m, n, k, method)][2]
                 for _, n, k in MODELS for m in sizes
-                for method, _, _ in METHODS) * 1.15
+                for method, _, _ in METHODS) * 1.28
     for ax, (model, n, k) in zip(axes.flat, MODELS):
         clean_axis(ax)
         width = 0.24
         for index, (method, label, color) in enumerate(METHODS):
             values = [data[(m, n, k, method)][2] for m in sizes]
-            ax.bar([i + (index - 1) * width for i in range(3)], values,
-                   width=width, label=label, color=color)
-        ax.set_title(f"{model} · N={n}, K={k}")
+            bars = ax.bar([i + (index - 1) * width for i in range(3)], values,
+                          width=width, label=label, color=color)
+            ax.bar_label(bars, fmt="%.3f" if phase == "decode" else "%.2f",
+                         padding=2, fontsize=7, color="black")
+        ax.set_title(f"{model} · N={n}, K={k}", color="black")
         ax.set_xticks(range(3), [str(m) for m in sizes])
         ax.set_ylabel("Latency (ms)")
         ax.set_ylim(0, upper)
         ax.set_xlabel("M (tokens)")
+        ax.tick_params(axis="both", colors="black")
+        ax.xaxis.label.set_color("black")
+        ax.yaxis.label.set_color("black")
     handles, labels = axes.flat[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.54, 0.96),
-               ncol=3, frameon=False, fontsize=10)
+               ncol=3, frameon=False, fontsize=10, labelcolor="black")
     fig.suptitle(f"8×L4 GEMM + AllReduce · {phase}", y=0.995,
-                 fontsize=16, fontweight="bold")
-    save(fig, f"fusion-8l4-model-gemm-ar-{phase}-bars", preview)
+                 fontsize=16, fontweight="bold", color="black")
+    save(fig, f"fusion-8l4-model-gemm-ar-{phase}-labeled-bars", preview)
 
 
 def main():
