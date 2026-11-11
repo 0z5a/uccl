@@ -94,7 +94,7 @@ def plot(data, phase, sizes, preview):
                ncol=3, frameon=False, fontsize=10)
     fig.suptitle(f"8×L4 GEMM + AllReduce · {phase}", y=0.995,
                  fontsize=16, fontweight="bold")
-    save(fig, f"fusion-8l4-model-gemm-ar-{phase}", preview)
+    save(fig, f"fusion-8l4-model-gemm-ar-{phase}-bars", preview)
 
 
 def main():

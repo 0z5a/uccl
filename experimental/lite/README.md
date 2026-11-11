@@ -182,9 +182,9 @@ latencies, aggregated across two runs. [Methods and samples](benchmarks/data/fus
 BF16 TP=8 FFN down projection: decode `M=1,16,32`; prefill
 `M=2048,4096,8192`. Each model's `N` and per-GPU `K` appear in the figures.
 
-![Eight-L4 GEMM plus AllReduce decode latency for four model shapes at M=1,16,32](docs/assets/fusion-8l4-model-gemm-ar-decode.svg)
+![Eight-L4 GEMM plus AllReduce decode latency bars for four model shapes at M=1,16,32](docs/assets/fusion-8l4-model-gemm-ar-decode-bars.svg)
 
-![Eight-L4 GEMM plus AllReduce prefill latency for four model shapes at M=2048,4096,8192](docs/assets/fusion-8l4-model-gemm-ar-prefill.svg)
+![Eight-L4 GEMM plus AllReduce prefill latency bars for four model shapes at M=2048,4096,8192](docs/assets/fusion-8l4-model-gemm-ar-prefill-bars.svg)
 
 Fused has the lowest aggregate median at 23/24 shapes. Qwen3.5-9B `M=16`
 favors NCCL by 0.005 ms; Qwen3.5-27B `M=16` changes winner between runs.
