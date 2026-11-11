@@ -154,6 +154,14 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
        options_.smallReduceScatterPacketBytes > options_.packetBytes ||
        options_.smallReduceScatterPacketBytes % 16))
     throw std::invalid_argument("invalid small ReduceScatter packet size");
+  if ((options_.smallAllReduceWorkersPerNode == 0) !=
+          (options_.smallAllReduceTransportBlocks == 0) ||
+      options_.smallAllReduceWorkersPerNode < 0 ||
+      options_.smallAllReduceWorkersPerNode > options_.workersPerNode ||
+      (options_.smallAllReduceTransportBlocks != 0 &&
+       options_.smallAllReduceTransportBlocks < 2) ||
+      options_.smallAllReduceTransportBlocks >= 256)
+    throw std::invalid_argument("invalid small AllReduce worker/grid choice");
   std::ostringstream key;
   // maxTensorBytes is a validation bound, not packet geometry or an allocation
   // size.
@@ -173,6 +181,12 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
     key << ";reduction=gpu-v1";
   if (options_.interleaveScatter) key << ";scatter=interleaved-v2";
   if (options_.gpuProgress) key << ";progress=gpu-v1";
+  if (options_.smallAllReduceWorkersPerNode)
+    key << ";small-ar-128k-workers-v1="
+        << options_.smallAllReduceWorkersPerNode << ','
+        << options_.smallAllReduceTransportBlocks;
+  if (options_.smallReduceScatterGpuProgress64K)
+    key << ";small-rs-64k-progress-v1";
   for (int cpu : options_.workerCpus) key << ";worker=" << cpu;
   for (int node : options_.numaNodes) key << ";numa=" << node;
   topology_.identity += key.str();
@@ -267,19 +281,40 @@ size_t CollectiveDispatcher::packetBytesFor(CollectiveCall const& call) const {
                     options_.smallReduceScatterPacketBytes);
   return options_.packetBytes;
 }
+int CollectiveDispatcher::workersPerNodeFor(CollectiveCall const& call) const {
+  return options_.smallAllReduceWorkersPerNode &&
+                 call.collective == Collective::AllReduce &&
+                 call.workload().bytes == (128UL << 10)
+             ? options_.smallAllReduceWorkersPerNode
+             : options_.workersPerNode;
+}
+int CollectiveDispatcher::transportBlocksFor(
+    CollectiveCall const& call) const {
+  return options_.smallAllReduceTransportBlocks &&
+                 call.collective == Collective::AllReduce &&
+                 call.workload().bytes == (128UL << 10)
+             ? options_.smallAllReduceTransportBlocks
+             : options_.transportBlocks;
+}
 bool CollectiveDispatcher::smallReduceScatterGpuProgressFor(
     CollectiveCall const& call) const {
   return options_.smallReduceScatterGpuProgress &&
          options_.reduction == cpu_router::ReductionPlacement::Cpu &&
          call.collective == Collective::ReduceScatter &&
-         call.workload().bytes == (128UL << 10);
+         (call.workload().bytes == (128UL << 10) ||
+          (options_.smallReduceScatterGpuProgress64K &&
+           call.workload().bytes == (64UL << 10)));
 }
 BackendDecision CollectiveDispatcher::prepare(CollectiveCall const& call) {
   auto selected = decision(call);
   size_t packetBytes = packetBytesFor(call);
+  int workersPerNode = workersPerNodeFor(call);
+  int transportBlocks = transportBlocksFor(call);
   bool smallGpu = smallReduceScatterGpuProgressFor(call);
   if (selected.cpuRouter &&
       (!router_ || routerPacketBytes_ != packetBytes ||
+       routerWorkersPerNode_ != workersPerNode ||
+       routerTransportBlocks_ != transportBlocks ||
        routerSmallReduceScatterGpuProgress_ != smallGpu)) {
     for (auto const& port : call.ports) {
       check(cudaSetDevice(port.device));
@@ -292,6 +327,20 @@ BackendDecision CollectiveDispatcher::prepare(CollectiveCall const& call) {
     router_.reset();
     auto activeOptions = options_;
     activeOptions.packetBytes = packetBytes;
+    activeOptions.workersPerNode = workersPerNode;
+    activeOptions.transportBlocks = transportBlocks;
+    if (workersPerNode != options_.workersPerNode &&
+        !options_.workerCpus.empty()) {
+      std::vector<int> selectedCpus;
+      size_t groups = options_.workerCpus.size() / options_.workersPerNode;
+      for (size_t group = 0; group < groups; ++group)
+        selectedCpus.insert(
+            selectedCpus.end(),
+            options_.workerCpus.begin() + group * options_.workersPerNode,
+            options_.workerCpus.begin() + group * options_.workersPerNode +
+                workersPerNode);
+      activeOptions.workerCpus = std::move(selectedCpus);
+    }
     if (smallGpu) {
       activeOptions.reduction = cpu_router::ReductionPlacement::Gpu;
       activeOptions.gpuProgress = true;
@@ -300,6 +349,8 @@ BackendDecision CollectiveDispatcher::prepare(CollectiveCall const& call) {
     router->prepare(call.ports);
     router_ = std::move(router);
     routerPacketBytes_ = packetBytes;
+    routerWorkersPerNode_ = workersPerNode;
+    routerTransportBlocks_ = transportBlocks;
     routerSmallReduceScatterGpuProgress_ = smallGpu;
   }
   return selected;
@@ -315,6 +366,9 @@ BackendDecision CollectiveDispatcher::enqueue(CollectiveCall const& call) {
   size_t packetBytes = packetBytesFor(call);
   if (routerPacketBytes_ != packetBytes)
     throw std::logic_error("prepare CPU-router for this packet size");
+  if (routerWorkersPerNode_ != workersPerNodeFor(call) ||
+      routerTransportBlocks_ != transportBlocksFor(call))
+    throw std::logic_error("prepare CPU-router for this worker/grid choice");
   if (routerSmallReduceScatterGpuProgress_ !=
       smallReduceScatterGpuProgressFor(call))
     throw std::logic_error("prepare CPU-router for this reduction mode");

@@ -150,9 +150,16 @@ struct PacketPipelineOptions {
   // through 4 MiB.
   // Zero keeps packetBytes for every ReduceScatter call.
   size_t smallReduceScatterPacketBytes = 128UL << 10;
+  // Optional SHM-only tuning for the one-packet 128-KiB AllReduce case.
+  // Zero preserves the normal worker/grid choice.
+  int smallAllReduceWorkersPerNode = 0;
+  int smallAllReduceTransportBlocks = 0;
   // Adaptive dispatcher only: the 128-KiB ReduceScatter case uses GPU
   // reduction/progress. Direct PacketPipeline users keep their chosen mode.
   bool smallReduceScatterGpuProgress = true;
+  // Optional 64-KiB ReduceScatter GPU progress; the usual 128-KiB choice
+  // remains enabled by smallReduceScatterGpuProgress.
+  bool smallReduceScatterGpuProgress64K = false;
   int transportBlocks = 64;
   int transportThreads = 256;
   size_t transportGrainBytes = 16UL << 10;

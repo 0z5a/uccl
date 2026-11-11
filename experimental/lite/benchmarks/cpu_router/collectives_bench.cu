@@ -6,6 +6,7 @@
 #include "uccl_lite/local_collectives.hpp"
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -51,11 +52,14 @@ struct Config {
   size_t packetBytes = 512UL << 10;
   size_t smallAllReducePacketBytes = 128UL << 10;
   size_t smallReduceScatterPacketBytes = 128UL << 10;
+  int workersPerNode = 23, transportBlocks = 64;
   bool smallReduceScatterGpuProgress = true;
   bool inPlace = false;
   bool gpuReduce = false;
   bool gpuProgress = false;
   bool interleaveScatter = false;
+  bool shmOnly = false;
+  bool reverse = false;
   std::string operation = "all", fallback = "local", profile, calibrate,
               samples;
   RouterMode mode = RouterMode::Auto;
@@ -209,6 +213,10 @@ int main(int argc, char** argv) {
         cfg.smallAllReducePacketBytes = std::stoull(next());
       else if (arg == "--small-rs-packet-bytes")
         cfg.smallReduceScatterPacketBytes = std::stoull(next());
+      else if (arg == "--workers-per-node")
+        cfg.workersPerNode = std::stoi(next());
+      else if (arg == "--transport-blocks")
+        cfg.transportBlocks = std::stoi(next());
       else if (arg == "--no-small-rs-gpu-progress")
         cfg.smallReduceScatterGpuProgress = false;
       else if (arg == "--op")
@@ -225,6 +233,10 @@ int main(int argc, char** argv) {
         cfg.samples = next();
       else if (arg == "--in-place")
         cfg.inPlace = true;
+      else if (arg == "--shm-only")
+        cfg.shmOnly = true;
+      else if (arg == "--reverse")
+        cfg.reverse = true;
       else if (arg == "--gpu-reduce")
         cfg.gpuReduce = true;
       else if (arg == "--gpu-progress") {
@@ -246,6 +258,9 @@ int main(int argc, char** argv) {
             "all|allreduce|allgather|reducescatter\n"
             "  --backend auto|off|force  --fallback local|nccl (default: "
             "local)\n"
+            "  --shm-only: require NCCL SHM transport, disable all logical "
+            "GPU peer links, and reject the P2P local fallback\n"
+            "  --reverse: sweep message sizes from large to small\n"
             "  local requires two peer-accessible four-GPU NUMA groups\n"
             "  --begin BYTES --end BYTES --in-place\n"
             "  --profile FILE  --calibrate NEW_FILE\n"
@@ -261,6 +276,8 @@ int main(int argc, char** argv) {
             "0 disables)\n"
             "  --small-rs-packet-bytes BYTES (default 131072 for "
             "256 KiB to 4 MiB; 0 disables)\n"
+            "  --workers-per-node N --transport-blocks N (CPU router "
+            "tuning)\n"
             "  --no-small-rs-gpu-progress (disable 128-KiB RS GPU progress)\n"
             "  --warmup N --iterations N --repeats N (at least 3)\n"
             "Auto keeps the selected fallback unless matching validated "
@@ -277,12 +294,35 @@ int main(int argc, char** argv) {
       for (int r = 0; r < cfg.gpus; ++r) cfg.devices.push_back(r);
     if (cfg.fallback != "local" && cfg.fallback != "nccl")
       throw std::invalid_argument("fallback must be local or nccl");
+    if (cfg.shmOnly) {
+      if (cfg.devices != std::vector<int>{0, 1, 2, 3, 4, 5, 6, 7})
+        throw std::invalid_argument(
+            "--shm-only requires devices 0,1,2,3,4,5,6,7");
+      auto required = [](char const* key, char const* value) {
+        auto* current = std::getenv(key);
+        if (!current || std::string(current) != value)
+          throw std::invalid_argument(std::string("--shm-only requires ") +
+                                      key + "=" + value);
+      };
+      required("NCCL_P2P_DISABLE", "1");
+      required("NCCL_SHM_DISABLE", "0");
+      required("NCCL_IB_DISABLE", "1");
+      required("NCCL_NET", "Socket");
+      if (cfg.fallback != "nccl")
+        throw std::invalid_argument(
+            "--shm-only requires the NCCL control, not the P2P local path");
+      if (cfg.calibrate.empty() && cfg.mode == RouterMode::Auto)
+        throw std::invalid_argument(
+            "--shm-only requires --calibrate or explicit --backend force/off");
+    }
     if (cfg.devices.empty() || cfg.devices.size() > 32 || cfg.begin < 128 ||
         cfg.end < cfg.begin || cfg.end > (1UL << 30) ||
         cfg.begin % (cfg.devices.size() * 2) || cfg.warmup < 1 ||
         cfg.iterations < 1 || cfg.repeats < 3 ||
         cfg.packetBytes < (128UL << 10) || cfg.packetBytes > (32UL << 20) ||
         cfg.packetBytes % 16 ||
+        cfg.workersPerNode < 1 || cfg.workersPerNode > 63 ||
+        cfg.transportBlocks < 2 || cfg.transportBlocks >= 256 ||
         (cfg.smallAllReducePacketBytes &&
          (cfg.smallAllReducePacketBytes < (128UL << 10) ||
           cfg.smallAllReducePacketBytes > cfg.packetBytes ||
@@ -311,6 +351,17 @@ int main(int argc, char** argv) {
                       "slowest_rank_us\n";
     }
     auto topology = inspectTopology(cfg.devices);
+    if (cfg.shmOnly) {
+      int physicalLinks = int(std::count(topology.peerAccess.begin(),
+                                         topology.peerAccess.end(), true));
+      std::fill(topology.peerAccess.begin(), topology.peerAccess.end(), false);
+      topology.identity += ";logical-no-p2p-shm-v1";
+      std::fprintf(stderr,
+                   "# 8xL4 SHM: %d physically accessible directed peer "
+                   "links disabled by benchmark policy; NCCL P2P disabled "
+                   "and SHM enabled\n",
+                   physicalLinks);
+    }
     std::unique_ptr<LocalCollectives> local;
     if (cfg.fallback == "local") {
       topology.identity += ";benchmark-local-fallback-v1";
@@ -369,11 +420,19 @@ int main(int argc, char** argv) {
       cpu_router::CpuRouterOptions options;
       options.maxTensorBytes = cfg.end;
       options.packetBytes = cfg.packetBytes;
+      options.workersPerNode = cfg.workersPerNode;
+      options.transportBlocks = cfg.transportBlocks;
       options.smallAllReducePacketBytes = cfg.smallAllReducePacketBytes;
       options.smallReduceScatterPacketBytes =
           cfg.smallReduceScatterPacketBytes;
       options.smallReduceScatterGpuProgress =
           cfg.smallReduceScatterGpuProgress;
+      if (cfg.shmOnly && !cfg.gpuReduce && cfg.workersPerNode == 23 &&
+          cfg.transportBlocks == 64) {
+        options.smallAllReduceWorkersPerNode = 4;
+        options.smallAllReduceTransportBlocks = 16;
+        options.smallReduceScatterGpuProgress64K = true;
+      }
       options.reduction = cfg.gpuReduce ? cpu_router::ReductionPlacement::Gpu
                                         : cpu_router::ReductionPlacement::Cpu;
       options.interleaveScatter = cfg.interleaveScatter;
@@ -401,6 +460,10 @@ int main(int argc, char** argv) {
                                         Collective::AllGather,
                                         Collective::ReduceScatter}
               : std::vector<Collective>{parseCollective(cfg.operation)};
+      std::vector<size_t> sizes;
+      for (size_t bytes = cfg.begin; bytes <= cfg.end; bytes *= 2)
+        sizes.push_back(bytes);
+      if (cfg.reverse) std::reverse(sizes.begin(), sizes.end());
       std::printf(
           "# GPUs=%zu dtype=BF16 fallback=%s; no hidden calibration; checks "
           "outside timed region\n",
@@ -410,11 +473,14 @@ int main(int argc, char** argv) {
           "collective,bytes,in_place,backend,median_us,min_us,max_us,speedup,"
           "dispatcher_router_initialized");
       for (auto op : operations)
-        for (size_t bytes = cfg.begin; bytes <= cfg.end; bytes *= 2) {
+        for (size_t bytes : sizes) {
           auto call = buffers.call(op, bytes, cfg.inPlace);
           char const* activeRouterName =
               !cfg.gpuReduce && cfg.smallReduceScatterGpuProgress &&
-                      op == Collective::ReduceScatter && bytes == (128UL << 10)
+                      op == Collective::ReduceScatter &&
+                      (bytes == (128UL << 10) ||
+                       (options.smallReduceScatterGpuProgress64K &&
+                        bytes == (64UL << 10)))
                   ? "gpu-progress-small-rs"
                   : routerName;
           auto decision = selected.prepare(call);
