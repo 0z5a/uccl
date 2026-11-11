@@ -1,5 +1,10 @@
 # Four-L4 BF16 AllGather: CPU-router transfer geometry (2026-11-11)
 
+The [current BF16 figure](../cpu_router_4l4_figures_20261111/README.md)
+plots the CPU router at **every size**, including the negative points below.
+NCCL is a paired external control only. The older automatic replay retained
+here is diagnostic and is not used to select the plotted UCCL path.
+
 This follow-up diagnoses why the [original host-packet CPU router](../cpu_router_4l4_workers_20261111/README.md)
 only modestly beat NCCL SHM Ring at 1 GiB on `mibura-sky-test-02`. The tested
 algorithm is unchanged: each of four GPUs uploads its BF16 contribution once
@@ -57,15 +62,15 @@ was freshly paired with NCCL from 1 KiB–1 GiB in both placements. The full
 sweeps passed complete output checks. Numbers below are out-of-place
 run-median latencies; in-place is in `summary.csv`.
 
-| Complete output/GPU | Router | NCCL | NCCL/router | Automatic choice |
+| Complete output/GPU | Router | NCCL | NCCL/router | Router outcome |
 | ---: | ---: | ---: | ---: | --- |
-| 4 MiB | 309.76 µs | 240.74 µs | 0.78× | NCCL |
-| 8 MiB | 487.94 µs | 418.30 µs | 0.86× | NCCL |
-| 16 MiB | 777.73 µs | 780.29 µs | 1.00× | NCCL |
-| 32 MiB | 1.373 ms | 1.545 ms | 1.13× | Router |
-| 64 MiB | 2.546 ms | 3.064 ms | 1.20× | Router |
-| 128 MiB | 4.898 ms | 6.067 ms | 1.24× | Router |
-| 1 GiB | **37.577 ms** | **48.120 ms** | **1.28×** | Router |
+| 4 MiB | 309.76 µs | 240.74 µs | 0.78× | Slower |
+| 8 MiB | 487.94 µs | 418.30 µs | 0.86× | Slower |
+| 16 MiB | 777.73 µs | 780.29 µs | 1.00× | Tied |
+| 32 MiB | 1.373 ms | 1.545 ms | 1.13× | Faster |
+| 64 MiB | 2.546 ms | 3.064 ms | 1.20× | Faster |
+| 128 MiB | 4.898 ms | 6.067 ms | 1.24× | Faster |
+| 1 GiB | **37.577 ms** | **48.120 ms** | **1.28×** | Faster |
 
 The in-place 1-GiB point is **37.708 vs 48.614 ms**, also **1.29×**.
 The original eight-worker, 64-block/2-MiB-cap AG-only profile reported
@@ -75,10 +80,11 @@ not an interleaved old-versus-new comparison; the new out-of-place router
 median is about **12% lower** and its paired NCCL control is essentially
 unchanged.
 
-Fresh-process [`auto_selection.csv`](auto_selection.csv) replay selects the
-new router at **512 KiB and 32–1024 MiB** out of place; in place it also
-selects **16 MiB**. It keeps NCCL at 4/8 MiB, where the higher-block variant
-regresses, and at every uncalibrated AR/RS size. The final profiles are
+The archived fresh-process [`auto_selection.csv`](auto_selection.csv) is
+an earlier policy diagnostic. It would have selected the router at 512 KiB
+and 32–1024 MiB out of place, with 16 MiB added in place; it is **not the
+UCCL execution or figure policy**. The current figure always runs the
+router, including 4/8 MiB losses. The paired measurement profiles are
 `ag_full_cpu_blocks248_packet4m_out.profile` and
 `ag_full_cpu_blocks248_packet4m_in.profile`. They are valid only for the
 recorded exact host/software/configuration key; the module's global default

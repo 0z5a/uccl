@@ -61,6 +61,7 @@ struct Config {
   bool interleaveScatter = false;
   bool shmOnly = false;
   bool reverse = false;
+  bool routerOnly = false;
   std::string operation = "all", fallback = "local", profile, calibrate,
               samples;
   RouterMode mode = RouterMode::Auto;
@@ -228,6 +229,8 @@ int main(int argc, char** argv) {
         cfg.fallback = next();
       else if (arg == "--backend")
         cfg.mode = parseRouterMode(next());
+      else if (arg == "--router-only")
+        cfg.routerOnly = true;
       else if (arg == "--profile")
         cfg.profile = next();
       else if (arg == "--calibrate")
@@ -261,6 +264,8 @@ int main(int argc, char** argv) {
             "all|allreduce|allgather|reducescatter\n"
             "  --backend auto|off|force  --fallback local|nccl (default: "
             "local)\n"
+            "  --router-only: force UCCL router at every size; do not "
+            "initialize NCCL or a fallback\n"
             "  --shm-only: require NCCL SHM transport, disable all logical "
             "GPU peer links, and reject the P2P local fallback\n"
             "  --reverse: sweep message sizes from large to small\n"
@@ -298,6 +303,14 @@ int main(int argc, char** argv) {
       for (int r = 0; r < cfg.gpus; ++r) cfg.devices.push_back(r);
     if (cfg.fallback != "local" && cfg.fallback != "nccl")
       throw std::invalid_argument("fallback must be local or nccl");
+    if (cfg.routerOnly) {
+      if (cfg.fallback != "local" || cfg.shmOnly || !cfg.profile.empty() ||
+          !cfg.calibrate.empty() || cfg.mode == RouterMode::Off)
+        throw std::invalid_argument(
+            "--router-only cannot use a fallback, profile, calibration or "
+            "disabled router");
+      cfg.mode = RouterMode::Force;
+    }
     if (cfg.shmOnly) {
       if (cfg.devices != std::vector<int>{0, 1, 2, 3, 4, 5, 6, 7})
         throw std::invalid_argument(
@@ -371,7 +384,9 @@ int main(int argc, char** argv) {
                    physicalLinks);
     }
     std::unique_ptr<LocalCollectives> local;
-    if (cfg.fallback == "local") {
+    if (cfg.routerOnly) {
+      topology.identity += ";benchmark-router-only-v1";
+    } else if (cfg.fallback == "local") {
       topology.identity += ";benchmark-local-fallback-v1";
       local = std::make_unique<LocalCollectives>(topology, cfg.end);
     } else {
@@ -380,7 +395,9 @@ int main(int argc, char** argv) {
     }
     BackendPolicy policy;
     policy.mode = cfg.mode;
-    if (local)
+    if (cfg.routerOnly)
+      policy.fallbackIdentity = "uccl-lite-router-only:no-fallback-v1";
+    else if (local)
       policy.fallbackIdentity = LocalCollectives::identity();
     else {
       int ncclVersion;
@@ -394,13 +411,17 @@ int main(int argc, char** argv) {
                                  local.end());
     }
     std::vector<ncclComm_t> comms;
-    if (!local) {
+    if (!local && !cfg.routerOnly) {
       comms.resize(cfg.devices.size());
       ncclCheck(
           ncclCommInitAll(comms.data(), int(comms.size()), cfg.devices.data()));
     }
-    char const* fallbackName = local ? "uccl-lite-local" : "nccl";
+    char const* fallbackName = cfg.routerOnly ? "unavailable"
+                               : local        ? "uccl-lite-local"
+                                              : "nccl";
     CollectiveDispatcher::Fallback fallback = [&](CollectiveCall const& call) {
+      if (cfg.routerOnly)
+        throw std::runtime_error("router-only benchmark invoked fallback");
       if (local) {
         local->enqueue(call);
         return;

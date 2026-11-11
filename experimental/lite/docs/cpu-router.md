@@ -109,11 +109,12 @@ or start workers. Local evidence can opt in on any supported topology if it
 actually demonstrates a stable gain; four GPUs are not categorically forbidden.
 
 The [November 11 four-L4 calibration](../benchmarks/data/cpu_router_4l4_apply_20261111/README.md)
-provides that local BF16 evidence on `mibura-sky-test-02`. Its fresh profiles
-select the router for eight AllGather sizes in either placement, beginning at
-512 KiB and then 16 MiB–1 GiB. They select NCCL for every AllReduce and
-ReduceScatter size. This machine has peer access between all four GPUs;
-the 8×L4 compact AR and GPU-progress RS variants did not yield stable gains.
+provides local BF16 evidence on `mibura-sky-test-02`. Its NCCL-backed
+automatic replay was a diagnostic experiment. The [current BF16 figures](../benchmarks/data/cpu_router_4l4_figures_20261111/README.md)
+run the UCCL Lite CPU router at **all sizes** for AR, AG, and RS, including
+losses; NCCL is only an external paired control. This machine has peer
+access between all four GPUs, but the 8×L4 compact AR and GPU-progress RS
+variants did not yield stable gains.
 An [NCCL transport trace](../benchmarks/data/cpu_router_4l4_workers_20261111/README.md)
 shows `SHM/direct/direct` on every Ring edge here, even though CUDA reports
 peer capability. The transport distinction is host-packet upload-once fan-out
@@ -125,16 +126,22 @@ shows why the eight-L4 default of 23 workers per NUMA is not a suitable
 resource default for this four-L4 host: it occupies nearly all 24 logical
 CPUs per node, while large AllGather is equally fast with eight workers
 on distinct physical cores. The new **AllGather-only** eight-worker profile
-selects seven stable AG sizes in either placement; AR/RS always fall back
-to NCCL. Fewer workers did not rescue AR/RS and made large AR slower,
+had seven stable AG sizes in either placement under the older auto-policy
+diagnostic. Fewer workers did not rescue AR/RS and made large AR slower,
 so this host-specific profile does not change the module's global default.
 The subsequent [AllGather transport-geometry sweep](../benchmarks/data/cpu_router_ag_4l4_geometry_20261111/README.md)
 finds that the original 64-block grid and small per-source tiles limit the
 four-L4 large-message path. A machine-specific 248-block upper bound
 (180 actual blocks at 1 GiB), 4-MiB-cap profile
 cuts out-of-place 1-GiB AG from about 42.8 to 37.6 ms in separate checked
-paired windows, with NCCL near 48.1 ms in both. It still falls back at
-4/8 MiB, where the larger grid regresses.
+paired windows, with NCCL near 48.1 ms in both. The historical auto-policy
+replay would have chosen its NCCL control at 4/8 MiB, where the larger grid
+regresses. The current UCCL figure instead reports the router's slower
+4/8-MiB measurements directly.
+The standalone benchmark's `--router-only` mode forces the CPU router at
+every size without constructing NCCL or another fallback. Its fresh
+[four-L4 BF16 figures and replay logs](../benchmarks/data/cpu_router_4l4_figures_20261111/README.md)
+use NCCL only as a separately timed external control.
 
 `off` always retains the existing backend. `force` is a diagnostic override;
 it still rejects unsupported dtypes, missing capabilities, or insufficient

@@ -4,6 +4,9 @@ The [worker-count follow-up](../cpu_router_4l4_workers_20261111/README.md)
 reduces the AllGather-only configuration to eight physical-core workers per
 NUMA node and rechecks the AR/RS losses. The measurements below remain the
 original 23-worker-per-NUMA calibration.
+The [current BF16 figures](../cpu_router_4l4_figures_20261111/README.md)
+show the router at every size, including losses. NCCL is only a comparison
+curve; the automatic replay below is historical diagnostic data.
 
 This is a fresh single-node experiment on `mibura-sky-test-02`: four NVIDIA
 L4 GPUs, GPU 0/1 on NUMA 0 and GPU 2/3 on NUMA 1. Unlike the eight-L4
