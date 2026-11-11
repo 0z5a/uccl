@@ -98,8 +98,9 @@ UCCL-Lite's benchmark topology. NCCL P2P is disabled and its GPU channels
 are verified to use SHM. The physical PCIe topology is unchanged. UCCL-Lite
 uses host-memory packets for AllReduce, AllGather, and ReduceScatter; the
 128 KiB AllReduce and 64 KiB ReduceScatter cases use size-specific router
-settings. AllGather uses CUDA copy engines for GPU-to-host uploads and
-host-to-GPU gathers. AllReduce is in place; the others are out of place.
+settings. The AllGather figure uses the SM-kernel host-packet path; the
+copy-engine alternative is compared below. AllReduce is in place; the
+others are out of place.
 Two ascending and descending sweeps check every call. [Full SHM results
 and transport evidence](benchmarks/data/shm_8l4_20261111/README.md) are
 retained.
@@ -113,7 +114,7 @@ retained.
 ![8xL4 SHM AllGather: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL SHM](docs/assets/collectives-8l4-shm-allgather.svg)
 
 AllGather transport comparison on the same host, using slowest-rank latency
-(lower is better). The figure above shows the copy-engine path.
+(lower is better). The figure above shows the SM-kernel path.
 
 | Complete output per GPU | SM kernel | Copy engine | Copy / SM |
 | --- | ---: | ---: | ---: |
@@ -128,10 +129,10 @@ AllGather transport comparison on the same host, using slowest-rank latency
 
 ![8xL4 SHM ReduceScatter: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL SHM](docs/assets/collectives-8l4-shm-reducescatter.svg)
 
-At 1 GiB, UCCL-Lite takes **279.4 / 181.8 / 172.1 ms** for AR / AG / RS,
-versus **403.7 / 195.1 / 218.0 ms** with NCCL SHM. The copy-engine
-AllGather path has substantial launch overhead for small messages: at
-1 KiB it takes **448 µs** versus **121 µs** for NCCL SHM. At 64 KiB,
+At 1 GiB, UCCL-Lite takes **279.4 / 180.3 / 172.1 ms** for AR / AG / RS,
+versus **403.7 / 195.6 / 218.0 ms** with NCCL SHM. The copy-engine
+AllGather alternative has substantial launch overhead for small messages;
+its 1 KiB latency is **448 µs** versus **99.6 µs** for the SM kernel. At 64 KiB,
 AllReduce differs by only about 1%, so that point is effectively tied.
 
 ### Multi-node collectives

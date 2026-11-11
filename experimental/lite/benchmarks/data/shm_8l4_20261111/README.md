@@ -23,13 +23,15 @@ UCCL-Lite path never calls it.
   16 transport blocks instead of the usual 23 workers and 64 blocks.
 - At 64 and 128 KiB ReduceScatter, GPU progress handles packet handoff;
   the rest use the CPU-router placement appropriate to their operation.
-- AllGather uses CUDA copy engines (`cudaMemcpyAsync`) to upload each GPU's
-  shard to pinned host packets and gather remote shards back to each GPU.
-  The local shard uses a device-local copy. CPU workers publish packet-ready
-  signals after all eight uploads; they do not copy the AllGather payload.
-  The DMA path uses 16 MiB packet storage and two alternating slots. At a
-  1 GiB output size, each GPU contributes 128 MiB in 64 tiles of 2 MiB.
-  The previous GPU-kernel path can be measured with `--allgather-kernel`.
+- The main AllGather results use the SM-kernel host-packet path. Each GPU
+  uploads a tile to pinned host memory; CPU workers publish readiness after
+  all eight uploads; GPU kernels gather remote tiles from mapped host memory.
+  The local shard is read directly from the GPU input. At a 1 GiB output
+  size, each GPU contributes 128 MiB in 2,048 tiles of 64 KiB.
+- A separate copy-engine path uses `cudaMemcpyAsync` for GPU-to-host uploads
+  and host-to-GPU gathers. Its 16 MiB packet configuration produces 64 tiles
+  of 2 MiB per GPU at a 1 GiB output size. The transport comparison below
+  retains its complete measurements.
 
 Two process runs cover every doubling size from 1 KiB through 1 GiB. Run 1
 uses ascending sizes and run 2 descending sizes. Each backend gets 20
@@ -42,7 +44,7 @@ and communicator setup are outside timing. The six sample files contain
 | Collective | Run 1 | Run 2 |
 | --- | --- | --- |
 | AllReduce | [samples](ar_run1.csv), [log](ar_run1.log) | [samples](ar_run2.csv), [log](ar_run2.log) |
-| AllGather | [samples](ag_run1.csv), [log](ag_run1.log) | [samples](ag_run2.csv), [log](ag_run2.log) |
+| AllGather (SM kernel) | [samples](ag_kernel_run1.csv), [log](ag_kernel_run1.log) | [samples](ag_kernel_run2.csv), [log](ag_kernel_run2.log) |
 | ReduceScatter | [samples](rs_run1.csv), [log](rs_run1.log) | [samples](rs_run2.csv), [log](rs_run2.log) |
 
 The [full summary](summary.csv) reports each run's median of repetition
@@ -54,20 +56,17 @@ UCCL-Lite path at each size and every 1 KiB–1 GiB latency result.
 | AllReduce, 1 KiB | 101.1 µs | 132.1 µs | 1.31× |
 | AllReduce, 128 KiB | 201.7 µs | 215.6 µs | 1.07× |
 | AllReduce, 1 GiB | 279.4 ms | 403.7 ms | 1.44× |
-| AllGather, 1 KiB | 448.0 µs | 120.6 µs | 0.27× |
-| AllGather, 1 GiB | 181.8 ms | 195.1 ms | 1.07× |
+| AllGather, 1 KiB | 99.6 µs | 119.8 µs | 1.20× |
+| AllGather, 1 GiB | 180.3 ms | 195.6 ms | 1.08× |
 | ReduceScatter, 64 KiB | 115.7 µs | 139.5 µs | 1.21× |
 | ReduceScatter, 1 GiB | 172.1 ms | 218.0 ms | 1.27× |
 
-All 21 AllReduce and 21 ReduceScatter aggregate medians favor UCCL-Lite.
-Copy-engine AllGather beats NCCL SHM at 6 of 21 sizes, beginning at 32 MiB;
-its 32 MiB gain is only 0.7% and should be treated as a tie. The 1 KiB
-AllGather regression is roughly 3.7× against NCCL SHM and 4.5× against the
-previous UCCL-Lite GPU-kernel path. The earlier kernel results remain in
-[run 1 samples](ag_kernel_run1.csv), [run 2 samples](ag_kernel_run2.csv),
-and their corresponding [logs](ag_kernel_run1.log) and [logs](ag_kernel_run2.log).
-The full summary retains every DMA result, including regressions. The 64 KiB
-AllReduce point is also effectively tied.
+All 63 aggregate medians favor UCCL-Lite. At 64 KiB, the AllReduce gain is
+only about 1.2% and should be treated as a tie. The separate copy-engine
+AllGather runs remain in [run 1 samples](ag_run1.csv),
+[run 2 samples](ag_run2.csv), and their [run 1 log](ag_run1.log) and
+[run 2 log](ag_run2.log). They are excluded from the main NCCL comparison
+and figure, but included in the transport comparison below.
 
 ### AllGather: copy engine versus SM kernel
 
@@ -124,9 +123,9 @@ env -i HOME="$HOME" PATH=/usr/local/cuda-12.9/bin:/usr/bin:/bin \
 ```
 
 For AllGather and ReduceScatter, use `--op allgather` or
-`--op reducescatter` and omit `--in-place`. AllGather selects DMA by default
-in this SHM testbed; `--allgather-kernel` selects the archived GPU-kernel
-implementation for comparison. Add `--reverse` for the second
+`--op reducescatter` and omit `--in-place`. Add `--allgather-kernel` to
+reproduce the main AllGather figure and summary; without it, the SHM testbed
+selects the copy-engine alternative. Add `--reverse` for the second
 run, with distinct sample/profile paths. `scripts/summarize_8l4_shm.py`
 regenerates the summary from the archived six CSVs, and
 `scripts/plot_8l4_shm.py` regenerates the figures. NCCL's

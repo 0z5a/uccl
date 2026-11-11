@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "benchmarks/data/shm_8l4_20261111"
 OPERATIONS = (("ar", "all_reduce", "in_place"),
-              ("ag", "all_gather", "out_of_place"),
+              ("ag_kernel", "all_gather", "out_of_place"),
               ("rs", "reduce_scatter", "out_of_place"))
 SIZES = tuple(1 << power for power in range(10, 31))
 
