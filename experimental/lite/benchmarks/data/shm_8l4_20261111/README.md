@@ -44,17 +44,25 @@ The [full summary](summary.csv) reports each run's median of repetition
 medians and then the median of those two run values. It includes the selected
 UCCL-Lite path at each size and every 1 KiB–1 GiB latency result.
 
+The updated [SHM figure summary](figure_summary.csv) reuses the tuned
+AllGather UCCL-Lite curve from the [8xL4 GPU AllGather run](../ag_packet_8l4_20261111/README.md)
+because both testbeds use the same host-packet router path. It retains the
+NCCL SHM curve from this archive. Its `uccl_source` and `nccl_source` columns
+identify each curve. These AllGather curves were measured in separate runs;
+the original paired AllGather measurements remain in `summary.csv`.
+
 | Operation and full tensor size | UCCL-Lite | NCCL SHM | Speedup |
 | --- | ---: | ---: | ---: |
 | AllReduce, 1 KiB | 101.1 µs | 132.1 µs | 1.31× |
 | AllReduce, 128 KiB | 201.7 µs | 215.6 µs | 1.07× |
 | AllReduce, 1 GiB | 279.4 ms | 403.7 ms | 1.44× |
-| AllGather, 1 KiB | 99.6 µs | 119.8 µs | 1.20× |
-| AllGather, 1 GiB | 180.3 ms | 195.6 ms | 1.08× |
+| AllGather, 1 KiB | 98.0 µs | 119.8 µs | 1.22× |
+| AllGather, 1 GiB | 166.6 ms | 195.6 ms | 1.17× |
 | ReduceScatter, 64 KiB | 115.7 µs | 139.5 µs | 1.21× |
 | ReduceScatter, 1 GiB | 172.1 ms | 218.0 ms | 1.27× |
 
-All 63 aggregate medians favor UCCL-Lite, but 64 KiB AllReduce differs by
+These rows use the updated figure summary; its AllGather comparison is
+cross-run. All 63 aggregate medians favor UCCL-Lite, but 64 KiB AllReduce differs by
 only about 1.2%; that point should be treated as a tie. The full summary
 preserves small gaps and run-order variation instead of claiming uniform
 statistical significance.
@@ -81,7 +89,9 @@ For AllGather and ReduceScatter, use `--op allgather` or
 `--op reducescatter` and omit `--in-place`. Add `--reverse` for the second
 run, with distinct sample/profile paths. `scripts/summarize_8l4_shm.py`
 regenerates the summary from the archived six CSVs, and
-`scripts/plot_8l4_shm.py` regenerates the figures. NCCL's
+`scripts/summarize_8l4_shm_figure.py` combines the tuned AllGather curve
+with the archived SHM controls, and `scripts/plot_8l4_shm.py` regenerates
+the figures. NCCL's
 [environment-variable reference](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/env.html)
 documents the transport controls; the initialization log verifies the
 transport chosen on this host.

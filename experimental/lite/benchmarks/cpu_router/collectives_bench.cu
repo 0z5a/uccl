@@ -50,6 +50,7 @@ struct Config {
   int gpus = 8, warmup = 3, iterations = 10, repeats = 3;
   size_t begin = 1024, end = 1 << 20;
   size_t packetBytes = 512UL << 10;
+  size_t largeAllGatherPacketBytes = 0;
   size_t smallAllReducePacketBytes = 128UL << 10;
   size_t smallReduceScatterPacketBytes = 128UL << 10;
   int workersPerNode = 23, transportBlocks = 64;
@@ -209,6 +210,8 @@ int main(int argc, char** argv) {
         cfg.end = std::stoull(next());
       else if (arg == "--packet-bytes")
         cfg.packetBytes = std::stoull(next());
+      else if (arg == "--large-ag-packet-bytes")
+        cfg.largeAllGatherPacketBytes = std::stoull(next());
       else if (arg == "--small-ar-packet-bytes")
         cfg.smallAllReducePacketBytes = std::stoull(next());
       else if (arg == "--small-rs-packet-bytes")
@@ -272,6 +275,7 @@ int main(int argc, char** argv) {
             "stripes)\n"
             "  --packet-bytes BYTES (upper bound; default 524288, minimum "
             "131072)\n"
+            "  --large-ag-packet-bytes BYTES (AllGather >=4 MiB; 0 disables)\n"
             "  --small-ar-packet-bytes BYTES (default 131072 through 4 MiB; "
             "0 disables)\n"
             "  --small-rs-packet-bytes BYTES (default 131072 for "
@@ -323,6 +327,10 @@ int main(int argc, char** argv) {
         cfg.packetBytes % 16 ||
         cfg.workersPerNode < 1 || cfg.workersPerNode > 63 ||
         cfg.transportBlocks < 2 || cfg.transportBlocks >= 256 ||
+        (cfg.largeAllGatherPacketBytes &&
+         (cfg.largeAllGatherPacketBytes < cfg.packetBytes ||
+          cfg.largeAllGatherPacketBytes > (32UL << 20) ||
+          cfg.largeAllGatherPacketBytes % 16)) ||
         (cfg.smallAllReducePacketBytes &&
          (cfg.smallAllReducePacketBytes < (128UL << 10) ||
           cfg.smallAllReducePacketBytes > cfg.packetBytes ||
@@ -420,6 +428,7 @@ int main(int argc, char** argv) {
       cpu_router::CpuRouterOptions options;
       options.maxTensorBytes = cfg.end;
       options.packetBytes = cfg.packetBytes;
+      options.largeAllGatherPacketBytes = cfg.largeAllGatherPacketBytes;
       options.workersPerNode = cfg.workersPerNode;
       options.transportBlocks = cfg.transportBlocks;
       options.smallAllReducePacketBytes = cfg.smallAllReducePacketBytes;

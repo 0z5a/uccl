@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from figure_style import ROOT, clean_axis, configure, save
 
 
-DATA = ROOT / "benchmarks/data/shm_8l4_20261111/summary.csv"
+DATA = ROOT / "benchmarks/data/shm_8l4_20261111/figure_summary.csv"
 UCCL_COLOR = "#0068B5"
 NCCL_COLOR = "#D65A00"
 OPERATIONS = (("all_reduce", "allreduce", 14 / 8),

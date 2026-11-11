@@ -142,6 +142,9 @@ struct PacketPipelineOptions {
   size_t maxTensorBytes = 1UL << 30;
   size_t packetBytes = 512UL << 10;
   size_t minPacketBytes = 128UL << 10;
+  // Adaptive dispatcher only: optional packet size for AllGather outputs
+  // of at least 4 MiB. Zero keeps the regular packet size.
+  size_t largeAllGatherPacketBytes = 0;
   // The adaptive dispatcher prepares a smaller router for AllReduce through
   // 4 MiB. Zero disables this choice; direct PacketPipeline users keep
   // packetBytes unchanged.

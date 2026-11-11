@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from figure_style import ROOT, clean_axis, configure, save
 
 
-DATA = ROOT / "benchmarks/data/collectives_8l4_20261110.csv"
+DATA = ROOT / "benchmarks/data/collectives_8l4_20261111.csv"
 UCCL_COLOR = "#0068B5"
 NCCL_COLOR = "#D65A00"
 OPERATIONS = (

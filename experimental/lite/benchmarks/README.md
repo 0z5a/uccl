@@ -41,7 +41,8 @@ records give their own topology and measurement protocol.
 | [allreduce_single_node.csv](data/allreduce_single_node.csv) | October 12: 1 KiB–1 GiB, 5 warmups, 10 timed iterations, three runs. NCCL 2.18.3/2.28.7 use nccl-tests 2.13.8; UCCL Lite uses its native harness. Fastest correct UCCL Lite variant per size. |
 | [allreduce_two_node.csv](data/allreduce_two_node.csv) | October 12: three runs, slowest of eight ranks. Hierarchical UCCL Lite selects among 12 piece/distance configurations. CPU router uses 1 MiB pieces. |
 | [cpu_router_4l4_calibration.csv](data/cpu_router_4l4_calibration.csv), [cpu_router_4l4_selection.csv](data/cpu_router_4l4_selection.csv) | New four-L4 BF16 adaptive-module validation against NCCL 2.28.7: three paired repetitions, 5 warmups / 10 iterations, 1–8 MiB AR/AG/RS. All 12 automatic decisions retain the fallback with no router initialization. These are integration calibration results, not the historical peak-throughput sweeps. |
-| [collectives_8l4_20261110.csv](data/collectives_8l4_20261110.csv) | Current eight-L4 BF16 single-node comparison: 21 doubling sizes each for AR/AG/RS, one best measured UCCL Lite path against NCCL 2.28.9. AR is in place; AG/RS are out of place. Three README figures each show 1 KiB–1 MiB latency and 1 MiB–1 GiB throughput. |
+| [collectives_8l4_20261111.csv](data/collectives_8l4_20261111.csv) | Current eight-L4 single-node AR/AG/RS figure data. AllGather uses the [tuned packet run](data/ag_packet_8l4_20261111/README.md); AR/RS retain the earlier sweep. |
+| [collectives_8l4_20261110.csv](data/collectives_8l4_20261110.csv) | Earlier eight-L4 single-node comparison before the AllGather packet update. |
 | [shm_8l4_20261111/README.md](data/shm_8l4_20261111/README.md) | 8xL4 SHM logical no-P2P testbed: host-packet SM-kernel AllGather, AllReduce, and ReduceScatter versus verified NCCL SHM, 1 KiB–1 GiB. Two reversed paired sweeps retain 7,560 checked calls, full summary, and transport log. |
 | [duplex_allgather_8l4_20261111/README.md](data/duplex_allgather_8l4_20261111/README.md) | Eight-L4 BF16 host-staged duplex AllGather versus the existing packet router and NCCL 2.28.9. Two paired sweeps retain 1,980 checked calls, a 1 GiB CUDA trace, overlap analysis, and small-size regressions. |
 | [fusion_8l4_20261110/README.md](data/fusion_8l4_20261110/README.md) | Eight-L4 BF16 AG+GEMM, GEMM+RS, and GEMM+AR CPU-router experiments versus cuBLAS+NCCL 2.28.9. Original and tuned sweeps archive 6,300 checked calls; 3,900 feed the three-path README latency bars. |
@@ -109,6 +110,8 @@ python3 scripts/plot_results.py
 python3 scripts/plot_multinode_peer.py
 python3 scripts/summarize_8l4_collectives.py
 python3 scripts/plot_8l4_collectives.py
+python3 scripts/summarize_8l4_shm_figure.py
+python3 scripts/plot_8l4_shm.py
 python3 scripts/plot_cpu_router_8l4.py
 python3 scripts/plot_refresh_collectives.py
 python3 scripts/plot_refresh_fusion.py

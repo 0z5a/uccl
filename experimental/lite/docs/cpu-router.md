@@ -73,6 +73,12 @@ reduction. These choices happen in `prepare`, outside the timed invocation.
 geometry and reduction mode are part of the profile identity, so changing
 them requires new calibration.
 
+The optional `largeAllGatherPacketBytes` setting selects larger packets for
+AllGather outputs of at least 4 MiB. On 8xL4 GPU, the benchmark sets it to
+2 MiB and keeps the 512 KiB default below 4 MiB. The benchmark flag is
+`--large-ag-packet-bytes 2097152`. This packet setting is also included in
+the profile identity.
+
 1. Unsupported dtype/topology/capacity retains the existing backend.
 2. Only an exact local calibration record can enable the router. A newer
    matching record showing a regression disables it.

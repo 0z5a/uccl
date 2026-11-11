@@ -84,10 +84,29 @@ def main() -> None:
         control = float(rs_nccl[operation, size, "fallback"]["median_us"])
         results.append((operation, size, "out_of_place", path, candidate,
                         control, control / candidate))
+    # Keep the original local/router choice evidence above, but use the fresh
+    # paired NCCL control and tuned packet-router timing for AllGather.
+    ag_path = DATA / "ag_packet_8l4_20261111/summary.csv"
+    with ag_path.open() as stream:
+        ag_rows = {int(row["bytes"]): row for row in csv.DictReader(stream)}
+    if set(ag_rows) != set(SMALL_SIZES + LARGE_SIZES):
+        raise ValueError("incomplete tuned eight-L4 AllGather summary")
+    updated = []
+    for operation, size, placement, path, candidate, control, speedup in results:
+        if operation == "all_gather":
+            if path != "cpu-router":
+                raise ValueError(f"unexpected selected AllGather path: {size}")
+            row = ag_rows[size]
+            candidate = float(row["uccl_median_us"])
+            control = float(row["nccl_median_us"])
+            speedup = control / candidate
+        updated.append((operation, size, placement, path, candidate,
+                        control, speedup))
+    results = updated
     order = {operation: index for index, operation in enumerate(
         ("all_reduce", "all_gather", "reduce_scatter"))}
     results.sort(key=lambda result: (order[result[0]], result[1]))
-    output = DATA / "collectives_8l4_20261110.csv"
+    output = DATA / "collectives_8l4_20261111.csv"
     with output.open("w", newline="") as stream:
         writer = csv.writer(stream, lineterminator="\n")
         writer.writerow(("collective", "bytes", "placement", "uccl_path",

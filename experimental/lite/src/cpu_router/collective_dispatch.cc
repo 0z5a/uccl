@@ -149,6 +149,11 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
        options_.smallAllReducePacketBytes > options_.packetBytes ||
        options_.smallAllReducePacketBytes % 16))
     throw std::invalid_argument("invalid small AllReduce packet size");
+  if (options_.largeAllGatherPacketBytes &&
+      (options_.largeAllGatherPacketBytes < options_.packetBytes ||
+       options_.largeAllGatherPacketBytes > (32UL << 20) ||
+       options_.largeAllGatherPacketBytes % 16))
+    throw std::invalid_argument("invalid large AllGather packet size");
   if (options_.smallReduceScatterPacketBytes &&
       (options_.smallReduceScatterPacketBytes < options_.minPacketBytes ||
        options_.smallReduceScatterPacketBytes > options_.packetBytes ||
@@ -187,6 +192,8 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
         << options_.smallAllReduceTransportBlocks;
   if (options_.smallReduceScatterGpuProgress64K)
     key << ";small-rs-64k-progress-v1";
+  if (options_.largeAllGatherPacketBytes)
+    key << ";large-ag-packet-v1=" << options_.largeAllGatherPacketBytes;
   for (int cpu : options_.workerCpus) key << ";worker=" << cpu;
   for (int node : options_.numaNodes) key << ";numa=" << node;
   topology_.identity += key.str();
@@ -269,6 +276,10 @@ BackendDecision CollectiveDispatcher::decision(
   return policy_.select(topology_, w);
 }
 size_t CollectiveDispatcher::packetBytesFor(CollectiveCall const& call) const {
+  if (call.collective == Collective::AllGather &&
+      call.workload().bytes >= (4UL << 20) &&
+      options_.largeAllGatherPacketBytes)
+    return options_.largeAllGatherPacketBytes;
   if (call.collective == Collective::AllReduce &&
       call.workload().bytes <= (4UL << 20) &&
       options_.smallAllReducePacketBytes)

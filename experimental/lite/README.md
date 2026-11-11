@@ -78,6 +78,9 @@ looking at NCCL. The CPU router is selected for all large AR/AG/RS sizes.
 At 128 KiB, AR selects the local path and RS selects GPU reduction/progress;
 RS uses the CPU-reduction router at other sizes. Its 256 KiB–4 MiB calls use
 128 KiB packets.
+AllGather uses 512 KiB packets below 4 MiB and 2 MiB packets from 4 MiB
+through 1 GiB. The [paired AllGather measurements](benchmarks/data/ag_packet_8l4_20261111/README.md)
+and packet-size screening support this choice.
 
 ##### AllReduce on single 8xL4 GPU
 
@@ -100,9 +103,11 @@ uses host-memory packets for AllReduce, AllGather, and ReduceScatter; the
 128 KiB AllReduce and 64 KiB ReduceScatter cases use size-specific router
 settings. AllGather uses the SM-kernel host-packet path. AllReduce is in
 place; the others are out of place.
-Two ascending and descending sweeps check every call. [Full SHM results
-and transport evidence](benchmarks/data/shm_8l4_20261111/README.md) are
-retained.
+The SHM AllGather figure reuses the tuned UCCL-Lite host-packet timings from
+the 8xL4 GPU sweep; its NCCL SHM curve comes from the earlier SHM sweep.
+The two curves are from separate runs. AllReduce and ReduceScatter retain
+their paired SHM measurements. [SHM results and transport evidence](benchmarks/data/shm_8l4_20261111/README.md)
+include the source of every plotted curve.
 
 ##### AllReduce on single 8xL4 SHM
 
@@ -116,7 +121,7 @@ retained.
 
 ![8xL4 SHM ReduceScatter: 1 KiB–1 MiB latency and 1 MiB–1 GiB bus throughput versus NCCL SHM](docs/assets/collectives-8l4-shm-reducescatter.svg)
 
-At 1 GiB, UCCL-Lite takes **279.4 / 180.3 / 172.1 ms** for AR / AG / RS,
+At 1 GiB, UCCL-Lite takes **279.4 / 166.6 / 172.1 ms** for AR / AG / RS,
 versus **403.7 / 195.6 / 218.0 ms** with NCCL SHM. At 64 KiB,
 AllReduce differs by only about 1%, so that point is effectively tied.
 
