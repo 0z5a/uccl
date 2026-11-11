@@ -6,7 +6,7 @@ implementation at every one of the 21 sizes**, from 1 KiB to 1 GiB. NCCL
 automatic fallback, and slower UCCL points remain visible. The figures
 do not use `auto_selection.csv` or any backend-selection decision.
 The current main README instead shows the earlier FP32 AR/RS figures and
-the [FP32 AllGather direct/packet-router sweep](../fp32_packet_ag_4l4_20261111/README.md).
+the [FP32 AllGather per-source packet sweep](../fp32_packet_ag_per_source_4l4_20261111/README.md).
 
 [`figure_summary.csv`](figure_summary.csv) has 63 rows and records the exact
 UCCL path, dtype, device count, placement, timing method, NCCL configuration,

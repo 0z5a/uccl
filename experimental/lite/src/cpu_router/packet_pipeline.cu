@@ -69,6 +69,7 @@ struct alignas(128) GridState {
   uint32_t arrivals;
   uint32_t generation;
   uint32_t ready;
+  uint32_t sourceReady[kMaxRanks];
   uint64_t times[6];
 };
 struct alignas(16) Transport {
@@ -90,6 +91,7 @@ struct alignas(16) Transport {
   bool gpuReduce;
   bool interleaveScatter;
   bool gpuProgress;
+  bool agPerSourceProgress;
   int producerBlocks;
   int consumerBlocks;
   uint32_t initialPhase[2];
@@ -348,9 +350,65 @@ __device__ void runTransport(Transport const& p, size_t firstTile,
     if (p.profile && block == 0 && threadIdx.x == 0) state->times[5] = timer();
     return;
   }
+  uint32_t fullMask = p.plan.ranks == 32 ? 0xffffffffU
+                                        : (1U << p.plan.ranks) - 1U;
+  bool perSource = p.agPerSourceProgress && p.gpuProgress &&
+                   p.plan.transform == PacketTransform::Copy &&
+                   p.plan.layout == PacketLayout::Concatenate &&
+                   p.plan.sources == fullMask &&
+                   p.plan.destinations == fullMask &&
+                   blocks >= p.plan.ranks;
   for (size_t tile = firstTile; tile < endTile; ++tile) {
     int slot = tile & 1;
     uint32_t seq = p.firstSequence + tile;
+    if (perSource) {
+      int owner = block % p.plan.ranks;
+      if (threadIdx.x == 0) {
+        if (block == owner) {
+          // The local contribution stays on this GPU; remote contributions
+          // become readable after their producer's system-release upload.
+          if (owner != p.rank)
+            while (acquireSys(
+                       &p.peerFlags[owner]->uploaded[slot][owner].value) < seq)
+              __nanosleep(64);
+          releaseGpu(&state->sourceReady[owner], seq);
+        } else
+          while (acquireGpu(&state->sourceReady[owner]) < seq)
+            __nanosleep(64);
+      }
+      __syncthreads();
+      if (p.profile && tile == 0 && block == 0 && threadIdx.x == 0)
+        state->times[3] = timer();
+      size_t packetUnits =
+          min(p.packetElements,
+              p.plan.inputElements - tile * p.packetElements);
+      if (vector) packetUnits /= 8;
+      auto route = p.plan.outputRoute(p.rank, tile, p.packetElements, owner);
+      int groupBlock = block / p.plan.ranks;
+      int groupBlocks = (blocks - 1 - owner) / p.plan.ranks + 1;
+      if (!(p.gatherLocalReady && route.local))
+        for (size_t i = size_t(groupBlock) * blockDim.x + threadIdx.x;
+             i < packetUnits; i += size_t(groupBlocks) * blockDim.x) {
+          size_t index = vector ? i * 8 : i;
+          uint16_t const* from =
+              route.local ? p.input + route.sourceOffset + index
+                          : p.sources[slot][owner] + route.sourceOffset + index;
+          uint16_t* to = p.output + route.outputOffset + index;
+          if (vector)
+            DeviceChannel::put16(to, DeviceChannel::get16(from));
+          else
+            DeviceChannel::put2(to, DeviceChannel::get2(from));
+        }
+      barrier(state, phase, blocks);
+      if (p.profile && tile == 0 && block == 0 && threadIdx.x == 0)
+        state->times[4] = timer();
+      if (block == 0 && threadIdx.x == 0) {
+        if (p.gathered) releaseGpu(p.gathered, uint32_t(tile + 1));
+        releaseSys(&p.flags->consumed[slot][p.rank].value, seq);
+        releaseSys(&p.readerFlags->readers[slot][p.rank].value, seq);
+      }
+      continue;
+    }
     if (p.gpuProgress && block == 0) {
       if (threadIdx.x < p.plan.ranks && (p.plan.sources & (1U << threadIdx.x)))
         while (
@@ -1008,6 +1066,8 @@ struct PacketPipeline::Impl {
       throw std::invalid_argument("interleaved scatter requires GPU reduction");
     if (options.gpuProgress && options.reduction != ReductionPlacement::Gpu)
       throw std::invalid_argument("GPU progress requires GPU reduction");
+    if (options.agPerSourceProgress && !options.gpuProgress)
+      throw std::invalid_argument("per-source AllGather requires GPU progress");
     if (!options.maxTensorBytes || options.packetBytes < 16 ||
         options.packetBytes % 16 || options.minPacketBytes < 16 ||
         options.minPacketBytes > options.packetBytes ||
@@ -1892,6 +1952,7 @@ struct PacketPipeline::Impl {
       p.gpuReduce = gpuReduce;
       p.interleaveScatter = interleaveScatter;
       p.gpuProgress = options.gpuProgress;
+      p.agPerSourceProgress = options.agPerSourceProgress;
       for (int slot = 0; slot < 2; ++slot) p.previous[slot] = previous[slot];
       p.producerBlocks = producerBlocks[rank];
       p.consumerBlocks = consumerBlocks[rank];

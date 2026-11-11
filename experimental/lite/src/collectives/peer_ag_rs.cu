@@ -51,6 +51,8 @@ struct Config {
   int warmups = 5, iterations = 10, repeats = 3;
   bool routerAg = false;
   bool packetRouterAg = false;
+  bool packetRouterGpuProgress = false;
+  bool packetRouterPerSource = false;
   bool rsOnly = false;
   bool routerLocalNuma = true;
 };
@@ -64,6 +66,15 @@ Config parse(int argc, char** argv) {
     }
     if (option == "--packet-router-ag") {
       cfg.packetRouterAg = true;
+      continue;
+    }
+    if (option == "--packet-router-gpu-progress") {
+      cfg.packetRouterGpuProgress = true;
+      continue;
+    }
+    if (option == "--packet-router-per-source") {
+      cfg.packetRouterGpuProgress = true;
+      cfg.packetRouterPerSource = true;
       continue;
     }
     if (option == "--rs-only") {
@@ -80,6 +91,7 @@ Config parse(int argc, char** argv) {
                 "[--rs-fence-max-bytes BYTES] "
                 "[--router-ag] [--packet-router-ag] [--rs-only] "
                 "[--packet-router-min-bytes BYTES] "
+                "[--packet-router-gpu-progress|--packet-router-per-source] "
                 "[--router-chunk-bytes BYTES] "
                 "[--router-host-placement local|cuda]\n"
                 "BYTES is full AllGather output / ReduceScatter input per "
@@ -127,6 +139,8 @@ Config parse(int argc, char** argv) {
     throw std::invalid_argument("--router-ag and --rs-only conflict");
   if (cfg.packetRouterAg && (cfg.routerAg || cfg.rsOnly))
     throw std::invalid_argument("--packet-router-ag requires AllGather only");
+  if (cfg.packetRouterGpuProgress && !cfg.packetRouterAg)
+    throw std::invalid_argument("packet-router progress requires --packet-router-ag");
 #ifndef UCCL_LITE_PACKET_ROUTER
   if (cfg.packetRouterAg)
     throw std::invalid_argument("build peer-ag-rs-packet for --packet-router-ag");
@@ -710,16 +724,21 @@ void launchNccl(std::array<Device*, kRanks> const& devices,
 struct PacketRouter {
   std::array<uccl_lite::cpu_router::PacketPort, kRanks> ports{};
   uccl_lite::cpu_router::PacketPipeline pipeline;
-  static uccl_lite::cpu_router::PacketPipelineOptions options(size_t maxBytes) {
+  static uccl_lite::cpu_router::PacketPipelineOptions options(Config const& cfg) {
     uccl_lite::cpu_router::PacketPipelineOptions result;
-    result.maxTensorBytes = maxBytes;
+    result.maxTensorBytes = cfg.end;
     result.packetBytes = 4UL << 20;
     result.workersPerNode = 8;
     result.transportBlocks = 248;
+    if (cfg.packetRouterGpuProgress) {
+      result.reduction = uccl_lite::cpu_router::ReductionPlacement::Gpu;
+      result.gpuProgress = true;
+    }
+    result.agPerSourceProgress = cfg.packetRouterPerSource;
     return result;
   }
-  PacketRouter(std::array<Device*, kRanks> const& devices, size_t maxBytes)
-      : pipeline(options(maxBytes)) {
+  PacketRouter(std::array<Device*, kRanks> const& devices, Config const& cfg)
+      : pipeline(options(cfg)) {
     for (int rank = 0; rank < kRanks; ++rank)
       ports[rank] = {devices[rank]->input, devices[rank]->output,
                      devices[rank]->stream, rank};
@@ -894,7 +913,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<PacketRouter> packetRouter;
 #ifdef UCCL_LITE_PACKET_ROUTER
     if (cfg.packetRouterAg)
-      packetRouter = std::make_unique<PacketRouter>(devices, cfg.end);
+      packetRouter = std::make_unique<PacketRouter>(devices, cfg);
 #endif
     std::printf("# four L4 peer AG/RS, float32; NCCL version=%d; "
                 "warmups=%d iterations=%d repeats=%d\n",
@@ -917,7 +936,10 @@ int main(int argc, char** argv) {
     if (cfg.packetRouterAg)
       std::printf("# packet-router AG: FP32 bitwise copy, 8 workers/NUMA, "
                   "transport-block cap=248, packet cap=4194304 B, "
-                  "candidate from %zu B\n", cfg.packetRouterMinBytes);
+                  "candidate from %zu B; progress=%s\n",
+                  cfg.packetRouterMinBytes,
+                  cfg.packetRouterPerSource ? "gpu-per-source"
+                      : cfg.packetRouterGpuProgress ? "gpu-all-ready" : "cpu");
     std::puts("collective,bytes,backend,median_us,min_us,max_us");
     for (size_t bytes = cfg.begin; bytes <= cfg.end; bytes *= 2) {
       size_t shard = bytes / sizeof(float) / kRanks;

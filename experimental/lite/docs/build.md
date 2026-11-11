@@ -66,6 +66,9 @@ prefix, for example `build/uccl_lite_dense_fusion`.
 `peer-ag-rs-packet` links the optional CPU-router library and adds the FP32
 AllGather host-packet candidate; the ordinary `peer_ag_rs` target remains
 independent of that library.
+`--packet-router-per-source` makes its GPU consumer copy each source tile
+immediately after that source publishes readiness; `--packet-router-gpu-progress`
+retains the older all-sources-ready GPU control for paired ablations.
 
 Override `CUDA_HOME`, `NVCC`, `CUDA_ARCH`, `MSCCLPP_BUILD`, and
 `EXTRA_NVCC_FLAGS` as needed. Changing compiler flags or dependency paths does

@@ -61,7 +61,7 @@ the two-node launcher.
 
 #### AllGather on single 4xL4 GPU
 
-![Four-L4 FP32 AllGather: direct GPU path for small and medium sizes, host-packet router for large sizes, versus NCCL](docs/assets/collectives-4l4-allgather-packet-router.svg)
+![Four-L4 FP32 AllGather: direct GPU path for small and medium sizes, per-source host-packet router for large sizes, versus NCCL](docs/assets/collectives-4l4-allgather-per-source.svg)
 
 #### ReduceScatter on single 4xL4 GPU
 
@@ -69,7 +69,7 @@ the two-node launcher.
 
 [Four-L4 AllReduce data](benchmarks/data/refresh_20261110/README.md) ·
 [Four-L4 ReduceScatter data](benchmarks/data/rs_ar_serial_4l4_20261111/README.md) ·
-[Four-L4 AllGather data](benchmarks/data/fp32_packet_ag_4l4_20261111/README.md)
+[Four-L4 AllGather data](benchmarks/data/fp32_packet_ag_per_source_4l4_20261111/README.md)
 
 #### 8xL4 GPU
 

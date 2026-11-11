@@ -208,6 +208,10 @@ struct PacketPipelineOptions {
   // no CPU packet-routing executor is created. Host command publication
   // remains.
   bool gpuProgress = false;
+  // AllGather Copy with GPU progress: each source publishes its own readiness
+  // to a dedicated consumer-block group, which can copy before other sources
+  // upload. Reader credits still wait for every group before slot reuse.
+  bool agPerSourceProgress = false;
 };
 
 // One process, 1..kMaxRanks ports in arbitrary device/NUMA order. All GPU

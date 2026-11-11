@@ -37,7 +37,8 @@ records give their own topology and measurement protocol.
 | [cpu_router_4l4_workers_20261111](data/cpu_router_4l4_workers_20261111/README.md) | Four-L4 BF16 CPU worker sweep and adapted eight-worker-per-NUMA AllGather-only profile: 29,100 paired timed calls, both placements, negative AR/RS results, and 126 fresh-process selection checks. |
 | [cpu_router_ag_4l4_geometry_20261111](data/cpu_router_ag_4l4_geometry_20261111/README.md) | Four-L4 BF16 AllGather transfer-grid and packet-cap optimization: 248-block/4-MiB-cap profile, 3,900 checked paired calls, 126 automatic decisions, negative small-size results, and Nsight diagnosis. |
 | [cpu_router_4l4_figures_20261111](data/cpu_router_4l4_figures_20261111/README.md) | Archived BF16 four-L4 AR/AG/RS figures: every UCCL point runs the CPU router, including regressions; NCCL 2.28.7 is a paired control only. |
-| [fp32_packet_ag_4l4_20261111](data/fp32_packet_ag_4l4_20261111/README.md) | Current main four-L4 FP32 AllGather: old source-side push/peer paths through 16 MiB, bitwise host-packet router from 32 MiB, 2,070 checked paired calls and all negative candidates. |
+| [fp32_packet_ag_4l4_20261111](data/fp32_packet_ag_4l4_20261111/README.md) | Earlier four-L4 FP32 AllGather: source-side push/peer paths through 16 MiB, bitwise host-packet router from 32 MiB, 2,070 checked paired calls and all negative candidates. |
+| [fp32_packet_ag_per_source_4l4_20261111](data/fp32_packet_ag_per_source_4l4_20261111/README.md) | Updated four-L4 FP32 AllGather: GPU per-source readiness moves the host-packet crossover to 16 MiB; 2,070 checked paired calls, 4–16 MiB ablation, delayed-producer and graph correctness logs. |
 | [host_memory_bw_4l4_20261111](data/host_memory_bw_4l4_20261111/README.md) | Large-working-set STREAM-style host DRAM triad on this four-L4 machine: per-NUMA isolated and simultaneous two-socket bandwidth with 12 physical or 24 logical CPU threads, 24 raw runs and 240 timed passes. |
 | [refresh_20261110/README.md](data/refresh_20261110/README.md) | Fresh four-L4 and two-node AR/AG/RS plus dense/MoE fusion. Raw logs, per-call or per-round samples, selected paths, hardware/software identities, matched timing scopes, and negative results. The old mixed-timer two-node archive is excluded from new comparisons. |
 | [hardware_profile_4l4_20261110_summary.csv](data/hardware_profile_4l4_20261110_summary.csv) and [raw runs](data/hardware_profile_4l4_20261110_run1.txt) | November 10: standalone GPU topology, directed and four-GPU concurrent peer copies, concurrent H2D/D2H, and NUMA CPU copy/BF16 reduction. Three complete runs × three repetitions, useful-byte bandwidth; no NCCL baseline or collective timing. [Method and limits](../docs/hardware-profiler.md). |
@@ -97,7 +98,7 @@ recorded palettes. The fusion figures use paired latency bars for each shape.
 The recorded min–max timing ranges remain in the CSVs rather than being
 presented as confidence intervals.
 The current four-L4 FP32 figures use the same two-panel style. AllGather
-switches from direct GPU paths to the host-packet router at 32 MiB; the
+switches from direct GPU paths to the per-source host-packet router at 16 MiB; the
 archived BF16 router-only figures remain in the detailed data.
 
 The November 10 refresh uses the same two-panel latency/throughput style

@@ -1,6 +1,8 @@
 # Single-node four-L4 FP32 AllGather with large-message host packets
 
-This is the current main README AllGather figure on **`mibura-sky-test-02`**:
+This is the earlier main README AllGather figure on **`mibura-sky-test-02`**;
+the [per-source GPU-readiness follow-up](../fp32_packet_ag_per_source_4l4_20261111/README.md)
+moves the current host-packet crossover to 16 MiB. This archive records:
 four L4 GPUs in a 2+2 NUMA layout, FP32 out-of-place AllGather, complete
 output bytes per GPU. Its UCCL Lite curve retains the earlier direct-GPU
 small/medium algorithms and switches to the same host-packet CPU-router

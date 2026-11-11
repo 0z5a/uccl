@@ -186,6 +186,7 @@ CollectiveDispatcher::CollectiveDispatcher(Topology topology,
     key << ";reduction=gpu-v1";
   if (options_.interleaveScatter) key << ";scatter=interleaved-v2";
   if (options_.gpuProgress) key << ";progress=gpu-v1";
+  if (options_.agPerSourceProgress) key << ";ag-progress=per-source-v1";
   if (options_.smallAllReduceWorkersPerNode)
     key << ";small-ar-128-256k-workers-v1="
         << options_.smallAllReduceWorkersPerNode << ','

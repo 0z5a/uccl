@@ -137,9 +137,17 @@ cuts out-of-place 1-GiB AG from about 42.8 to 37.6 ms in separate checked
 paired windows, with NCCL near 48.1 ms in both. The historical auto-policy
 replay would have chosen its NCCL control at 4/8 MiB, where the larger grid
 regresses. Those losses remain visible in the archived BF16 router-only
-figure. The [current FP32 AllGather figure](../benchmarks/data/fp32_packet_ag_4l4_20261111/README.md)
-uses direct GPU paths through 16 MiB and this host-packet geometry from
-32 MiB onward, with no NCCL fallback in the UCCL curve.
+figure. The [current FP32 AllGather figure](../benchmarks/data/fp32_packet_ag_per_source_4l4_20261111/README.md)
+uses direct GPU paths through 8 MiB, then a per-source GPU-progress
+host-packet variant from 16 MiB onward, with no NCCL fallback in the
+UCCL curve.
+For AllGather Copy, `agPerSourceProgress` lets each source GPU publish its
+own system-release `uploaded` flag. Consumer blocks assigned to that source
+wait only for that flag and start copying its tile immediately; one leader
+then fans out readiness through GPU-local memory. A final consumer barrier
+precedes reader-credit publication, so the two packet slots remain safe to
+reuse. The [four-L4 FP32 ablation](../benchmarks/data/fp32_packet_ag_per_source_4l4_20261111/README.md)
+records both the per-source path and the older all-sources-ready GPU path.
 The standalone benchmark's `--router-only` mode forces the CPU router at
 every size without constructing NCCL or another fallback. Its fresh
 [four-L4 BF16 figures and replay logs](../benchmarks/data/cpu_router_4l4_figures_20261111/README.md)

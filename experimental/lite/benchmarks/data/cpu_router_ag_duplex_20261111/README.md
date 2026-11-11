@@ -61,4 +61,4 @@ the final table uses only its paired controls.
 - `hardware_software.txt` and `build.log`: topology, versions, source/binary identity, and build.
 - `tail_3chunks.log`: non-power-of-two 3-chunk tail check. `default_peer_smoke.log`, `router_policy.log`, `dispatcher.log`, `router_eager.log`, and `router_graph.log` all pass.
 
-This is an earlier host-staged FP32 candidate. Its direct-peer curves remain in the detailed archive; the main README's current FP32 AllGather uses the optimized packet router only from 32 MiB.
+This is an earlier host-staged FP32 candidate. Its direct-peer curves remain in the detailed archive; the main README's current FP32 AllGather uses the per-source packet router from 16 MiB.
