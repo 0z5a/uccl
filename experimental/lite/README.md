@@ -258,9 +258,8 @@ The `Process (CPU)` operators can be used in different collectives:
 
 ### 8xL4 collective packet flows
 
-These animations follow one packet. AllGather and ReduceScatter show GPU 0
-as a representative destination; the other GPUs run the same process for
-their own output. Packets from a larger tensor are pipelined.
+Each animation shows all eight GPUs and one packet stage at a time. Larger
+tensors pipeline many packets.
 
 #### AllReduce
 
