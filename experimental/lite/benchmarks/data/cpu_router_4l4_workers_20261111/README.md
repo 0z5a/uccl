@@ -8,7 +8,8 @@ The recommended AllGather-only setting below uses **8 workers per NUMA node,
 16 total**, pinned to eight distinct physical cores per socket. The
 [hardware/software record](hardware_software.txt) and raw logs show the
 CPU mapping, router geometry, BF16 dtype, exact binary/NCCL hashes, and GPU
-topology. All four L4 GPUs have mutual peer access.
+topology. All four L4 GPUs have mutual CUDA peer capability, but NCCL's
+transport trace for this harness uses SHM on every Ring edge; see below.
 
 Seven out-of-place scans compare **4, 8, 11, 12, 16, 20, and 23 workers per
 NUMA node** over 64 KiB–1 GiB for AllReduce, AllGather, and ReduceScatter.
@@ -93,3 +94,33 @@ The final profiles are `ag_only_w8_out.profile` and
 The earlier 23-worker raw data and negative AR/RS variants remain archived;
 this follow-up does not change the main FP32 figures or the global router
 default.
+
+## NCCL SHM Ring traffic on this host
+
+The diagnostic [`nccl_shm_default_probe.log`](nccl_shm_default_probe.log)
+shows two Ring channels with order `0→1→2→3→0`, each edge labeled
+`via SHM/direct/direct`, despite CUDA peer capability. The separate
+[`nccl_shm_ring_simple_probe.log`](nccl_shm_ring_simple_probe.log) sets
+`NCCL_ALGO=Ring,NCCL_PROTO=Simple` and confirms the same SHM transport.
+Both probes run the checked NCCL AllGather control at 1 MiB; their timings
+are **not** included in any performance summary. The default probe confirms
+SHM links, not which collective algorithm NCCL selected for every size.
+
+For four GPUs, let `B` be the complete output bytes **per GPU** and each
+source contribution be `S=B/4`. Logical useful payload, excluding protocol
+headers, caching effects and local GPU copies, is:
+
+| Transport work, four GPUs combined | Host-packet CPU router | Ring over NCCL SHM |
+| --- | ---: | ---: |
+| GPU→host payload | `B` (one upload per source) | `3B` (three Ring hops per source) |
+| Host→GPU payload | `3B` (three remote source shards per GPU) | `3B` (three Ring receives per GPU) |
+| Total GPU PCIe endpoint payload | `4B` | `6B` |
+| Host-memory useful writes + reads | `B + 3B = 4B` | `3B + 3B = 6B` |
+
+For `B=1 GiB`, the router logically uploads 1 GiB and reads 3 GiB from host
+memory; Ring+SHM writes 3 GiB to shared host buffers and reads 3 GiB back.
+The router saves **2 GiB of GPU→host payload** and 2 GiB of total useful
+host-memory traffic, a one-third reduction in total endpoint payload.
+The router's CPU workers publish packet readiness for this copy operation;
+they do not duplicate each shard into a separate host buffer per destination.
+Actual PCIe/DRAM counter bytes can differ from these useful-payload counts.

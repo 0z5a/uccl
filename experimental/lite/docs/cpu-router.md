@@ -114,6 +114,11 @@ select the router for eight AllGather sizes in either placement, beginning at
 512 KiB and then 16 MiB–1 GiB. They select NCCL for every AllReduce and
 ReduceScatter size. This machine has peer access between all four GPUs;
 the 8×L4 compact AR and GPU-progress RS variants did not yield stable gains.
+An [NCCL transport trace](../benchmarks/data/cpu_router_4l4_workers_20261111/README.md)
+shows `SHM/direct/direct` on every Ring edge here, even though CUDA reports
+peer capability. The transport distinction is host-packet upload-once fan-out
+versus repeated SHM Ring hops, not router host traffic versus NCCL direct
+GPU P2P.
 
 The [worker-count follow-up](../benchmarks/data/cpu_router_4l4_workers_20261111/README.md)
 shows why the eight-L4 default of 23 workers per NUMA is not a suitable

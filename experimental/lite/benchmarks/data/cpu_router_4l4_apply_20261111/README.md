@@ -76,11 +76,14 @@ each variant run. The complete negative results are in `summary.csv`.
 | GPU reduction/progress RS | 256 KiB: 67.58 vs NCCL 63.49 µs | Loses |
 | Interleaved GPU scatter RS | 256 KiB: 80.90 vs NCCL 64.51 µs | Loses |
 
-The dominant 4-L4 difference is full GPU peer access. The router introduces
-host staging and, for CPU-reduction paths, CPU arithmetic; the paired timings
-show those costs are not recovered for AR/RS on this topology. A profiler
-would be needed to split those costs precisely. Large AG does benefit from
-host packet multicast despite the peer-access topology.
+CUDA reports peer access between all four GPUs, but the later
+[NCCL transport probes](../cpu_router_4l4_workers_20261111/README.md)
+show that NCCL selected `SHM/direct/direct` for every Ring edge in this
+harness. Peer capability alone therefore does not explain the AR/RS loss.
+Both paths use host memory, with different packet schedules; the router also
+does CPU arithmetic on its CPU-reduction paths. A profiler would be needed
+to split their critical-path costs precisely. Large AG benefits from the
+router's upload-once host packets.
 
 ## Replay and artifacts
 
