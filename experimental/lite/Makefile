@@ -29,9 +29,10 @@ COLLECTIVES := allreduce alltoall
 PEER_COLLECTIVES := peer_ag_rs
 NCCL_CONTROLS := nccl_4l4_mpi_baseline nccl_2x4l4_baseline
 MULTINODE := multinode_allreduce multinode_cpu_router host_hierarchical_allreduce
+HOST_MULTINODE := multinode_host_allgather
 FUSION := dense_fusion fused_moe fused_moe_layer fused_moe_layer_qwen router_fusion_8l4
 PROBES := gemm_probe mma_gemm_probe mma_peak_probe moe_overlap_probe cutlass_gemm_probe hardware_profiler
-ALL_NAMES := $(COLLECTIVES) $(PEER_COLLECTIVES) $(NCCL_CONTROLS) $(MULTINODE) host_allreduce $(FUSION) $(PROBES)
+ALL_NAMES := $(COLLECTIVES) $(PEER_COLLECTIVES) $(NCCL_CONTROLS) $(MULTINODE) $(HOST_MULTINODE) host_allreduce $(FUSION) $(PROBES)
 BIN = $(addprefix $(BUILD)/uccl_lite_,$(1))
 
 .PHONY: all single-node peer-collectives eight-gpu-alltoall duplex-allgather-8l4 fusion probes multinode headers help $(ALL_NAMES)
@@ -72,6 +73,9 @@ $(call BIN,$(MULTINODE)): $(BUILD)/uccl_lite_%: src/collectives/%.cu | $(BUILD)
 
 $(BUILD)/uccl_lite_multinode_cpu_router: src/collectives/multinode_allreduce.cu
 
+$(BUILD)/uccl_lite_multinode_host_allgather: src/collectives/multinode_host_allgather.cu | $(BUILD)
+	$(NVCC) $(NVCC_FLAGS) -std=c++17 $(MPI_INC) -I$(NCCL_HOME)/include $< -o $@ $(MPI_LIB) -L$(NCCL_HOME)/lib -lnccl -Xlinker -rpath=$(NCCL_HOME)/lib -lcudart -lpthread
+
 # This fallback deliberately has no MSCCL++ dependency or GPU-memory registration.
 $(BUILD)/uccl_lite_host_allreduce: src/collectives/host_allreduce.cu | $(BUILD)
 	$(NVCC) $(NVCC_FLAGS) -std=c++20 $(MPI_INC) $< -o $@ $(MPI_LIB) -lcudart -lpthread
@@ -102,6 +106,7 @@ help:
 	@printf '%s\n' '  make cpu-router: optional static/shared CPU-router module' '  make local-collectives: two-NUMA BF16 fallback library' '  make adaptive-collectives: BF16 dispatcher + local/router calibration (optional NCCL control)' '  make router-checks local-collectives-check: core, policy, eager, and graph correctness executables'
 	@printf '%s\n' '  make eight-gpu-alltoall: BF16 host/peer paths against NCCL on two four-GPU NUMA groups'
 	@printf '%s\n' '  make nccl_4l4_mpi_baseline nccl_2x4l4_baseline: checked FP32 AllReduce and AR/AG/RS controls'
+	@printf '%s\n' '  make multinode_host_allgather: experimental two-copy host-RDMA AllGather + NCCL control'
 
 include src/cpu_router/module.mk
 

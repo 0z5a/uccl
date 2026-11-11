@@ -167,6 +167,27 @@ reported host time. The [complete raw logs and mixed-timer figures](../benchmark
 remain available to inspect transport behavior, regressions, and the anomalous
 512-KiB NCCL point. They are excluded from the refreshed README comparison.
 
+## Experimental host multicast AllGather
+
+[multinode_host_allgather.cu](../src/collectives/multinode_host_allgather.cu)
+implements the two-copy host route on the 2+2 NUMA topology. Each NUMA
+group's two GPUs upload to pinned local host packets. Its local HCA sends
+the same packet to both remote NUMA groups; a local host exchange supplies
+the other local group's shards. Two GPUs per group read the shared packet
+through mapped host memory. Three slots overlap upload, UCX/IB transfer,
+and GPU multicast, with sender and reader completions guarding reuse.
+
+The [checked small/medium comparison and raw data](../benchmarks/data/host_rdma_multicast_2x4l4_20261111/README.md)
+separates UCX automatic transport from forced `put_zcopy` RDMA WRITE. In
+three-way alternating rechecks, the automatic eager path takes 24.97 µs at
+1 KiB versus direct UCCL 30.66 µs and NCCL 32.53 µs. At 2 MiB, forced
+RDMA WRITE with 128 KiB packets takes 160.63 µs versus direct UCCL
+195.35 µs and NCCL 200.94 µs. The 4-MiB forced-write path ties direct
+UCCL and loses to NCCL; the 1-GiB path is slower. These candidate runs
+use four MPI processes controlling eight GPUs, while the direct path and
+the main NCCL control use eight processes. The path remains opt-in and is
+not spliced into the main figures.
+
 ## Pinned-host CPU router
 
 [multinode_cpu_router.cu](../src/collectives/multinode_cpu_router.cu) retains

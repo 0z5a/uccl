@@ -43,6 +43,7 @@ make -j2 single-node MSCCLPP_HOME=/path/to/mscclpp
 make peer_ag_rs MSCCLPP_HOME=/path/to/mscclpp NCCL_HOME=/path/to/nccl/build
 make nccl_4l4_mpi_baseline NCCL_HOME=/path/to/nccl/build MPICXX=/path/to/mpicxx
 make nccl_2x4l4_baseline NCCL_HOME=/path/to/nccl/build MPICXX=/path/to/mpicxx
+make multinode_host_allgather NCCL_HOME=/path/to/nccl/build MPICXX=/path/to/mpicxx
 make eight-gpu-alltoall NCCL_HOME=/path/to/nccl/build
 make -j2 fusion MSCCLPP_HOME=/path/to/mscclpp \
   CUTLASS_HOME=/path/to/cutlass NCCL_HOME=/path/to/nccl/build
@@ -54,7 +55,7 @@ make headers MSCCLPP_HOME=/path/to/mscclpp CUTLASS_HOME=/path/to/cutlass
 `make all` builds single-node and peer collectives, fusion, probes, and the reusable-header
 compile check. Multi-node targets are separate. Individual target names are
 `allreduce`, `alltoall`, `peer_ag_rs`, `nccl_4l4_mpi_baseline`,
-`nccl_2x4l4_baseline`, `dense_fusion`, `fused_moe`, `fused_moe_layer`,
+`nccl_2x4l4_baseline`, `multinode_host_allgather`, `dense_fusion`, `fused_moe`, `fused_moe_layer`,
 `fused_moe_layer_qwen`, `gemm_probe`, `mma_gemm_probe`, `mma_peak_probe`,
 `moe_overlap_probe`, `cutlass_gemm_probe`, and `hardware_profiler`. Executables have an `uccl_lite_`
 prefix, for example `build/uccl_lite_dense_fusion`.
