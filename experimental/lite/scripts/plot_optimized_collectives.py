@@ -2,6 +2,7 @@
 """Draw optimized AR/AG/RS paths with the current eight-L4 figure style."""
 
 import argparse
+import shutil
 
 from figure_style import ROOT, configure
 import plot_refresh_collectives as reference
@@ -50,6 +51,10 @@ def main() -> None:
             x_label=("Complete output bytes per GPU" if filename ==
                      "collectives-2x4l4-allgather-optimized" else
                      "Complete tensor bytes per rank"))
+        if filename == "collectives-2x4l4-allgather-optimized":
+            shutil.copyfile(
+                ROOT / "docs/assets" / f"{filename}.svg",
+                ROOT / "docs/assets/collectives-2x4l4-allgather-host-multicast.svg")
 
 
 if __name__ == "__main__":

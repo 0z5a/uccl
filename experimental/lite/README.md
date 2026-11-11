@@ -136,7 +136,7 @@ AllReduce differs by only about 1%, so that point is effectively tied.
 
 #### AllGather on two 4xL4 GPU nodes
 
-![Two-node AllGather latency and bus throughput, UCCL Lite versus NCCL](docs/assets/collectives-2x4l4-allgather-optimized.svg)
+![Two-node AllGather: host multicast at 1–256 KiB versus paired NCCL](docs/assets/collectives-2x4l4-allgather-host-multicast.svg)
 
 #### ReduceScatter on two 4xL4 GPU nodes
 

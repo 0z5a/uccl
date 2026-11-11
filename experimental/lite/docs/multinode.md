@@ -14,7 +14,7 @@ sizes retain the previously measured ring and packed paths.
 
 ![Two-node AllReduce latency and bus throughput](assets/collectives-2x4l4-allreduce-optimized.svg)
 
-![Two-node AllGather latency and bus throughput](assets/collectives-2x4l4-allgather-optimized.svg)
+![Two-node AllGather: host multicast at 1–256 KiB](assets/collectives-2x4l4-allgather-host-multicast.svg)
 
 ![Two-node ReduceScatter latency and bus throughput](assets/collectives-2x4l4-reducescatter-optimized.svg)
 
