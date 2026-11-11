@@ -81,6 +81,12 @@ AllGather outputs of at least 4 MiB. On 8xL4 GPU, the benchmark sets it to
 `--large-ag-packet-bytes 2097152`. This packet setting is also included in
 the profile identity.
 
+A [NUMA-local cache probe](../benchmarks/data/ddio_8l4_20261111/README.md)
+measured the same CPU BF16 reduction after GPU writes to mapped host memory.
+Evicting those writes increased reduction time at packet-sized working sets.
+The probe establishes cache sensitivity, but this virtualized host does not
+expose counters that would attribute the effect specifically to DDIO.
+
 1. Unsupported dtype/topology/capacity retains the existing backend.
 2. Only an exact local calibration record can enable the router. A newer
    matching record showing a regression disables it.
