@@ -1,5 +1,10 @@
 # Applying the 8×L4 BF16 CPU router on this 4×L4 host (2026-11-11)
 
+The [worker-count follow-up](../cpu_router_4l4_workers_20261111/README.md)
+reduces the AllGather-only configuration to eight physical-core workers per
+NUMA node and rechecks the AR/RS losses. The measurements below remain the
+original 23-worker-per-NUMA calibration.
+
 This is a fresh single-node experiment on `mibura-sky-test-02`: four NVIDIA
 L4 GPUs, GPU 0/1 on NUMA 0 and GPU 2/3 on NUMA 1. Unlike the eight-L4
 reference host, **every directed GPU pair has CUDA peer access**, including

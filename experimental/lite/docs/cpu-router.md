@@ -115,6 +115,15 @@ select the router for eight AllGather sizes in either placement, beginning at
 ReduceScatter size. This machine has peer access between all four GPUs;
 the 8×L4 compact AR and GPU-progress RS variants did not yield stable gains.
 
+The [worker-count follow-up](../benchmarks/data/cpu_router_4l4_workers_20261111/README.md)
+shows why the eight-L4 default of 23 workers per NUMA is not a suitable
+resource default for this four-L4 host: it occupies nearly all 24 logical
+CPUs per node, while large AllGather is equally fast with eight workers
+on distinct physical cores. The new **AllGather-only** eight-worker profile
+selects seven stable AG sizes in either placement; AR/RS always fall back
+to NCCL. Fewer workers did not rescue AR/RS and made large AR slower,
+so this host-specific profile does not change the module's global default.
+
 `off` always retains the existing backend. `force` is a diagnostic override;
 it still rejects unsupported dtypes, missing capabilities, or insufficient
 capacity. It bypasses the performance decision, not correctness requirements.
