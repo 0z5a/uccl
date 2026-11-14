@@ -51,7 +51,7 @@ Buffer = load_buffer_config_methods()
 class RuntimeConfigTest(unittest.TestCase):
     def test_defaults_and_matching_overrides(self):
         cases = [
-            ({}, (20, 6, 256, 6, 128), (20, 4, 256, 6, 128)),
+            ({}, (20, 8, 256, 6, 128), (20, 4, 256, 6, 128)),
             (
                 {"UCCL_EP_DISPATCH_CONFIG": "20,8,256,6,128"},
                 (20, 8, 256, 6, 128),
