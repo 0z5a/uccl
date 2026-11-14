@@ -1,5 +1,6 @@
 // Loaded only from the trusted workflow commit by jobs with comment permission.
 const STATUS_MARKER = '\n<!-- uccl-ci-status -->\n';
+const MAX_REPORT = 64000;
 const ALLOWED_PERMISSIONS = new Set(['write', 'maintain', 'admin']);
 
 function runUrl(context, attempt) {
@@ -7,8 +8,9 @@ function runUrl(context, attempt) {
   return `${context.serverUrl || 'https://github.com'}/${owner}/${repo}/actions/runs/${context.runId}/attempts/${attempt}`;
 }
 
-function bodyWithStatus(header, status, url, results) {
+function bodyWithStatus(header, status, url, results, resultUrl) {
   const lines = [header, `**Status: ${status}**`, '', `[Workflow run and logs](${url})`];
+  if (resultUrl) lines.push('', `**[Result report](${resultUrl})**`);
   if (results) {
     lines.push('', '| Job | Result |', '|---|---|');
     for (const [id, label] of [['plan', 'Plan'], ['cpu', 'CPU'], ['gpu', 'GPU'], ['status', 'CI status']]) {
@@ -83,7 +85,7 @@ async function dispatch({github, context, core, attempt = process.env.GITHUB_RUN
   await core.summary.write();
 }
 
-async function update({github, context, status, results, attempt = process.env.GITHUB_RUN_ATTEMPT || '1'}) {
+async function update({github, context, status, results, report, attempt = process.env.GITHUB_RUN_ATTEMPT || '1'}) {
   if (context.eventName !== 'workflow_dispatch') throw new Error('Comment updates require a dispatched run');
   const inputs = context.payload.inputs;
   if (!/^\d+$/.test(inputs.pr || '') || !/^\d+$/.test(inputs.reply_comment_id || '') ||
@@ -104,9 +106,24 @@ async function update({github, context, status, results, attempt = process.env.G
   }
   if (status !== 'running' && status !== 'complete') throw new Error('Invalid CI comment status');
   const label = status === 'complete' ? completionStatus(results) : 'running';
+  let resultUrl = null;
+  if (status === 'complete' && typeof report === 'string' && report.trim()) {
+    // A new comment notifies PR subscribers, including the requester; edits do not.
+    try {
+      const {data: posted} = await github.rest.issues.createComment({
+        owner, repo, issue_number: Number(inputs.pr),
+        body: [`<!-- uccl-ci-result ${inputs.reply_marker} -->`, report.trim().slice(0, MAX_REPORT), '',
+               `Requested in [this command](${reply.html_url}).`].join('\n'),
+      });
+      resultUrl = posted.html_url;
+    } catch (error) {
+      console.warn(`Unable to post the CI result report: ${error.message}`);
+    }
+  }
   await github.rest.issues.updateComment({
     owner, repo, comment_id,
-    body: bodyWithStatus(parts[0] + STATUS_MARKER.trimEnd(), label, runUrl(context, attempt), status === 'complete' ? results : null),
+    body: bodyWithStatus(parts[0] + STATUS_MARKER.trimEnd(), label, runUrl(context, attempt),
+                         status === 'complete' ? results : null, resultUrl),
   });
 }
 

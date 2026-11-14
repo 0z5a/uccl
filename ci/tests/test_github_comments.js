@@ -151,6 +151,31 @@ test('final status covers setup/test failures, cancellation and skipped executio
   }
 });
 
+test('final report is posted as a new comment and linked from the status comment', async () => {
+  const f = fixture('/run-ci all');
+  await dispatch(f); f.startRun();
+  const created = [];
+  const original = f.github.rest.issues.createComment;
+  f.github.rest.issues.createComment = async args => {
+    created.push(args);
+    return {data: {id: 300, html_url: 'https://github.com/uccl-project/uccl/pull/12#issuecomment-300'}};
+  };
+  await update({...f, status: 'complete', results: results({gpu: 'failure', status: 'failure'}),
+                report: '**[FAILED]** UCCL CI run'});
+  assert.equal(created.length, 1);
+  assert.equal(created[0].issue_number, 12);
+  assert.match(created[0].body, /^<!-- uccl-ci-result uccl-ci-request-100-1 -->\n\*\*\[FAILED\]\*\*/);
+  assert.match(created[0].body, /Requested in \[this command\]\(https:\/\/github.com\/uccl-project\/uccl\/pull\/12#issuecomment-200\)/);
+  assert.match(f.reply.body, /Status: failed/);
+  assert.match(f.reply.body, /\[Result report\]\(https:\/\/github.com\/uccl-project\/uccl\/pull\/12#issuecomment-300\)/);
+
+  f.github.rest.issues.createComment = async () => {throw new Error('rate limited');};
+  await update({...f, status: 'complete', results: results(), report: 'report'});
+  assert.match(f.reply.body, /Status: completed successfully/);
+  assert.doesNotMatch(f.reply.body, /Result report/);
+  f.github.rest.issues.createComment = original;
+});
+
 test('updates reject another author, PR, marker, SHA or repository', async () => {
   for (const change of [
     f => {f.reply.user.login = 'another-bot[bot]';},
